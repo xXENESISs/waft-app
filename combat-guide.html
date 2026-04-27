@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Combat Guide | WAFT</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body class="archive-bg">
+
+<header class="main-header">
+  <a href="index.html" class="logo">WAFT</a>
+  <nav class="nav-links">
+    <a href="archive.html">Archive</a>
+    <a href="combat-guide.html">Combat Guide</a>
+  </nav>
+</header>
+
+<section class="archive-page">
+  <h1>WAFT Combat Guide</h1>
+  <p class="archive-subtitle">Core combat systems, stats and biome rules</p>
+
+  <div class="guide-wrapper">
+
+    <!-- ATTRIBUTES -->
+    <div class="guide-section">
+      <h2>Combat Attributes</h2>
+      <ul>
+        <li><strong>Life:</strong> Total health.</li>
+        <li><strong>Attack:</strong> Base damage.</li>
+        <li><strong>Defense:</strong> Damage reduction.</li>
+        <li><strong>Resistance:</strong> Determines stamina.</li>
+        <li><strong>Speed:</strong> Initiative and contributes to accuracy/evasion.</li>
+        <li><strong>Agility:</strong> Main evasion stat.</li>
+        <li><strong>Technique:</strong> Main precision stat.</li>
+        <li><strong>Explosiveness:</strong> Critical potential.</li>
+      </ul>
+    </div>
+
+    <!-- LIFE -->
+    <div class="guide-section">
+      <h2>Life System</h2>
+      <div class="guide-formula">
+        <p><strong>Total HP = Life × 10</strong></p>
+      </div>
+    </div>
+
+    <!-- INIT -->
+    <div class="guide-section">
+      <h2>Initiative</h2>
+      <p>Speed determines who acts first.</p>
+    </div>
+
+    <!-- DAMAGE -->
+    <div class="guide-section">
+      <h2>Damage Formula</h2>
+      <div class="guide-formula">
+        <p><strong>D = Attack − Defense</strong></p>
+        <p><strong>Multiplier (%) = 75 + (D ÷ 4)</strong></p>
+        <p><strong>Damage = Attack × (Multiplier ÷ 100)</strong></p>
+      </div>
+    </div>
+
+    <!-- ACCURACY -->
+    <div class="guide-section">
+      <h2>Accuracy and Evasion</h2>
+      <div class="guide-formula">
+        <p><strong>Precision = Technique × 0.8 + Speed × 0.2</strong></p>
+        <p><strong>Evasion = Agility × 0.8 + Speed × 0.2</strong></p>
+        <p><strong>Base Hit Chance (%) = 60 + (Precision − Evasion) × 0.8</strong></p>
+      </div>
+    </div>
+
+    <!-- STAMINA -->
+    <div class="guide-section">
+      <h2>Stamina and Fatigue</h2>
+      <div class="guide-formula">
+        <p><strong>Max Stamina = Resistance × 10</strong></p>
+      </div>
+
+      <ul>
+        <li>> 50% → no penalty</li>
+        <li>≤ 50% → −10%</li>
+        <li>≤ 25% → −20%</li>
+        <li>≤ 10% → −50%</li>
+      </ul>
+    </div>
+
+    <!-- CRITS -->
+    <div class="guide-section">
+      <h2>Explosiveness and Criticals</h2>
+      <div class="guide-formula">
+        <p><strong>Crit Chance = Explosiveness × 0.4</strong></p>
+        <p><strong>Crit Damage = ×1.5</strong></p>
+      </div>
+    </div>
+
+    <!-- ACTIONS -->
+    <div class="guide-section">
+      <h2>Combat Actions</h2>
+
+      <div class="guide-action">
+        <h3>Normal Attack</h3>
+        <p>Technique × 0.8 + Speed × 0.2</p>
+      </div>
+
+      <div class="guide-action">
+        <h3>Quick Attack</h3>
+        <p>Agility × 0.6 + Technique × 0.2 + Speed × 0.2</p>
+      </div>
+
+      <div class="guide-action">
+        <h3>Precise Attack</h3>
+        <p>Technique × 0.9 + Speed × 0.1</p>
+        <p>+10% damage</p>
+      </div>
+
+      <div class="guide-action">
+        <h3>Explosive Attack</h3>
+        <p>Explosiveness × 0.6 + Technique × 0.2 + Speed × 0.2</p>
+      </div>
+
+      <div class="guide-action">
+        <h3>Concentration</h3>
+        <ul>
+          <li>+10% Defense</li>
+          <li>+20 Life</li>
+          <li>+20 Stamina</li>
+        </ul>
+
+        <p><strong>Restrictions:</strong></p>
+        <ul>
+          <li>Cannot be used two turns in a row</li>
+          <li>Cannot be used under status effects</li>
+          <li>Exceptions: Bleed, Bite, Perforation</li>
+          <li>Can be used again if a climate effect changes</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- STATUS -->
+ <div class="guide-section">
+  <h2>Status Effects</h2>
+
+  <p><strong>Bleed:</strong> Damage over time.
+  Used by: <a href="fighters/mammals/sumatran-tiger.html" class="guide-link">Tiger</a></p>
+
+  <p><strong>Poison:</strong> Damage over time.
+  Used by: <a href="fighters/amphibians/kaisers-spotted-newt.html" class="guide-link">Kaiser’s Spotted Newt</a></p>
+
+  <p><strong>Tetrodotoxin (TTX):</strong> −25% Precision, Evasion and Speed.
+  Used by: <a href="fighters/fish-and-marine-invertebrates/pufferfish.html" class="guide-link">Pufferfish</a>, <a href="fighters/amphibians/japanese-fire-bellied-newt.html" class="guide-link">Japanese Fire-Bellied Newt</a></p>
+
+  <p><strong>Perforation:</strong> Heavy damage over time.
+  Used by: <a href="fighters/mammals/white-rhino.html" class="guide-link">White Rhino</a>, <a href="fighters/fish-and-marine-invertebrates/narwhal.html" class="guide-link">Narwhal</a></p>
+
+  <p><strong>Bite:</strong> −20% Evasion.
+  Used by: <a href="fighters/reptiles/black-caiman.html" class="guide-link">Black Caiman</a></p>
+
+  <p><strong>Anchor:</strong> Life and Mana drain.
+  Used by: <a href="fighters/arthropods-and-other-invertebrates/tick.html" class="guide-link">Tick</a></p>
+
+  <p><strong>Mimicry:</strong> Reduces incoming damage until hit.
+  Used by: <a href="fighters/amphibians/mossy-frog.html" class="guide-link">Mossy Frog</a></p>
+</div>
+
+    <!-- CLIMATE -->
+   <div class="guide-section">
+  <h2>Environmental Effects</h2>
+
+  <p><strong>Hail:</strong> Damage per turn.
+  Used by: <a href="fighters/fish-and-marine-invertebrates/walrus.html" class="guide-link">Walrus</a></p>
+
+  <p><strong>Sandstorm:</strong> Evasion modifiers and survivability shifts.
+  Used by: <a href="fighters/mammals/fennec.html" class="guide-link">Fennec Fox</a></p>
+
+  <p><strong>Humidity:</strong> Increased Mana pressure and Life regeneration.
+  Used by: <a href="fighters/reptiles/green-iguana.html" class="guide-link">Green Iguana</a></p>
+
+  <p><strong>Day/Night Cycle:</strong> Alternating combat states that change damage, evasion and ability access.
+  Used by: <a href="fighters/birds/eurasian-eagle-owl.html" class="guide-link">Eurasian Eagle-Owl</a></p>
+</div>
+
+  </div>
+</section>
+
+</body>
+</html>

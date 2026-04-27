@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WAFT Arena Test</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #0f1012;
+      --panel: #17181c;
+      --panel-2: #1d2026;
+      --panel-3: #20242b;
+      --border: rgba(255,255,255,0.08);
+      --text: #f2f2f2;
+      --muted: #aeb4be;
+
+      --normal: #3a3f47;
+      --quick: #3b82f6;
+      --precise: #22c55e;
+      --explosive: #ef4444;
+      --concentration: #a855f7;
+      --special: #f59e0b;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+    }
+
+    .arena-page {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 10px;
+    }
+
+    .setup-panel,
+    .combat-shell,
+    .log-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.24);
+      margin-bottom: 12px;
+    }
+
+    .setup-panel {
+      padding: 12px;
+    }
+
+    .setup-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 160px;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    select,
+    button {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: #22242a;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    button {
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+
+    button:hover:not(:disabled) {
+      filter: brightness(1.08);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .combat-shell {
+      padding: 10px;
+      display: grid;
+      grid-template-columns: 310px 1fr 310px;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .fighter-card {
+      position: relative;
+      background: var(--panel-2);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .fighter-image-wrap {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      overflow: hidden;
+      position: relative;
+      background: #111;
+      border-radius: 14px 14px 0 0;
+    }
+
+    .fighter-card.has-tooltip:hover .fighter-tooltip {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .fighter-image-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center top;
+      display: block;
+      transition: transform 0.18s ease;
+      will-change: transform;
+    }
+
+    .fighter-image-wrap img.flipped {
+      transform: scaleX(-1);
+    }
+
+    .flip-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      font-size: 16px;
+      background: rgba(14, 16, 20, 0.45);
+      color: rgba(255,255,255,0.9);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 999px;
+      z-index: 12;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .fighter-tooltip {
+      position: absolute;
+      top: 64px;
+      left: 14px;
+      right: 14px;
+      bottom: 14px;
+      z-index: 10;
+      background: rgba(14, 16, 20, 0.68);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.45);
+      opacity: 0;
+      transform: translateY(6px);
+      pointer-events: none;
+      transition: 0.18s ease;
+      overflow: auto;
+    }
+
+    .fighter-tooltip h3 {
+      margin: 0 0 9px 0;
+      font-size: 15px;
+      text-transform: uppercase;
+    }
+
+    .tooltip-section {
+      margin-bottom: 9px;
+    }
+
+    .tooltip-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .tooltip-label {
+      font-size: 11px;
+      color: #b0b6c0;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+    }
+
+    .tooltip-text {
+      font-size: 12px;
+      line-height: 1.45;
+      color: #e2e6ec;
+      white-space: pre-wrap;
+    }
+
+    .fighter-info {
+      padding: 10px;
+    }
+
+    .fighter-name {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+
+    .fighter-stats {
+      display: grid;
+      gap: 6px;
+    }
+
+    .bar-block {
+      display: grid;
+      gap: 3px;
+    }
+
+    .bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #c6cad3;
+    }
+
+    .bar {
+      width: 100%;
+      height: 9px;
+      background: #2a2d33;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 0.25s ease;
+    }
+
+    .hp-fill {
+      background: linear-gradient(90deg, #38c172, #74e3a2);
+    }
+
+    .stamina-fill {
+      background: linear-gradient(90deg, #3b82f6, #7cb8ff);
+    }
+
+    .special-fill {
+      background: linear-gradient(90deg, #a855f7, #d8a4ff);
+    }
+
+    .status-list {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .status-pill {
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #2a2d33;
+      font-size: 10px;
+      color: #d5d9e0;
+      border: 1px solid rgba(255,255,255,0.07);
+    }
+
+    .center-column {
+      display: grid;
+      gap: 10px;
+    }
+
+    .turn-vs-row {
+      display: grid;
+      grid-template-columns: 80px 1fr;
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .turn-vs-card,
+    .info-grid,
+    .summary-panel,
+    .actions-panel {
+      background: var(--panel-2);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+    }
+
+    .turn-vs-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 6px;
+      gap: 10px;
+      min-height: 96px;
+    }
+
+    .turn-block {
+      text-align: center;
+    }
+
+    .turn-block-label {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+    }
+
+    .turn-block-value {
+      font-size: 18px;
+      font-weight: bold;
+      line-height: 1.1;
+    }
+
+    .turn-empty {
+      width: 100%;
+      height: 34px;
+    }
+
+    .info-grid {
+      padding: 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .info-box {
+      background: var(--panel-3);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      min-height: 56px;
+      padding: 8px 10px;
+    }
+
+    .info-label {
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .info-value {
+      font-size: 14px;
+      font-weight: bold;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+
+    .actions-panel {
+      padding: 8px;
+    }
+
+    .actions-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .action-btn {
+      text-align: left;
+      min-height: 70px;
+      padding: 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      color: #fff;
+      transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .action-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    .action-btn-title {
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .action-btn-subtitle {
+      font-size: 10px;
+      opacity: 0.92;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .action-btn-desc {
+      font-size: 10px;
+      line-height: 1.25;
+      color: rgba(255,255,255,0.92);
+    }
+
+    .action-btn[data-action="normal"] {
+      background: var(--normal);
+      box-shadow: 0 0 12px rgba(58, 63, 71, 0.28);
+    }
+
+    .action-btn[data-action="quick"] {
+      background: var(--quick);
+      box-shadow: 0 0 12px rgba(59, 130, 246, 0.32);
+    }
+
+    .action-btn[data-action="precise"] {
+      background: var(--precise);
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.32);
+    }
+
+    .action-btn[data-action="explosive"] {
+      background: var(--explosive);
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.34);
+    }
+
+    .action-btn[data-action="concentration"] {
+      background: var(--concentration);
+      box-shadow: 0 0 12px rgba(168, 85, 247, 0.32);
+    }
+
+    .action-btn[data-action="special"] {
+      background: var(--special);
+      box-shadow: 0 0 14px rgba(245, 158, 11, 0.36);
+    }
+
+    .action-btn.special-ready {
+      box-shadow: 0 0 18px rgba(245, 158, 11, 0.75);
+      border-color: rgba(255,255,255,0.35);
+    }
+
+    .summary-panel {
+      padding: 10px;
+    }
+
+    .summary-title,
+    .log-title {
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+
+    .turn-summary-box {
+      background: #101114;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.05);
+      padding: 10px;
+      min-height: 120px;
+      white-space: pre-wrap;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .end-message {
+      margin-top: 10px;
+      font-size: 14px;
+      font-weight: bold;
+      color: #f0f0f0;
+    }
+
+    .log-panel {
+      padding: 12px;
+    }
+
+    .log-box {
+      background: #101114;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.05);
+      padding: 12px;
+      min-height: 180px;
+      max-height: 260px;
+      overflow: auto;
+      white-space: pre-wrap;
+      line-height: 1.6;
+      font-family: Consolas, monospace;
+      font-size: 13px;
+    }
+
+    .hidden-support {
+      display: none !important;
+    }
+
+    .move-attacker-left {
+      animation: moveAttackerLeft 220ms ease;
+    }
+
+    .move-attacker-right {
+      animation: moveAttackerRight 220ms ease;
+    }
+
+    .hit-defender-left {
+      animation: hitDefenderLeft 220ms ease;
+    }
+
+    .hit-defender-right {
+      animation: hitDefenderRight 220ms ease;
+    }
+
+    .hit-defender-left-crit {
+      animation: hitDefenderLeftCrit 260ms ease;
+    }
+
+    .hit-defender-right-crit {
+      animation: hitDefenderRightCrit 260ms ease;
+    }
+
+    @keyframes moveAttackerLeft {
+      0% { transform: translateX(0); }
+      35% { transform: translateX(18px); }
+      100% { transform: translateX(0); }
+    }
+
+    @keyframes moveAttackerRight {
+      0% { transform: translateX(0); }
+      35% { transform: translateX(-18px); }
+      100% { transform: translateX(0); }
+    }
+
+    @keyframes hitDefenderLeft {
+      0% { transform: translateX(0); }
+      35% { transform: translateX(-14px); }
+      100% { transform: translateX(0); }
+    }
+
+    @keyframes hitDefenderRight {
+      0% { transform: translateX(0); }
+      35% { transform: translateX(14px); }
+      100% { transform: translateX(0); }
+    }
+
+    @keyframes hitDefenderLeftCrit {
+      0% { transform: translateX(0); }
+      20% { transform: translateX(-20px); }
+      40% { transform: translateX(-10px); }
+      60% { transform: translateX(-18px); }
+      100% { transform: translateX(0); }
+    }
+
+    @keyframes hitDefenderRightCrit {
+      0% { transform: translateX(0); }
+      20% { transform: translateX(20px); }
+      40% { transform: translateX(10px); }
+      60% { transform: translateX(18px); }
+      100% { transform: translateX(0); }
+    }
+
+    @media (max-width: 1350px) {
+      .combat-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .fighter-card {
+        max-width: 360px;
+        margin: 0 auto;
+      }
+
+      .setup-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .turn-vs-row {
+        grid-template-columns: 1fr;
+      }
+
+      .info-grid,
+      .actions-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .fighter-tooltip {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.18) transparent;
+    }
+
+    .fighter-tooltip::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .fighter-tooltip::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .fighter-tooltip::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.16);
+      border-radius: 999px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+
+    .fighter-tooltip::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.26);
+      background-clip: padding-box;
+    }
+  </style>
+</head>
+<body>
+  <div class="arena-page">
+    <div class="setup-panel">
+      <div class="setup-grid">
+        <div class="field">
+          <label for="playerFighter">Your fighter</label>
+          <select id="playerFighter">
+            <option value="sumatran-tiger">Sumatran Tiger</option>
+            <option value="walrus">Walrus</option>
+            <option value="shima-enaga">Shima Enaga</option>
+            <option value="mantis-shrimp">Mantis Shrimp</option>
+            <option value="dung-beetle">Dung Beetle</option>
+            <option value="caiman">Caiman</option>
+            <option value="axolotl">Axolotl</option>
+            <option value="emerald-wasp">Emerald Wasp</option>
+            <option value="peregrine-falcon">Peregrine Falcon</option>
+            <option value="sailfish">Sailfish</option>
+            <option value="tibetan-macaque">Tibetan Macaque</option>
+            <option value="iguana">Iguana</option>
+            <option value="japanese-fire-bellied-newt">Japanese Fire-Bellied Newt</option>
+            <option value="honey-badger">Honey Badger</option>
+            <option value="pufferfish">Pufferfish</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="enemyFighter">Enemy fighter</label>
+          <select id="enemyFighter">
+            <option value="walrus">Walrus</option>
+            <option value="sumatran-tiger">Sumatran Tiger</option>
+            <option value="shima-enaga">Shima Enaga</option>
+            <option value="mantis-shrimp">Mantis Shrimp</option>
+            <option value="dung-beetle">Dung Beetle</option>
+            <option value="caiman">Caiman</option>
+            <option value="axolotl">Axolotl</option>
+            <option value="emerald-wasp">Emerald Wasp</option>
+            <option value="peregrine-falcon">Peregrine Falcon</option>
+            <option value="sailfish">Sailfish</option>
+            <option value="tibetan-macaque">Tibetan Macaque</option>
+            <option value="iguana">Iguana</option>
+            <option value="japanese-fire-bellied-newt">Japanese Fire-Bellied Newt</option>
+            <option value="honey-badger">Honey Badger</option>
+            <option value="pufferfish">Pufferfish</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>&nbsp;</label>
+          <button id="startBattleBtn">Start Battle</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="combat-shell">
+      <div class="fighter-card has-tooltip">
+        <div class="fighter-image-wrap" id="playerImageWrap">
+          <div class="fighter-tooltip" id="playerTooltip"></div>
+          <button class="flip-btn" id="playerFlipBtn">↔</button>
+          <img id="playerImage" src="" alt="Player fighter">
+        </div>
+        <div class="fighter-info">
+          <div class="fighter-name" id="playerName">-</div>
+          <div class="fighter-stats">
+            <div class="bar-block">
+              <div class="bar-label"><span>HP</span><span id="playerHpText">-</span></div>
+              <div class="bar"><div id="playerHpBar" class="bar-fill hp-fill" style="width:0%"></div></div>
+            </div>
+            <div class="bar-block">
+              <div class="bar-label"><span>Stamina</span><span id="playerStaminaText">-</span></div>
+              <div class="bar"><div id="playerStaminaBar" class="bar-fill stamina-fill" style="width:0%"></div></div>
+            </div>
+            <div class="bar-block">
+              <div class="bar-label"><span>Special</span><span id="playerSpecialText">-</span></div>
+              <div class="bar"><div id="playerSpecialBar" class="bar-fill special-fill" style="width:0%"></div></div>
+            </div>
+          </div>
+          <div id="playerExtraResource" class="fighter-extra-resource"></div>
+          <div class="status-list" id="playerEffects"></div>
+        </div>
+      </div>
+
+      <div class="center-column">
+        <div class="turn-vs-row">
+          <div class="turn-vs-card">
+            <div class="turn-block">
+              <div class="turn-block-label">Turn</div>
+              <div class="turn-block-value" id="turnValue">-</div>
+            </div>
+            <div class="turn-empty"></div>
+            <div class="turn-block">
+              <div class="turn-block-label">Result</div>
+              <div class="turn-block-value" id="resultValue" style="font-size:14px;">Waiting</div>
+            </div>
+          </div>
+
+          <div class="info-grid">
+            <div class="info-box"><div class="info-label">Biome</div><div class="info-value" id="biomeValue">-</div></div>
+            <div class="info-box"><div class="info-label">Modified Stat</div><div class="info-value" id="biomeStatValue">-</div></div>
+            <div class="info-box"><div class="info-label">Your Biome</div><div class="info-value" id="playerBiomeRelationValue">-</div></div>
+            <div class="info-box"><div class="info-label">Enemy Biome</div><div class="info-value" id="enemyBiomeRelationValue">-</div></div>
+            <div class="info-box"><div class="info-label">Your Action</div><div class="info-value" id="playerActionValue">-</div></div>
+            <div class="info-box"><div class="info-label">Enemy Action</div><div class="info-value" id="enemyActionValue">-</div></div>
+          </div>
+        </div>
+
+        <div class="actions-panel">
+          <div class="actions-grid">
+            <button class="action-btn" data-action="normal">
+              <div class="action-btn-subtitle">Attack</div>
+              <div class="action-btn-title" id="btn-normal-title">Normal Attack</div>
+              <div class="action-btn-desc" id="btn-normal-desc">Balanced hit. Low stamina cost.</div>
+            </button>
+            <button class="action-btn" data-action="quick">
+              <div class="action-btn-subtitle">Attack</div>
+              <div class="action-btn-title" id="btn-quick-title">Quick Attack</div>
+              <div class="action-btn-desc" id="btn-quick-desc">Higher priority. Good for acting first.</div>
+            </button>
+            <button class="action-btn" data-action="precise">
+              <div class="action-btn-subtitle">Attack</div>
+              <div class="action-btn-title" id="btn-precise-title">Precise Attack</div>
+              <div class="action-btn-desc" id="btn-precise-desc">Higher hit chance. Reliable option.</div>
+            </button>
+            <button class="action-btn" data-action="explosive">
+              <div class="action-btn-subtitle">Attack</div>
+              <div class="action-btn-title" id="btn-explosive-title">Explosive Attack</div>
+              <div class="action-btn-desc" id="btn-explosive-desc">Higher critical pressure. Risk-reward option.</div>
+            </button>
+            <button class="action-btn" data-action="concentration">
+              <div class="action-btn-subtitle">Support</div>
+              <div class="action-btn-title" id="btn-concentration-title">Concentration</div>
+              <div class="action-btn-desc" id="btn-concentration-desc">Restore Life and Stamina. Gain defense for the turn.</div>
+            </button>
+            <button class="action-btn" data-action="special" id="specialActionBtn">
+              <div class="action-btn-subtitle">Special</div>
+              <div class="action-btn-title" id="btn-special-title">Special Attack</div>
+              <div class="action-btn-desc" id="btn-special-desc">Your fighter’s signature ability.</div>
+            </button>
+          </div>
+        </div>
+
+        <div class="summary-panel">
+          <div class="summary-title">Turn Summary</div>
+          <div class="turn-summary-box" id="turnSummaryBox">Start a battle to begin.</div>
+          <div class="end-message" id="endMessage"></div>
+        </div>
+      </div>
+
+      <div class="fighter-card has-tooltip">
+        <div class="fighter-image-wrap" id="enemyImageWrap">
+          <div class="fighter-tooltip" id="enemyTooltip"></div>
+          <button class="flip-btn" id="enemyFlipBtn">↔</button>
+          <img id="enemyImage" src="" alt="Enemy fighter">
+        </div>
+        <div class="fighter-info">
+          <div class="fighter-name" id="enemyName">-</div>
+          <div class="fighter-stats">
+            <div class="bar-block">
+              <div class="bar-label"><span>HP</span><span id="enemyHpText">-</span></div>
+              <div class="bar"><div id="enemyHpBar" class="bar-fill hp-fill" style="width:0%"></div></div>
+            </div>
+            <div class="bar-block">
+              <div class="bar-label"><span>Stamina</span><span id="enemyStaminaText">-</span></div>
+              <div class="bar"><div id="enemyStaminaBar" class="bar-fill stamina-fill" style="width:0%"></div></div>
+            </div>
+            <div class="bar-block">
+              <div class="bar-label"><span>Special</span><span id="enemySpecialText">-</span></div>
+              <div class="bar"><div id="enemySpecialBar" class="bar-fill special-fill" style="width:0%"></div></div>
+            </div>
+          </div>
+          <div id="enemyExtraResource" class="fighter-extra-resource"></div>
+          <div class="status-list" id="enemyEffects"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="log-panel">
+      <div class="log-title">Combat Log</div>
+      <div class="log-box" id="battleLog"></div>
+    </div>
+
+    <div id="turnOutcomeValue" class="hidden-support"></div>
+  </div>
+
+  <script type="module" src="./js/test-battle.js"></script>
+</body>
+</html>
