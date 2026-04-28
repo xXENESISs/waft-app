@@ -662,6 +662,9 @@ function buildTurnSummary(newLines) {
     }
 
     const important =
+      line.includes("BIOME SHIFT") ||
+      line.includes("Biome changed") ||
+      line.includes("Modified stat") ||
       line.includes(" uses ") ||
       line.includes(" hits ") ||
       line.includes("(CRITICAL)") ||

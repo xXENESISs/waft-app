@@ -59,6 +59,8 @@ const BIOME_AFFECTABLE_STATS = [
   "explosiveness"
 ];
 
+const BIOME_ROTATION_TURNS = 7;
+
 function randomChoice(array) {
   return array[Math.floor(Math.random() * array.length)];
 }
@@ -150,7 +152,7 @@ export function createBattle(idA, idB) {
     battleEffects: []
   };
 
-  applyRandomBiomeModifier(battle);
+  applyRandomBiomeModifier(battle, "selected");
   return battle;
 }
 
@@ -166,7 +168,7 @@ function getBiomeModifierForFighter(fighter, biome) {
   return 1;
 }
 
-function applyRandomBiomeModifier(battle) {
+function applyRandomBiomeModifier(battle, reason = "selected") {
   const biome = randomChoice(BIOMES);
   const stat = randomChoice(BIOME_AFFECTABLE_STATS);
 
@@ -176,12 +178,9 @@ function applyRandomBiomeModifier(battle) {
   const modA = getBiomeModifierForFighter(battle.fighterA, biome);
   const modB = getBiomeModifierForFighter(battle.fighterB, biome);
 
-  battle.fighterA.stats[stat] = Math.round(battle.fighterA.stats[stat] * modA);
-  battle.fighterB.stats[stat] = Math.round(battle.fighterB.stats[stat] * modB);
-
   addLog(
     battle,
-    `Biome selected: ${biome.toUpperCase()}. Modified stat: ${stat.toUpperCase()}.`
+    `Biome ${reason}: ${biome.toUpperCase()}. Modified stat: ${stat.toUpperCase()}.`
   );
 
   const relationA =
@@ -198,6 +197,18 @@ function applyRandomBiomeModifier(battle) {
     battle,
     `${battle.fighterB.name}: ${relationB} biome → ${stat} ${modB > 1 ? "+10%" : modB < 1 ? "-10%" : "0%"}.`
   );
+}
+
+function rotateBiomeIfNeeded(battle) {
+  if (battle.finished) return;
+  if (battle.turn % BIOME_ROTATION_TURNS !== 0) return;
+
+  addLog(
+    battle,
+    `The battlefield shifts after turn ${battle.turn}.`
+  );
+
+  applyRandomBiomeModifier(battle, "changed");
 }
 
 function getFatigueTier(fighter) {
@@ -650,6 +661,14 @@ function createTetrodotoxinEffect(duration = 2) {
 
 export function getEffectiveStat(fighter, stat, battle, opponent = null, actionType = null) {
   let value = fighter.stats[stat];
+
+  if (
+    battle &&
+    stat === battle.biomeStat &&
+    ["attack", "defense", "speed", "agility", "technique", "explosiveness"].includes(stat)
+  ) {
+    value *= getBiomeModifierForFighter(fighter, battle.biome);
+  }
 
   const ignoresFatigue = fighter.passive?.id === "savage-endurance";
 
@@ -2197,6 +2216,15 @@ export function resolveTurn(battle, actionA, actionB) {
 
   clearTurnDefenseBuff(battle.fighterA);
   clearTurnDefenseBuff(battle.fighterB);
+
+  // 🔥 AÑADIDO CLAVE → EL CAMBIO SE ANUNCIA AL EMPEZAR EL TURNO
+  if (battle.turn > 1 && (battle.turn - 1) % BIOME_ROTATION_TURNS === 0) {
+    addLog(
+      battle,
+      `🌍 BIOME SHIFT! The battlefield changes...`
+    );
+    applyRandomBiomeModifier(battle, "changed");
+  }
 
   const speedA = getEffectiveStat(
     battle.fighterA,
