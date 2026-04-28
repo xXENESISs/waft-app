@@ -21,8 +21,17 @@ let enemyFlipped = true;
 let isAnimatingTurn = false;
 let summaryAnimationToken = 0;
 
-const TYPEWRITER_CHAR_DELAY = 18;
-const TYPEWRITER_LINE_PAUSE = 450;
+let socket = null;
+let multiplayerRoomCode = null;
+let multiplayerPlayerNumber = null;
+let multiplayerPlayerSocketId = null;
+let multiplayerPlayer1SocketId = null;
+let multiplayerPlayer2SocketId = null;
+let isMultiplayer = false;
+let isWaitingForOpponentAction = false;
+
+const TYPEWRITER_CHAR_DELAY = 8;
+const TYPEWRITER_LINE_PAUSE = 180;
 
 const ACTION_POOL = ["normal", "quick", "precise", "explosive", "concentration", "special"];
 
@@ -513,7 +522,8 @@ function updateActionButtons() {
     !currentBattle ||
     !player ||
     currentBattle.finished ||
-    isAnimatingTurn
+    isAnimatingTurn ||
+    isWaitingForOpponentAction
   ) {
     buttons.forEach((btn) => (btn.disabled = true));
     return;
@@ -919,13 +929,35 @@ function startBattle() {
   playerId = playerSelect.value;
   enemyId = enemySelect.value;
 
-  if (playerId === enemyId) {
+  if (playerId === enemyId && !isMultiplayer) {
     alert("Choose two different fighters.");
     return;
   }
 
   summaryAnimationToken += 1;
   isAnimatingTurn = false;
+  isWaitingForOpponentAction = false;
+
+  if (isMultiplayer) {
+    if (!multiplayerRoomCode || !socket) {
+      alert("Create or join a room first.");
+      return;
+    }
+
+    lastPlayerAction = "-";
+    lastEnemyAction = "-";
+    lastTurnOutcome = "Waiting";
+    lastTurnSummaryLines = ["Fighter selected. Waiting for opponent..."];
+
+    socket.emit("selectFighter", {
+      roomCode: multiplayerRoomCode,
+      fighterId: playerId
+    });
+
+    document.getElementById("turnSummaryBox").textContent = lastTurnSummaryLines.join("\n");
+    updateActionButtons();
+    return;
+  }
 
   currentBattle = createBattle(playerId, enemyId);
 
@@ -944,7 +976,7 @@ function startBattle() {
   renderBattle();
 }
 
-async function playTurn(playerAction) {
+async function resolveLocalTurn(playerAction) {
   if (!currentBattle || currentBattle.finished || isAnimatingTurn) return;
 
   isAnimatingTurn = true;
@@ -979,6 +1011,70 @@ async function playTurn(playerAction) {
   renderBattle();
 }
 
+async function resolveMultiplayerTurnFromServer(data) {
+  if (!currentBattle || isAnimatingTurn) return;
+
+  isAnimatingTurn = true;
+  isWaitingForOpponentAction = false;
+
+  currentBattle = data.battle;
+
+  const ownAction =
+    multiplayerPlayerSocketId === data.player1 ? data.action1 : data.action2;
+
+  const opponentAction =
+    multiplayerPlayerSocketId === data.player1 ? data.action2 : data.action1;
+
+  const { player, enemy } = getBattleFighters();
+
+  lastPlayerAction = prettyActionLabel(ownAction, player);
+  lastEnemyAction = prettyActionLabel(opponentAction, enemy);
+
+  const newLines = data.newLines || [];
+  const summaryLines = buildTurnSummary(newLines);
+
+  lastTurnSummaryLines = [""];
+  lastTurnOutcome = deriveTurnOutcome(summaryLines);
+
+  renderBattle();
+
+  await runShakeSequence(newLines, player, enemy);
+  await typeTurnSummary(summaryLines);
+
+  lastTurnSummaryLines = summaryLines;
+  isAnimatingTurn = false;
+
+  renderBattle();
+}
+
+async function playTurn(playerAction) {
+  if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return;
+
+  if (isMultiplayer) {
+    if (!socket || !multiplayerRoomCode) return;
+
+    const { player } = getBattleFighters();
+
+    lastPlayerAction = prettyActionLabel(playerAction, player);
+    lastEnemyAction = "Waiting...";
+    lastTurnOutcome = "Waiting";
+    lastTurnSummaryLines = ["Action selected. Waiting for opponent..."];
+
+    isWaitingForOpponentAction = true;
+
+    renderBattle();
+
+    socket.emit("playerAction", {
+      roomCode: multiplayerRoomCode,
+      action: playerAction
+    });
+
+    return;
+  }
+
+  await resolveLocalTurn(playerAction);
+}
+
 function initFlipButtons() {
   document.getElementById("playerFlipBtn").addEventListener("click", () => {
     playerFlipped = !playerFlipped;
@@ -991,7 +1087,123 @@ function initFlipButtons() {
   });
 }
 
+function setupMultiplayer() {
+  if (typeof io === "undefined") {
+    return;
+  }
+
+  socket = io();
+
+  socket.on("connect", () => {
+    multiplayerPlayerSocketId = socket.id;
+  });
+
+  window.createRoom = function () {
+    socket.emit("createRoom");
+  };
+
+  window.joinRoom = function () {
+    const input = document.getElementById("roomInput");
+    const code = input ? input.value.trim() : "";
+
+    if (!code) {
+      alert("Enter a room code.");
+      return;
+    }
+
+    socket.emit("joinRoom", code);
+  };
+
+  socket.on("roomCreated", (data) => {
+    multiplayerRoomCode = data.roomCode;
+    multiplayerPlayerNumber = data.playerNumber;
+    isMultiplayer = true;
+
+    alert("Sala creada: " + multiplayerRoomCode);
+
+    lastTurnSummaryLines = [`Room created: ${multiplayerRoomCode}. Waiting for opponent...`];
+    document.getElementById("turnSummaryBox").textContent = lastTurnSummaryLines.join("\n");
+  });
+
+  socket.on("roomJoined", (data) => {
+    multiplayerRoomCode = data.roomCode;
+    multiplayerPlayerNumber = data.playerNumber;
+    isMultiplayer = true;
+
+    alert("Joined room: " + multiplayerRoomCode);
+
+    lastTurnSummaryLines = [`Joined room: ${multiplayerRoomCode}. Choose your fighter and press Start Battle.`];
+    document.getElementById("turnSummaryBox").textContent = lastTurnSummaryLines.join("\n");
+  });
+
+  socket.on("playersReady", () => {
+    isMultiplayer = true;
+    lastTurnSummaryLines = ["Both players connected. Choose your fighter and press Start Battle."];
+    document.getElementById("turnSummaryBox").textContent = lastTurnSummaryLines.join("\n");
+  });
+
+  socket.on("fighterSelected", () => {
+    lastTurnSummaryLines = ["A fighter has been selected. Waiting for both players..."];
+    document.getElementById("turnSummaryBox").textContent = lastTurnSummaryLines.join("\n");
+  });
+
+  socket.on("battleStarted", (data) => {
+    currentBattle = data.battle;
+
+    multiplayerPlayer1SocketId = data.player1;
+    multiplayerPlayer2SocketId = data.player2;
+
+    if (multiplayerPlayerSocketId === data.player1) {
+      playerId = data.fighter1;
+      enemyId = data.fighter2;
+    } else {
+      playerId = data.fighter2;
+      enemyId = data.fighter1;
+    }
+
+    playerFlipped = false;
+    enemyFlipped = true;
+
+    loadFighterImage(document.getElementById("playerImage"), playerId);
+    loadFighterImage(document.getElementById("enemyImage"), enemyId);
+    applyFlipStates();
+
+    lastPlayerAction = "-";
+    lastEnemyAction = "-";
+    lastTurnOutcome = "-";
+    lastTurnSummaryLines = ["Multiplayer battle started. Choose your action."];
+
+    isWaitingForOpponentAction = false;
+    isAnimatingTurn = false;
+    summaryAnimationToken += 1;
+
+    renderBattle();
+  });
+
+  socket.on("waitingForOpponentAction", () => {
+    isWaitingForOpponentAction = true;
+    updateActionButtons();
+  });
+
+  socket.on("turnResolved", async (data) => {
+    await resolveMultiplayerTurnFromServer(data);
+  });
+
+  socket.on("opponentDisconnected", () => {
+    alert("Opponent disconnected.");
+    isWaitingForOpponentAction = false;
+    isAnimatingTurn = false;
+    updateActionButtons();
+  });
+
+  socket.on("errorMessage", (msg) => {
+    alert(msg);
+  });
+}
+
 function init() {
+  setupMultiplayer();
+
   document.getElementById("startBattleBtn").addEventListener("click", startBattle);
 
   document.querySelectorAll(".action-btn").forEach((btn) => {

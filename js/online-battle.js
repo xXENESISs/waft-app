@@ -30,8 +30,8 @@ let multiplayerPlayer2SocketId = null;
 let isMultiplayer = false;
 let isWaitingForOpponentAction = false;
 
-const TYPEWRITER_CHAR_DELAY = 18;
-const TYPEWRITER_LINE_PAUSE = 450;
+const TYPEWRITER_CHAR_DELAY = 8;
+const TYPEWRITER_LINE_PAUSE = 180;
 
 const ACTION_POOL = ["normal", "quick", "precise", "explosive", "concentration", "special"];
 
@@ -1216,6 +1216,8 @@ function init() {
 
   initFlipButtons();
   updateStaticActionButtons();
+  
 }
 
 init();
+
