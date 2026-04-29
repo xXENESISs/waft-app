@@ -678,6 +678,10 @@ function buildTurnSummary(newLines) {
       line.includes("has expired") ||
       line.includes("Special Attack is ready") ||
       line.includes("has been defeated") ||
+      line.includes("tries to hit") ||
+      line.includes("Overinflation") ||
+      line.includes("takes 25 damage") ||
+      line.includes("spines") ||
       line.includes("Illusory Dance") ||
       line.includes("Hail begins") ||
       line.includes("cannot use") ||
@@ -700,7 +704,6 @@ function buildTurnSummary(newLines) {
       line.includes("Refresh") ||
       line.includes("Mutilation") ||
       line.includes("Neurotoxic Injection (Tetrodotoxin)") ||
-      line.includes("Overinflation") ||
       line.includes("Tetrodotoxin") ||
       line.includes("explodes");
 

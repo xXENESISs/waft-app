@@ -1170,26 +1170,36 @@ export function performAttack(attacker, defender, actionType, battle) {
     };
   }
 
-  if (defender.overinflationActive) {
-    addLog(
-      battle,
-      `${defender.name}'s Overinflation blocks the attack completely.`
-    );
+if (defender.overinflationActive) {
+  addLog(
+    battle,
+    `${attacker.name} tries to hit ${defender.name} with ${action.name}, but ${defender.name}'s Overinflation blocks the attack completely.`
+  );
 
-    addEffect(attacker, createTetrodotoxinEffect(2), battle);
+  const overinflationDamage = 25;
+  applyDamage(attacker, overinflationDamage);
 
-    addLog(
-      battle,
-      `${attacker.name} is poisoned by Tetrodotoxin: −25% Precision, Evasion and Speed next turn.`
-    );
+  addLog(
+    battle,
+    `${attacker.name} takes ${overinflationDamage} damage from ${defender.name}'s Overinflation.`
+  );
 
-    return {
-      hit: true,
-      damage: 0,
-      critical: false,
-      hitChance
-    };
-  }
+  addEffect(attacker, createTetrodotoxinEffect(2), battle);
+
+  addLog(
+    battle,
+    `${attacker.name} is poisoned by Tetrodotoxin: −25% Precision, Evasion and Speed next turn.`
+  );
+
+  finishBattleIfNeeded(battle);
+
+  return {
+    hit: true,
+    damage: 0,
+    critical: false,
+    hitChance
+  };
+}
 
   let defenseFactor = 1;
 
@@ -1266,10 +1276,19 @@ export function performAttack(attacker, defender, actionType, battle) {
 
   applyDamage(defender, finalDamage);
 
+addLog(
+  battle,
+  `${attacker.name} hits ${defender.name} with ${action.name} for ${finalDamage} damage${critical ? " (CRITICAL)" : ""}.`
+);
+
+if (defender.id === "pufferfish" && attacker.alive) {
+  applyDamage(attacker, 10);
+
   addLog(
     battle,
-    `${attacker.name} hits ${defender.name} with ${action.name} for ${finalDamage} damage${critical ? " (CRITICAL)" : ""}.`
+    `${attacker.name} suffers 10 damage from ${defender.name}'s spines.`
   );
+}
 
   if (critical) {
     addLog(
@@ -1971,13 +1990,16 @@ function performPufferfishSpecial(attacker, defender, battle) {
     return;
   }
 
-  attacker.overinflationActive = true;
-  attacker.overinflationUsedLastTurn = true;
+ attacker.overinflationActive = true;
+attacker.overinflationUsedLastTurn = true;
 
-  addLog(
-    battle,
-    `${attacker.name} uses Overinflation and becomes immune to damage this turn. Uses left: ${attacker.overinflationUses}.`
-  );
+const chipDamage = 25;
+applyDamage(defender, chipDamage);
+
+addLog(
+  battle,
+  `${attacker.name} uses Overinflation and becomes immune to damage this turn. Uses left: ${attacker.overinflationUses}.`
+);
 }
 
 function performSpecialAction(attacker, defender, battle) {

@@ -566,17 +566,17 @@ export const animals = {
   },
 
   passive: {
-    id: "residual-neurotoxin",
-    name: "Residual Neurotoxin",
-    description:
-      "When using Concentration, if the opponent attacks that turn, the opponent suffers −10% Speed, Technique and Agility on its next turn."
-  },
+  id: "residual-neurotoxin",
+  name: "Residual Neurotoxin",
+  description:
+    "When using Concentration, if the opponent attacks that turn, the opponent suffers −10% Speed, Technique and Agility on its next turn. Additionally, any direct attack against Pufferfish causes the attacker to suffer 10 fixed damage from its spines."
+},
 
   special: {
     id: "overinflation",
     name: "Overinflation",
     description:
-      "Becomes immune to damage for 1 turn. If hit, applies Tetrodotoxin: −25% Precision, Agility and Speed on the opponent's next turn. If used twice in a row, explodes for 100 damage and is left at 1 HP.",
+      "Becomes immune to damage for 1 turn. If hit, it takes 25pts dammage and applies Tetrodotoxin: −25% Precision, Agility and Speed on the opponent's next turn. If used twice in a row, explodes for 100 damage and is left at 1 HP.",
     chargeType: "uses",
     maxUses: 4,
     chargeHits: 4
