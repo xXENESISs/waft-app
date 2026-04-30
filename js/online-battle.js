@@ -285,8 +285,58 @@ function getExtraResourceText(fighter) {
   return "";
 }
 
+function formatPreviewTooltip(fighterId) {
+  const animal = animals[fighterId];
+  if (!animal) return "";
+
+  const passiveText = animal.passive
+    ? `${animal.passive.name}\n${animal.passive.description}`
+    : "None";
+
+  const specialText = animal.special
+    ? `${animal.special.name}\n${animal.special.description}`
+    : "None";
+
+  return `
+    <h3>${animal.name}</h3>
+
+    <div class="tooltip-section">
+      <div class="tooltip-label">Passive</div>
+      <div class="tooltip-text">${passiveText}</div>
+    </div>
+
+    <div class="tooltip-section">
+      <div class="tooltip-label">Special</div>
+      <div class="tooltip-text">${specialText}</div>
+    </div>
+
+    <div class="tooltip-section">
+      <div class="tooltip-label">Stats</div>
+      <div class="tooltip-text">Life: ${animal.stats.life}
+Attack: ${animal.stats.attack}
+Defense: ${animal.stats.defense}
+Resistance: ${animal.stats.resistance}
+Technique: ${animal.stats.technique}
+Speed: ${animal.stats.speed}
+Agility: ${animal.stats.agility}
+Explosiveness: ${animal.stats.explosiveness}</div>
+    </div>
+
+    <div class="tooltip-section">
+      <div class="tooltip-label">Biomes</div>
+      <div class="tooltip-text">Favorable: ${animal.biomes?.favorable?.join(", ") || "none"}
+Neutral: ${animal.biomes?.neutral?.join(", ") || "none"}
+Unfavorable: ${animal.biomes?.unfavorable?.join(", ") || "none"}</div>
+    </div>
+  `;
+}
+
 function formatTooltip(fighter) {
-  if (!fighter || !currentBattle) return "";
+  if (!fighter) return "";
+
+  if (!currentBattle) {
+    return formatPreviewTooltip(fighter.id);
+  }
 
   const animal = animals[fighter.id];
 
@@ -982,6 +1032,103 @@ function startBattle() {
   renderBattle();
 }
 
+function renderFighterPreview(prefix, fighterId) {
+  const animal = animals[fighterId];
+  if (!animal) return;
+
+  document.getElementById(`${prefix}Name`).textContent = animal.name;
+
+  const maxHp = animal.stats.life * 10;
+  const maxStamina = animal.stats.resistance * 4;
+  const specialMax = animal.special?.chargeHits ?? 0;
+
+  document.getElementById(`${prefix}HpText`).textContent = `${maxHp}/${maxHp} (100%)`;
+  document.getElementById(`${prefix}HpBar`).style.width = "100%";
+
+  document.getElementById(`${prefix}StaminaText`).textContent = `${maxStamina}/${maxStamina} (100%)`;
+  document.getElementById(`${prefix}StaminaBar`).style.width = "100%";
+
+  document.getElementById(`${prefix}SpecialText`).textContent = `0/${specialMax}`;
+  document.getElementById(`${prefix}SpecialBar`).style.width = "0%";
+
+  loadFighterImage(document.getElementById(`${prefix}Image`), fighterId);
+
+  const effectsEl = document.getElementById(`${prefix}Effects`);
+  effectsEl.innerHTML = "";
+
+  const favorable = animal.biomes?.favorable?.join(", ") || "None";
+  const neutral = animal.biomes?.neutral?.join(", ") || "None";
+  const unfavorable = animal.biomes?.unfavorable?.join(", ") || "None";
+
+  const biomePill = document.createElement("div");
+  biomePill.className = "status-pill";
+  biomePill.textContent = `Fav: ${favorable} | Neu: ${neutral} | Weak: ${unfavorable}`;
+  effectsEl.appendChild(biomePill);
+
+  const tooltipEl = document.getElementById(`${prefix}Tooltip`);
+  if (tooltipEl) {
+    tooltipEl.innerHTML = formatPreviewTooltip(fighterId);
+  }
+}
+
+function renderSelectionPreview() {
+  if (currentBattle) return;
+
+  const playerSelect = document.getElementById("playerFighter");
+  const enemySelect = document.getElementById("enemyFighter");
+
+  playerId = playerSelect.value;
+  enemyId = enemySelect.value;
+
+  renderFighterPreview("player", playerId);
+  renderFighterPreview("enemy", enemyId);
+
+  playerFlipped = false;
+  enemyFlipped = true;
+  applyFlipStates();
+
+  const playerAnimal = animals[playerId];
+  const enemyAnimal = animals[enemyId];
+
+  lastPlayerAction = "-";
+  lastEnemyAction = "-";
+  lastTurnOutcome = "Waiting";
+
+  document.getElementById("turnValue").textContent = "-";
+  document.getElementById("biomeValue").textContent = "-";
+  document.getElementById("biomeStatValue").textContent = "-";
+  document.getElementById("playerBiomeRelationValue").textContent = "-";
+  document.getElementById("enemyBiomeRelationValue").textContent = "-";
+  document.getElementById("playerActionValue").textContent = "-";
+  document.getElementById("enemyActionValue").textContent = "-";
+  document.getElementById("resultValue").textContent = "Waiting";
+
+  lastTurnSummaryLines = [
+    "PRE-BATTLE INFO",
+    "",
+    `${playerAnimal.name}`,
+    `Life: ${playerAnimal.stats.life} | Attack: ${playerAnimal.stats.attack} | Defense: ${playerAnimal.stats.defense} | Resistance: ${playerAnimal.stats.resistance}`,
+    `Technique: ${playerAnimal.stats.technique} | Speed: ${playerAnimal.stats.speed} | Agility: ${playerAnimal.stats.agility} | Explosiveness: ${playerAnimal.stats.explosiveness}`,
+    `Passive: ${playerAnimal.passive?.name ?? "None"} — ${playerAnimal.passive?.description ?? "No passive."}`,
+    `Special: ${playerAnimal.special?.name ?? "None"} — ${playerAnimal.special?.description ?? "No special."}`,
+    `Biomes: favorable ${playerAnimal.biomes?.favorable?.join(", ") || "none"} | neutral ${playerAnimal.biomes?.neutral?.join(", ") || "none"} | unfavorable ${playerAnimal.biomes?.unfavorable?.join(", ") || "none"}`,
+    "",
+    `${enemyAnimal.name}`,
+    `Life: ${enemyAnimal.stats.life} | Attack: ${enemyAnimal.stats.attack} | Defense: ${enemyAnimal.stats.defense} | Resistance: ${enemyAnimal.stats.resistance}`,
+    `Technique: ${enemyAnimal.stats.technique} | Speed: ${enemyAnimal.stats.speed} | Agility: ${enemyAnimal.stats.agility} | Explosiveness: ${enemyAnimal.stats.explosiveness}`,
+    `Passive: ${enemyAnimal.passive?.name ?? "None"} — ${enemyAnimal.passive?.description ?? "No passive."}`,
+    `Special: ${enemyAnimal.special?.name ?? "None"} — ${enemyAnimal.special?.description ?? "No special."}`,
+    `Biomes: favorable ${enemyAnimal.biomes?.favorable?.join(", ") || "none"} | neutral ${enemyAnimal.biomes?.neutral?.join(", ") || "none"} | unfavorable ${enemyAnimal.biomes?.unfavorable?.join(", ") || "none"}`
+  ];
+
+  updateSpecialButton({
+    special: playerAnimal.special,
+    specialCharge: 0
+  });
+
+  renderSummary();
+}
+
 async function resolveLocalTurn(playerAction) {
   if (!currentBattle || currentBattle.finished || isAnimatingTurn) return;
 
@@ -1222,8 +1369,11 @@ function init() {
 
   initFlipButtons();
   updateStaticActionButtons();
-  
 }
 
-init();
+document.getElementById("playerFighter").addEventListener("change", renderSelectionPreview);
+document.getElementById("enemyFighter").addEventListener("change", renderSelectionPreview);
 
+renderSelectionPreview();
+
+init();
