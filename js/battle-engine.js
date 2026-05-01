@@ -704,9 +704,12 @@ export function getEffectiveStat(fighter, stat, battle, opponent = null, actionT
     }
   }
 
-  if (stat === "defense" && fighter.concentrationActive) {
-    value *= 1.1;
-  }
+  if (
+  fighter.concentrationActive &&
+  (stat === "defense" || stat === "agility")
+) {
+  value *= 1.1;
+}
 
   if (stat === "speed" && fighter.special?.id === "arctic-storm") {
     if (
@@ -1012,12 +1015,14 @@ function applyIllusoryDanceDefense(defender, damage, battle) {
 function handleInvertedInertia(attacker, defender, battle) {
   if (defender.passive?.id !== "inverted-inertia") return;
 
-  const counterDamage = Math.max(1, Math.round(attacker.stats.attack * 0.25));
-  applyDamage(attacker, counterDamage);
+  const attackerAttack = getEffectiveStat(attacker, "attack", battle, defender, "passive");
+const counterDamage = Math.round(attackerAttack *0.5);
+
+  applyDamage (attacker, counterDamage); 
 
   addLog(
     battle,
-    `${defender.name}'s Inverted Inertia counterattacks for ${counterDamage} damage.`
+    `${defender.name}'s Inverted Inertia counters with 50% of ${attacker.name}'s Attack, dealing ${counterDamage} damage.`
   );
 }
 
@@ -1056,7 +1061,7 @@ export function resolveConcentration(fighter, battle) {
 
   addLog(
     battle,
-    `${fighter.name} uses Concentration, gains +10% Defense for the turn, restores 20 Life and 20 Stamina.`
+    `${fighter.name} uses Concentration, gains +10% Defense and Agility for the turn, restores 20 Life and 20 Stamina.`
   );
 }
 

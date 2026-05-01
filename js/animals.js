@@ -103,16 +103,16 @@ export const animals = {
       id: "inverted-inertia",
       name: "Inverted Inertia",
       description:
-        "When the user dodges an attack, it automatically counterattacks for 25% of the attacker's Attack. This counter cannot crit, cannot apply effects and costs no stamina."
+        "When the user dodges an attack, it automatically counterattacks for 50% of the attacker's Attack. This counter cannot crit, cannot apply effects and costs no stamina."
     },
 
     special: {
       id: "illusory-dance",
       name: "Illusory Dance",
       description:
-        "Reduces received damage by 50% this turn (minimum 20% damage taken). If the opponent misses or uses Concentration, the user's next attack is guaranteed and gains +50% damage.",
+        "Reduces received damage by 50% this turn. If the opponent misses or uses Concentration, the user's next attack is guaranteed and gains +50% damage.",
       chargeType: "reactive",
-      chargeHits: 3
+      chargeHits: 4
     }
   },
 
