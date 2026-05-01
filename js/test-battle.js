@@ -54,7 +54,7 @@ const ACTION_INFO = {
   },
   concentration: {
     title: "Concentration",
-    desc: "Restores 20 Life and 20 Stamina, and grants +10% Defense for the turn. Cost 0"
+    desc: "Restores 20 Life and 20 Stamina, and grants +10% Defense and Agility for the turn. Cost 0"
   }
 };
 
