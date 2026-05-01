@@ -582,4 +582,44 @@ export const animals = {
     chargeHits: 4
   }
 },
+
+"eurasian-eagle-owl": {
+  id: "eurasian-eagle-owl",
+  name: "Eurasian Eagle-Owl",
+  scientificName: "Bubo bubo",
+  category: "birds",
+
+  stats: {
+    life: 92,
+    attack: 78,
+    defense: 80,
+    resistance: 74,
+    speed: 57,
+    agility: 70,
+    technique: 70,
+    explosiveness: 79
+  },
+
+  biomes: {
+    favorable: ["mountain", "desert"],
+    neutral: ["forest", "marine"],
+    unfavorable: ["jungle", "arctic"]
+  },
+
+  passive: {
+    id: "circadian-cycle",
+    name: "Circadian Cycle",
+    description:
+      "Automatically alternates between Day and Night. Day: −50% Attack, +50% Defense, −25% Technique and Agility, and cannot use Special or Concentration. Night: +50% Attack, +25% Technique and +25% Agility."
+  },
+
+  special: {
+    id: "nocturnal-hunt",
+    name: "Nocturnal Hunt",
+    description:
+      "Only usable at Night. Attacks with all Night bonuses and heals HP equal to the damage dealt.",
+    chargeType: "defensive",
+    chargeHits: 4
+  }
+},
 }

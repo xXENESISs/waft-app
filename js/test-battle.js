@@ -128,7 +128,8 @@ function getImageCandidates(id, animal) {
     iguana: ["./images/animals/reptiles/green-iguana.png"],
     "japanese-fire-bellied-newt": ["./images/animals/amphibians/japanese-fire-bellied-newt.png"],
     "honey-badger": ["./images/animals/mammals/honey-badger.png"],
-    pufferfish: ["./images/animals/fish/pufferfish.png"]
+    pufferfish: ["./images/animals/fish/pufferfish.png"],
+    "eurasian-eagle-owl": ["./images/animals/birds/eurasian-eagle-owl.png"],
   };
 
   return [direct, ...(legacy[id] ?? [])];
@@ -230,8 +231,30 @@ function getBattlefieldDurationLines(battle, fighter) {
   return lines.join("\n");
 }
 
+function getCircadianPhaseText(battle) {
+  if (!battle) return "";
+
+  const phaseIndex = Math.floor((battle.turn - 1) / 2) % 2;
+  const turnInsidePhase = ((battle.turn - 1) % 2) + 1;
+  const turnsLeft = 2 - turnInsidePhase;
+
+  if (phaseIndex === 0) {
+    return "☀️ Day — Dawn holds the battlefield. " +
+      turnsLeft + " turn" + (turnsLeft === 1 ? "" : "s") +
+      " until sunset.";
+  }
+
+  return "🌙 Night — The sun has fallen. " +
+    turnsLeft + " turn" + (turnsLeft === 1 ? "" : "s") +
+    " until sunrise.";
+}
+
 function getExtraResourceText(fighter) {
   if (!fighter) return "";
+
+  if (fighter.passive && fighter.passive.id === "circadian-cycle") {
+  return getCircadianPhaseText(currentBattle);
+}
 
   if (fighter.passive && fighter.passive.id === "persistent-harassment") {
     return "Loot: " + fighter.macaqueLoot + "\nChain: " + fighter.macaqueHitChain;

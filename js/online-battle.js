@@ -128,7 +128,8 @@ function getImageCandidates(id, animal) {
     iguana: ["./images/animals/reptiles/green-iguana.png"],
     "japanese-fire-bellied-newt": ["./images/animals/amphibians/japanese-fire-bellied-newt.png"],
     "honey-badger": ["./images/animals/mammals/honey-badger.png"],
-    pufferfish: ["./images/animals/fish/pufferfish.png"]
+    pufferfish: ["./images/animals/fish/pufferfish.png"],
+    "eurasian-eagle-owl": ["./images/animals/birds/eurasian-eagle-owl.png"],
   };
 
   return [direct, ...(legacy[id] ?? [])];

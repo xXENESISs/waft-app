@@ -285,6 +285,14 @@ function getPassiveBonuses(attacker, defender, battle, actionType) {
   return bonuses;
 }
 
+function isCircadianDay(battle) {
+  return Math.floor((battle.turn - 1) / 2) % 2 === 0;
+}
+
+function isCircadianNight(battle) {
+  return Math.floor((battle.turn - 1) / 2) % 2 === 1;
+}
+
 function battleHasEffect(battle, effectId) {
   return battle.battleEffects.some((effect) => effect.id === effectId);
 }
@@ -662,6 +670,21 @@ function createTetrodotoxinEffect(duration = 2) {
 export function getEffectiveStat(fighter, stat, battle, opponent = null, actionType = null) {
   let value = fighter.stats[stat];
 
+  if (fighter.passive?.id === "circadian-cycle") {
+  if (isCircadianDay(battle)) {
+    if (stat === "attack") value *= 0.5;
+    if (stat === "defense") value *= 1.5;
+    if (stat === "technique") value *= 0.75;
+    if (stat === "agility") value *= 0.75;
+  }
+
+  if (isCircadianNight(battle)) {
+    if (stat === "attack") value *= 1.5;
+    if (stat === "agility") value *= 1.25;
+    if (stat === "technique") value *= 1.25;
+  }
+}
+
   if (
     battle &&
     stat === battle.biomeStat &&
@@ -898,6 +921,7 @@ export function canUseAction(fighter, actionType, battle = null) {
   }
 
   if (actionType === "concentration") {
+    if (fighter.passive?.id === "circadian-cycle" && battle && isCircadianDay(battle)) return false;
     if (fighter.concentratedLastTurn) return false;
     if (!canConcentrateUnderEffects(fighter)) return false;
     if (fighter.parasiticControlActive || fighter.nervousDisruptionActive) return false;
@@ -905,6 +929,14 @@ export function canUseAction(fighter, actionType, battle = null) {
 
   if (actionType === "special") {
     if (!fighter.special) return false;
+
+    if (
+  fighter.special.id === "nocturnal-hunt" &&
+  battle &&
+  !isCircadianNight(battle)
+) {
+  return false;
+}
 
     if (fighter.special.id === "overinflation") {
       return fighter.overinflationUses > 0;
@@ -1153,7 +1185,10 @@ export function performAttack(attacker, defender, actionType, battle) {
     hitChance = Math.min(hitChance, 25);
   }
 
-  const hit = nextAttackBuff.guaranteedHit ? true : rollHit(hitChance);
+  const circadianNightGuaranteedHit =
+  attacker.passive?.id === "circadian-cycle" && isCircadianNight(battle);
+
+const hit = nextAttackBuff.guaranteedHit ? true : rollHit(hitChance);
 
   if (!hit) {
     addLog(
@@ -1965,6 +2000,44 @@ function performFireSalamanderSpecial(attacker, defender, battle) {
   consumeSpecialCharge(attacker);
 }
 
+function performEurasianEagleOwlSpecial(attacker, defender, battle) {
+  attacker.concentratedLastTurn = false;
+  attacker.overinflationUsedThisTurn = false;
+
+  if (!isCircadianNight(battle)) {
+    addLog(
+      battle,
+      attacker.name + " cannot use Nocturnal Hunt during Day."
+    );
+    return;
+  }
+
+  const damageInfo = calculateDamageWithDefenseFactor(
+    attacker,
+    defender,
+    battle,
+    1,
+    "special"
+  );
+
+  const damage = damageInfo.damage;
+
+  applyDamage(defender, damage);
+  restoreHp(attacker, damage);
+
+  addLog(
+    battle,
+    attacker.name + " uses Nocturnal Hunt, dealing " + damage + " unavoidable damage and healing " + damage + " HP."
+  );
+
+  addLog(
+    battle,
+    "Nocturnal Hunt calc → Attack: " + damageInfo.attackValue + " | Defense: " + damageInfo.defenseValue + " | Multiplier: " + damageInfo.multiplier + "%."
+  );
+
+  consumeSpecialCharge(attacker);
+}
+
 function performPufferfishSpecial(attacker, defender, battle) {
   attacker.concentratedLastTurn = false;
   attacker.overinflationUsedThisTurn = true;
@@ -2055,6 +2128,9 @@ function performSpecialAction(attacker, defender, battle) {
       break;
     case "overinflation":
       performPufferfishSpecial(attacker, defender, battle);
+      break;
+    case "nocturnal-hunt":
+      performEurasianEagleOwlSpecial(attacker, defender, battle);
       break;
     default:
       addLog(battle, `${attacker.name} has no implemented special logic yet.`);
