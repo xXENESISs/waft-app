@@ -233,45 +233,6 @@ export const animals = {
     }
   },
 
-  "matamata": {
-    id: "matamata",
-    name: "Tortuga mata-mata",
-    category: "reptiles",
-
-    stats: {
-      life: 90,
-      attack: 71,
-      defense: 100,
-      resistance: 92,
-      technique: 76,
-      speed: 44,
-      agility: 48,
-      explosiveness: 79
-    },
-
-    biomes: {
-      favorable: ["jungle", "marine"],
-      neutral: ["forest", "mountain"],
-      unfavorable: ["desert", "arctic"]
-    },
-
-    passive: {
-      id: "ancestral-shell",
-      name: "Caparazón ancestral",
-      description:
-        "When using Concentration, doubles Defense for that turn."
-    },
-
-    special: {
-      id: "suction-ambush",
-      name: "Acecho succionador",
-      description:
-        "Ignores enemy defense. On hit, applies Bite.",
-      chargeType: "defensive",
-      chargeHits: 4
-    }
-  },
-
   "axolotl": {
     id: "axolotl",
     name: "Axolotl",

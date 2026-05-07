@@ -1091,13 +1091,6 @@ export function resolveConcentration(fighter, battle) {
     fighter.residualNeurotoxinActive = true;
   }
 
-  if (fighter.passive?.id === "ancestral-shell") {
-    addLog(
-      battle,
-      `${fighter.name}'s Caparazón ancestral activates: Defense is doubled for this turn.`
-    );
-  }
-
   addLog(
     battle,
     `${fighter.name} uses Concentration, gains +10% Defense and Agility for the turn, restores 20 Life and 20 Stamina.`
@@ -1247,14 +1240,6 @@ if (defender.overinflationActive) {
     hitChance
   };
 }
-
-  if (
-    fighter.passive?.id === "ancestral-shell" &&
-    fighter.concentratedLastTurn &&
-    stat === "defense"
-  ) {
-    value *= 2;
-  }
 
   let defenseFactor = 1;
 
@@ -1720,54 +1705,6 @@ function performCaimanSpecial(attacker, defender, battle) {
   consumeSpecialCharge(attacker);
 }
 
-function performMatamataSpecial(attacker, defender, battle) {
-  attacker.concentratedLastTurn = false;
-  attacker.overinflationUsedThisTurn = false;
-
-  const precision = getEffectiveStat(attacker, "technique", battle, defender, "special");
-  const evasion = calculateEvasion(defender, battle);
-  const hitChance = calculateHitChanceFromValues(precision, evasion);
-  const hit = rollHit(hitChance);
-
-  if (!hit) {
-    addLog(
-      battle,
-      `${attacker.name} uses Acecho succionador but misses ${defender.name}.`
-    );
-    consumeSpecialCharge(attacker);
-    resetMomentum(attacker, battle, "miss");
-    resetParasiticControlHits(attacker, battle, "miss");
-    resetFalconStacks(attacker, battle, "miss");
-    resetMacaqueChain(attacker, battle, "miss");
-    handleReactiveChargeOnMiss(attacker, defender, battle);
-    return;
-  }
-
-  const damageInfo = calculateDamageWithDefenseFactor(
-    attacker,
-    defender,
-    battle,
-    0,
-    "special"
-  );
-
-  let damage = damageInfo.damage;
-  damage = applyIllusoryDanceDefense(defender, damage, battle);
-  applyDamage(defender, damage);
-
-  addEffect(defender, createBiteEffect(5, 20, 0.5), battle);
-  addLog(
-    battle,
-    `${attacker.name} uses Acecho succionador, dealing ${damage} damage while ignoring defense and applying Bite.`
-  );
-  addLog(
-    battle,
-    `Damage calc → Attack: ${damageInfo.attackValue} | Defense: ${damageInfo.defenseValue} (ignored) | Multiplier: ${damageInfo.multiplier}%.`
-  );
-
-  consumeSpecialCharge(attacker);
-}
-
 function performAxolotlSpecial(attacker, battle) {
   attacker.concentratedLastTurn = false;
   attacker.overinflationUsedThisTurn = false;
@@ -2167,9 +2104,6 @@ function performSpecialAction(attacker, defender, battle) {
       break;
     case "death-roll":
       performCaimanSpecial(attacker, defender, battle);
-      break;
-    case "suction-ambush":
-      performMatamataSpecial(attacker, defender, battle);
       break;
     case "total-regeneration":
       performAxolotlSpecial(attacker, battle);
