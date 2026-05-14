@@ -610,7 +610,7 @@ export const animals = {
     id: "circadian-cycle",
     name: "Circadian Cycle",
     description:
-      "Automatically alternates between Day and Night. Day: −50% Attack, +50% Defense, −25% Technique and Agility, and cannot use Special or Concentration. Night: +50% Attack, +25% Technique and +25% Agility."
+      "Automatically alternates between Day and Night. Day: −50% Attack, +50% Defense, −25% Technique and Agility, and cannot use Special. Night: +50% Attack, +25% Technique and +25% Agility."
   },
 
   special: {
@@ -622,4 +622,44 @@ export const animals = {
     chargeHits: 4
   }
 },
+
+"matamata": {
+    id: "matamata",
+    name: "Matamata Turtle",
+    scientificName: "Chelus fimbriata",
+    category: "reptiles",
+
+    stats: {
+      life: 90,
+      attack: 71,
+      defense: 100,
+      resistance: 92,
+      technique: 76,
+      speed: 44,
+      agility: 48,
+      explosiveness: 79
+    },
+
+    biomes: {
+      favorable: ["jungle", "marine"],
+      neutral: ["forest", "mountain"],
+      unfavorable: ["desert", "arctic"]
+    },
+
+    passive: {
+      id: "immobile-stalk",
+      name: "Immobile Stalk",
+      description:
+        "Each time the opponent uses Concentration, Matamata gains 1 stalk charge. At 3 charges, starting on the next turn, its next attack cannot miss, deals double damage, and absorbs 20 stamina from the opponent."
+    },
+
+    special: {
+      id: "ancestral-retreat",
+      name: "Ancestral Retreat",
+      description:
+        "Withdraws into its shell, restores 60 HP and 30 stamina. During that turn, the next direct damage received is reduced by 50%, and 25% of the original incoming damage is reflected back to the attacker.",
+      chargeType: "defensive",
+      chargeHits: 4
+    }
+  },
 }

@@ -305,6 +305,19 @@ function getExtraResourceText(fighter) {
     );
   }
 
+  if (fighter.passive && fighter.passive.id === "immobile-stalk") {
+    var charges = fighter.matamataStalkCharges || 0;
+    var ready = fighter.matamataAmbushReady ? "YES" : "NO";
+
+    return (
+      "Immobile Stalk: " +
+      charges +
+      "/3" +
+      "\nAmbush ready: " +
+      ready
+    );
+  }
+
   return "";
 }
 
@@ -694,6 +707,7 @@ function buildTurnSummary(newLines) {
       line.match(/^(.+?) uses Looting Burst\b/) ||
       line.match(/^(.+?) uses Refresh\b/) ||
       line.match(/^(.+?) uses Mutilation\b/) ||
+      line.match(/^(.+?) uses Ancestral Retreat\b/) ||
       line.match(/^(.+?) uses Neurotoxic Injection \(Tetrodotoxin\)\b/) ||
       line.match(/^(.+?) uses Overinflation\b/) ||
       line.match(/^(.+?) explodes\b/);
@@ -778,7 +792,10 @@ function buildTurnSummary(newLines) {
       line.includes("Mutilation") ||
       line.includes("Neurotoxic Injection (Tetrodotoxin)") ||
       line.includes("Tetrodotoxin") ||
-      line.includes("explodes");
+      line.includes("explodes") ||
+      line.includes("Immobile Stalk") ||
+      line.includes("Ancestral Retreat") ||
+      line.includes("reflects");
 
     if (important) {
       summary.push(line);
@@ -804,11 +821,13 @@ function deriveTurnOutcome(summaryLines) {
   if (joined.includes("Nervous Disruption")) return "Special Triggered";
   if (joined.includes("Total Regeneration")) return "Special Triggered";
   if (joined.includes("Death Roll")) return "Special Triggered";
+  if (joined.includes("Ancestral Retreat")) return "Special Triggered";
   if (joined.includes("Dung Throw")) return "Special Triggered";
   if (joined.includes("Ballistic Strike")) return "Special Triggered";
   if (joined.includes("Illusory Dance")) return "Special Triggered";
   if (joined.includes("Arctic Storm")) return "Special Triggered";
   if (joined.includes("Lethal Bite")) return "Special Triggered";
+  if (joined.includes("Inmobile Stalk")) return "Passive Triggered";
   if (joined.includes("misses")) return "Miss";
   if (joined.includes("Battle effect activated")) return "Battlefield Changed";
   if (joined.includes("restores 20 Life and 20 Stamina")) return "Concentration";

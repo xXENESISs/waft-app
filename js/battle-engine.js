@@ -132,7 +132,12 @@ export function createFighter(id) {
       quick: false,
       precise: false,
       explosive: false
-    }
+    },
+
+    matamataStalkCharges: 0,
+    matamataAmbushReady: false,
+    matamataAmbushReadyTurn: null,
+    ancestralRetreatActive: false
   };
 }
 
@@ -906,6 +911,98 @@ export function spendStamina(fighter, amount, battle = null) {
   if (battle) updateFatigueState(fighter, battle);
 }
 
+function hasMatamataAmbushReady(attacker, battle = null) {
+  if (
+    !attacker ||
+    !attacker.passive ||
+    attacker.passive.id !== "immobile-stalk" ||
+    !attacker.matamataAmbushReady
+  ) {
+    return false;
+  }
+
+  if (!battle) {
+    return true;
+  }
+
+  if (attacker.matamataAmbushReadyTurn === null) {
+    return true;
+  }
+
+  return battle.turn >= attacker.matamataAmbushReadyTurn;
+}
+
+function applyMatamataAmbushBonus(attacker, defender, damage, battle) {
+  if (!hasMatamataAmbushReady(attacker, battle)) {
+    return damage;
+  }
+
+  const boostedDamage = Math.max(1, Math.round(damage * 2));
+  const stolenStamina = Math.min(20, defender.stamina);
+
+  if (stolenStamina > 0) {
+    spendStamina(defender, stolenStamina, battle);
+    restoreStamina(attacker, stolenStamina, battle);
+  }
+
+  attacker.matamataStalkCharges = 0;
+  attacker.matamataAmbushReady = false;
+  attacker.matamataAmbushReadyTurn = null;
+
+  addLog(
+    battle,
+    attacker.name +
+      "'s Immobile Stalk triggers: the attack cannot miss, deals double damage, and absorbs " +
+      stolenStamina +
+      " stamina from " +
+      defender.name +
+      "."
+  );
+
+  return boostedDamage;
+}
+
+function applyAncestralRetreatDefense(defender, attacker, damage, battle) {
+  if (
+    !defender ||
+    !attacker ||
+    !defender.ancestralRetreatActive ||
+    damage <= 0
+  ) {
+    return damage;
+  }
+
+  const originalDamage = damage;
+  const reducedDamage = Math.max(0, Math.round(originalDamage * 0.5));
+  const reflectedDamage = Math.max(1, Math.round(originalDamage * 0.25));
+
+  addLog(
+    battle,
+    defender.name +
+      "'s Ancestral Retreat reduces incoming direct damage from " +
+      originalDamage +
+      " to " +
+      reducedDamage +
+      "."
+  );
+
+  if (attacker.alive && reflectedDamage > 0) {
+    applyDamage(attacker, reflectedDamage);
+
+    addLog(
+      battle,
+      defender.name +
+        "'s Ancestral Retreat reflects " +
+        reflectedDamage +
+        " damage back to " +
+        attacker.name +
+        "."
+    );
+  }
+
+  return reducedDamage;
+}
+
 export function canUseAction(fighter, actionType, battle = null) {
   if (!ACTIONS[actionType]) return false;
 
@@ -921,7 +1018,6 @@ export function canUseAction(fighter, actionType, battle = null) {
   }
 
   if (actionType === "concentration") {
-    if (fighter.passive?.id === "circadian-cycle" && battle && isCircadianDay(battle)) return false;
     if (fighter.concentratedLastTurn) return false;
     if (!canConcentrateUnderEffects(fighter)) return false;
     if (fighter.parasiticControlActive || fighter.nervousDisruptionActive) return false;
@@ -1087,13 +1183,48 @@ export function resolveConcentration(fighter, battle) {
   fighter.concentratedLastTurn = true;
   fighter.concentrationActive = true;
 
-  if (fighter.passive?.id === "residual-neurotoxin") {
+  if (fighter.passive && fighter.passive.id === "residual-neurotoxin") {
     fighter.residualNeurotoxinActive = true;
+  }
+
+  const opponent =
+    battle.fighterA === fighter ? battle.fighterB : battle.fighterA;
+
+  if (
+    opponent &&
+    opponent.passive &&
+    opponent.passive.id === "immobile-stalk" &&
+    !opponent.matamataAmbushReady
+  ) {
+    opponent.matamataStalkCharges = Math.min(
+      3,
+      (opponent.matamataStalkCharges || 0) + 1
+    );
+
+    addLog(
+      battle,
+      opponent.name +
+        "'s Immobile Stalk gains 1 charge (" +
+        opponent.matamataStalkCharges +
+        "/3)."
+    );
+
+    if (opponent.matamataStalkCharges >= 3) {
+      opponent.matamataAmbushReady = true;
+      opponent.matamataAmbushReadyTurn = battle.turn + 1; 
+
+      addLog(
+        battle,
+        opponent.name +
+          "'s Immobile Stalk is ready: starting next turn, its next attack cannot miss, deals double damage, and absorbs 20 stamina."
+      );
+    }
   }
 
   addLog(
     battle,
-    `${fighter.name} uses Concentration, gains +10% Defense and Agility for the turn, restores 20 Life and 20 Stamina.`
+    fighter.name +
+      " uses Concentration, gains +10% Defense and Agility for the turn, restores 20 Life and 20 Stamina."
   );
 }
 
@@ -1135,7 +1266,7 @@ export function performAttack(attacker, defender, actionType, battle) {
   const action = ACTIONS[actionType];
 
   if (!action) {
-    throw new Error(`Unknown action type: ${actionType}`);
+    throw new Error("Unknown action type: " + actionType);
   }
 
   const extraCost = getActionExtraStaminaCost(attacker, actionType, defender);
@@ -1144,20 +1275,27 @@ export function performAttack(attacker, defender, actionType, battle) {
   attacker.overinflationUsedThisTurn = false;
 
   const nextAttackBuff = getNextAttackBuff(attacker);
+  const matamataAmbushReady = hasMatamataAmbushReady(attacker, battle);
 
   if (defender.residualNeurotoxinActive) {
     addEffect(attacker, createResidualNeurotoxinEffect(2), battle);
 
     addLog(
       battle,
-      `${defender.name}'s Residual Neurotoxin affects ${attacker.name}: −10% Speed, Technique and Evasion next turn.`
+      defender.name +
+        "'s Residual Neurotoxin affects " +
+        attacker.name +
+        ": -10% Speed, Technique and Evasion next turn."
     );
   }
 
   if (defender.phantomCurrentActive) {
     addLog(
       battle,
-      `${attacker.name} cannot hit ${defender.name} (Phantom Current).`
+      attacker.name +
+        " cannot hit " +
+        defender.name +
+        " (Phantom Current)."
     );
 
     resetMomentum(attacker, battle, "miss");
@@ -1186,14 +1324,24 @@ export function performAttack(attacker, defender, actionType, battle) {
   }
 
   const circadianNightGuaranteedHit =
-  attacker.passive?.id === "circadian-cycle" && isCircadianNight(battle);
+    attacker.passive &&
+    attacker.passive.id === "circadian-cycle" &&
+    isCircadianNight(battle);
 
-const hit = nextAttackBuff.guaranteedHit ? true : rollHit(hitChance);
+  const hit =
+    nextAttackBuff.guaranteedHit || matamataAmbushReady || circadianNightGuaranteedHit
+      ? true
+      : rollHit(hitChance);
 
   if (!hit) {
     addLog(
       battle,
-      `${attacker.name} uses ${action.name} but misses ${defender.name}.`
+      attacker.name +
+        " uses " +
+        action.name +
+        " but misses " +
+        defender.name +
+        "."
     );
 
     resetMomentum(attacker, battle, "miss");
@@ -1210,48 +1358,63 @@ const hit = nextAttackBuff.guaranteedHit ? true : rollHit(hitChance);
     };
   }
 
-if (defender.overinflationActive) {
-  addLog(
-    battle,
-    `${attacker.name} tries to hit ${defender.name} with ${action.name}, but ${defender.name}'s Overinflation blocks the attack completely.`
-  );
+  if (defender.overinflationActive) {
+    addLog(
+      battle,
+      attacker.name +
+        " tries to hit " +
+        defender.name +
+        " with " +
+        action.name +
+        ", but " +
+        defender.name +
+        "'s Overinflation blocks the attack completely."
+    );
 
-  const overinflationDamage = 25;
-  applyDamage(attacker, overinflationDamage);
+    const overinflationDamage = 25;
+    applyDamage(attacker, overinflationDamage);
 
-  addLog(
-    battle,
-    `${attacker.name} takes ${overinflationDamage} damage from ${defender.name}'s Overinflation.`
-  );
+    addLog(
+      battle,
+      attacker.name +
+        " takes " +
+        overinflationDamage +
+        " damage from " +
+        defender.name +
+        "'s Overinflation."
+    );
 
-  addEffect(attacker, createTetrodotoxinEffect(2), battle);
+    addEffect(attacker, createTetrodotoxinEffect(2), battle);
 
-  addLog(
-    battle,
-    `${attacker.name} is poisoned by Tetrodotoxin: −25% Precision, Evasion and Speed next turn.`
-  );
+    addLog(
+      battle,
+      attacker.name +
+        " is poisoned by Tetrodotoxin: -25% Precision, Evasion and Speed next turn."
+    );
 
-  finishBattleIfNeeded(battle);
+    finishBattleIfNeeded(battle);
 
-  return {
-    hit: true,
-    damage: 0,
-    critical: false,
-    hitChance
-  };
-}
+    return {
+      hit: true,
+      damage: 0,
+      critical: false,
+      hitChance
+    };
+  }
 
   let defenseFactor = 1;
 
   if (
-    attacker.passive?.id === "relentless-bite" &&
+    attacker.passive &&
+    attacker.passive.id === "relentless-bite" &&
     actionType === "explosive"
   ) {
     defenseFactor = 0.8;
   }
 
   if (
-    attacker.passive?.id === "lethal-precision" &&
+    attacker.passive &&
+    attacker.passive.id === "lethal-precision" &&
     actionType === "precise"
   ) {
     defenseFactor = 0.8;
@@ -1275,24 +1438,36 @@ if (defender.overinflationActive) {
     baseDamage = Math.round(baseDamage * 1.2);
   }
 
-  if (attacker.passive?.id === "hunting-inertia" && attacker.falconStacks > 0) {
+  if (
+    attacker.passive &&
+    attacker.passive.id === "hunting-inertia" &&
+    attacker.falconStacks > 0
+  ) {
     addLog(
       battle,
-      `${attacker.name}'s Hunting Inertia grants +${attacker.falconStacks * 10}% damage to this attack.`
+      attacker.name +
+        "'s Hunting Inertia grants +" +
+        attacker.falconStacks * 10 +
+        "% damage to this attack."
     );
   }
 
   const passiveBonuses = getPassiveBonuses(attacker, defender, battle, actionType);
   if (actionType === "explosive" && passiveBonuses.explosiveDamagePct > 0) {
-    baseDamage = Math.round(baseDamage * (1 + passiveBonuses.explosiveDamagePct / 100));
+    baseDamage = Math.round(
+      baseDamage * (1 + passiveBonuses.explosiveDamagePct / 100)
+    );
   }
 
   if (nextAttackBuff.damagePct > 0) {
     baseDamage = Math.round(baseDamage * (1 + nextAttackBuff.damagePct / 100));
+
     addLog(
       battle,
-      `${attacker.name}'s Illusory Dance buff empowers the attack (+50% damage, guaranteed hit).`
+      attacker.name +
+        "'s Illusory Dance buff empowers the attack (+50% damage, guaranteed hit)."
     );
+
     consumeNextAttackBuff(attacker);
   }
 
@@ -1300,7 +1475,8 @@ if (defender.overinflationActive) {
   let critical = rollCritical(critChance);
 
   if (
-    defender.passive?.id === "savage-endurance" &&
+    defender.passive &&
+    defender.passive.id === "savage-endurance" &&
     defender.hp < defender.maxHp * 0.25
   ) {
     critical = false;
@@ -1312,34 +1488,60 @@ if (defender.overinflationActive) {
     finalDamage = Math.round(baseDamage * 1.5);
   }
 
+  finalDamage = applyMatamataAmbushBonus(attacker, defender, finalDamage, battle);
+
   finalDamage = applyIllusoryDanceDefense(defender, finalDamage, battle);
+
+  finalDamage = applyAncestralRetreatDefense(defender, attacker, finalDamage, battle);
 
   applyDamage(defender, finalDamage);
 
-addLog(
-  battle,
-  `${attacker.name} hits ${defender.name} with ${action.name} for ${finalDamage} damage${critical ? " (CRITICAL)" : ""}.`
-);
-
-if (defender.id === "pufferfish" && attacker.alive) {
-  applyDamage(attacker, 10);
-
   addLog(
     battle,
-    `${attacker.name} suffers 10 damage from ${defender.name}'s spines.`
+    attacker.name +
+      " hits " +
+      defender.name +
+      " with " +
+      action.name +
+      " for " +
+      finalDamage +
+      " damage" +
+      (critical ? " (CRITICAL)" : "") +
+      "."
   );
-}
+
+  if (defender.id === "pufferfish" && attacker.alive) {
+    applyDamage(attacker, 10);
+
+    addLog(
+      battle,
+      attacker.name +
+        " suffers 10 damage from " +
+        defender.name +
+        "'s spines."
+    );
+  }
 
   if (critical) {
     addLog(
       battle,
-      `Critical calc → Base damage: ${baseDamage} | Critical multiplier: x1.5 | Final damage: ${finalDamage}.`
+      "Critical calc -> Base damage: " +
+        baseDamage +
+        " | Critical multiplier: x1.5 | Final damage: " +
+        finalDamage +
+        "."
     );
   }
 
   addLog(
     battle,
-    `Damage calc → Attack: ${damageInfo.attackValue} | Defense: ${damageInfo.defenseValue} | Multiplier: ${damageInfo.multiplier}%.`
+    "Damage calc -> Attack: " +
+      damageInfo.attackValue +
+      " | Defense: " +
+      damageInfo.defenseValue +
+      " | Multiplier: " +
+      damageInfo.multiplier +
+      "%."
   );
 
   increaseMomentum(attacker, battle);
@@ -1404,6 +1606,8 @@ function performTigerSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
 
+  damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+
   applyDamage(defender, damage);
   addEffect(defender, createBleedEffect(2, 15), battle);
 
@@ -1457,6 +1661,9 @@ function performHoneyBadgerSpecial(attacker, defender, battle) {
 
   let damage = damageInfo.damage;
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+
+  damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+
   applyDamage(defender, damage);
 
   addEffect(defender, createMutilationEffect(2), battle);
@@ -1579,6 +1786,8 @@ function performMantisShrimpSpecial(attacker, defender, battle) {
 
   finalDamage = applyIllusoryDanceDefense(defender, finalDamage, battle);
 
+  damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+
   applyDamage(defender, finalDamage);
 
   addLog(
@@ -1628,6 +1837,8 @@ function performDungBeetleSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
 
+  damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+
   applyDamage(defender, damage);
   addEffect(defender, createAgilityDownEffect(3, 50), battle);
 
@@ -1654,6 +1865,9 @@ function performCaimanSpecial(attacker, defender, battle) {
     let damage = Math.max(1, Math.round(attackValue * 2));
 
     damage = applyIllusoryDanceDefense(defender, damage, battle);
+
+    damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+
     applyDamage(defender, damage);
 
     addLog(
@@ -1695,11 +1909,37 @@ function performCaimanSpecial(attacker, defender, battle) {
   let damage = damageInfo.damage;
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+
+  damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+
   applyDamage(defender, damage);
 
   addLog(
     battle,
     `${attacker.name} uses Death Roll, dealing ${damage} damage.`
+  );
+
+  consumeSpecialCharge(attacker);
+}
+
+function performMatamataSpecial(attacker, battle) {
+  attacker.concentratedLastTurn = false;
+  attacker.overinflationUsedThisTurn = false;
+  attacker.ancestralRetreatActive = true;
+
+  restoreHp(attacker, 60);
+  restoreStamina(attacker, 30, battle);
+
+  addLog(
+    battle,
+    attacker.name +
+      " uses Ancestral Retreat, withdrawing into its shell. It restores 60 HP and 30 stamina."
+  );
+
+  addLog(
+    battle,
+    attacker.name +
+      "'s Ancestral Retreat is active: direct damage received this turn is reduced by 50%, and 25% of the original incoming damage is reflected."
   );
 
   consumeSpecialCharge(attacker);
@@ -1767,6 +2007,9 @@ function performEmeraldWaspSpecial(attacker, defender, battle) {
   let damage = damageInfo.damage;
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+
+  damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+
   applyDamage(defender, damage);
 
   defender.nervousDisruptionActive = true;
@@ -1820,6 +2063,9 @@ function performFalconSpecial(attacker, defender, battle) {
   let damage = Math.max(1, Math.round(damageInfo.damage * multiplier));
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+
+  damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+
   applyDamage(defender, damage);
 
   addEffect(defender, createFalconDebuffEffect(2, 25), battle);
@@ -1950,6 +2196,9 @@ function performFireSalamanderSpecial(attacker, defender, battle) {
 
   let damage = damageInfo.damage;
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+
+  damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+
   applyDamage(defender, damage);
 
   addEffect(
@@ -2132,6 +2381,9 @@ function performSpecialAction(attacker, defender, battle) {
     case "nocturnal-hunt":
       performEurasianEagleOwlSpecial(attacker, defender, battle);
       break;
+    case "ancestral-retreat":
+       performMatamataSpecial(attacker, battle);
+      break;
     default:
       addLog(battle, `${attacker.name} has no implemented special logic yet.`);
       consumeSpecialCharge(attacker);
@@ -2312,6 +2564,9 @@ function endTurnProcessing(battle) {
 
   advanceTurnDamageMemory(battle.fighterA);
   advanceTurnDamageMemory(battle.fighterB);
+
+  battle.fighterA.ancestralRetreatActive = false;
+  battle.fighterB.ancestralRetreatActive = false 
 }
 
 export function resolveTurn(battle, actionA, actionB) {
