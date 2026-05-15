@@ -137,7 +137,14 @@ export function createFighter(id) {
     matamataStalkCharges: 0,
     matamataAmbushReady: false,
     matamataAmbushReadyTurn: null,
-    ancestralRetreatActive: false
+    ancestralRetreatActive: false,
+
+    fennecMirageProgress: {
+      quick: false,
+      explosive: false,
+      concentration: 0
+    },
+    fennecOasisReady: false
   };
 }
 
@@ -300,6 +307,60 @@ function isCircadianNight(battle) {
 
 function battleHasEffect(battle, effectId) {
   return battle.battleEffects.some((effect) => effect.id === effectId);
+}
+
+function getBattleEffect(battle, effectId) {
+  return battle.battleEffects.find((effect) => effect.id === effectId) || null;
+}
+
+function createOasisEffect(duration, sourceId) {
+  return {
+    id: "oasis",
+    name: "Oasis",
+    duration: duration,
+    sourceId: sourceId
+  };
+}
+
+function fennecOasisIsActive(battle, fighter) {
+  const oasis = getBattleEffect(battle, "oasis");
+
+  return (
+    oasis &&
+    fighter &&
+    fighter.passive &&
+    fighter.passive.id === "thoths-mirage" &&
+    oasis.sourceId === fighter.id
+  );
+}
+
+function applyFennecOasisHitCap(attacker, defender, battle, hitChance) {
+  if (!battle || !defender) {
+    return hitChance;
+  }
+
+  if (!fennecOasisIsActive(battle, defender)) {
+    return hitChance;
+  }
+
+  const cappedHitChance = Math.min(hitChance, 50);
+
+  if (hitChance > 50) {
+    const illusionLogs = [
+      "The oasis bends the horizon. The attack strikes only illusion.",
+      "Heat distortion deceives the senses.",
+      "The mirage swallows the blow.",
+      "The Fennec vanishes behind the shimmering air."
+    ];
+
+    addLog(
+      battle,
+      illusionLogs[Math.floor(Math.random() * illusionLogs.length)] +
+        " Hit chance is capped at 50%."
+    );
+  }
+
+  return cappedHitChance;
 }
 
 function fighterHasEffect(fighter, effectId) {
@@ -506,6 +567,106 @@ function handleIguanaPassive(attacker, actionType, battle) {
   }
 }
 
+function isFennecMirageUser(fighter) {
+  return (
+    fighter &&
+    fighter.passive &&
+    fighter.passive.id === "thoths-mirage"
+  );
+}
+
+function isFennecMirageComplete(fighter) {
+  if (!fighter || !fighter.fennecMirageProgress) {
+    return false;
+  }
+
+  return (
+    fighter.fennecMirageProgress.quick &&
+    fighter.fennecMirageProgress.explosive &&
+    fighter.fennecMirageProgress.concentration >= 2
+  );
+}
+
+function handleFennecMirageProgress(fighter, battle, requirement) {
+  if (!isFennecMirageUser(fighter)) {
+    return;
+  }
+
+  if (fennecOasisIsActive(battle, fighter)) {
+    return;
+  }
+
+  if (!fighter.fennecMirageProgress) {
+    fighter.fennecMirageProgress = {
+      quick: false,
+      explosive: false,
+      concentration: 0
+    };
+  }
+
+  if (requirement === "quick" && !fighter.fennecMirageProgress.quick) {
+    fighter.fennecMirageProgress.quick = true;
+
+    addLog(
+      battle,
+      fighter.name + " fulfills Thoth's Mirage requirement: successful Quick Attack."
+    );
+  }
+
+  if (requirement === "explosive" && !fighter.fennecMirageProgress.explosive) {
+    fighter.fennecMirageProgress.explosive = true;
+
+    addLog(
+      battle,
+      fighter.name + " fulfills Thoth's Mirage requirement: successful Explosive Attack."
+    );
+  }
+
+  if (
+    requirement === "concentration" &&
+    fighter.fennecMirageProgress.concentration < 2
+  ) {
+    fighter.fennecMirageProgress.concentration += 1;
+
+    addLog(
+      battle,
+      fighter.name +
+        " fulfills Thoth's Mirage requirement: Concentration " +
+        fighter.fennecMirageProgress.concentration +
+        "/2."
+    );
+  }
+
+  if (isFennecMirageComplete(fighter)) {
+    const oasisDuration = battle.biome === "desert" ? 6 : 3;
+
+    addBattleEffect(battle, createOasisEffect(oasisDuration, fighter.id));
+
+    addLog(
+      battle,
+      fighter.name +
+        " completes Thoth's Mirage and summons the Oasis for " +
+        oasisDuration +
+        " full turns."
+    );
+
+    if (battle.biome === "desert") {
+      addLog(
+        battle,
+        "The desert answers the mirage: Oasis duration is extended to 6 turns."
+      );
+    }
+
+    fighter.fennecMirageProgress = {
+      quick: false,
+      explosive: false,
+      concentration: 0
+    };
+
+    fighter.fennecOasisReady = false;
+  }
+}
+
 function calculateSelfHitDamage(fighter, battle, multiplier = 1) {
   const damageInfo = calculateDamageWithDefenseFactor(
     fighter,
@@ -580,14 +741,30 @@ function performMarineEcho(attacker, defender, battle) {
 
   const precision = getEffectiveStat(attacker, "speed", battle, defender, "passive");
   const evasion = calculateEvasion(defender, battle);
-  const hitChance = calculateHitChanceFromValues(precision, evasion);
+  let hitChance = calculateHitChanceFromValues(precision, evasion);
+
+  hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
+
   const hit = rollHit(hitChance);
 
   if (!hit) {
+    if (fennecOasisIsActive(battle, defender)) {
+      addLog(
+        battle,
+        "The Oasis distorts Marine Echo. The second hit fades into the mirage."
+      );
+    }
+
     addLog(
       battle,
-      `${attacker.name}'s Marine Echo triggers, but the second hit misses ${defender.name}.`
+      attacker.name +
+        "'s Marine Echo triggers, but the second hit misses " +
+        defender.name +
+        "."
     );
+
+    handleReactiveChargeOnMiss(attacker, defender, battle);
+
     return;
   }
 
@@ -605,13 +782,47 @@ function performMarineEcho(attacker, defender, battle) {
 
   addLog(
     battle,
-    `${attacker.name}'s Marine Echo triggers: second hit deals ${damage} damage.`
+    attacker.name +
+      "'s Marine Echo triggers: second hit deals " +
+      damage +
+      " damage."
   );
 }
 
 function resolvePhantomCurrentStrike(fighter, opponent, battle) {
   if (!fighter.phantomCurrentActive) return;
+
   if (!fighter.alive || !opponent.alive) {
+    fighter.phantomCurrentActive = false;
+    return;
+  }
+
+  const precision = getEffectiveStat(fighter, "speed", battle, opponent, "special");
+  const evasion = calculateEvasion(opponent, battle);
+  let hitChance = calculateHitChanceFromValues(precision, evasion);
+
+  hitChance = applyFennecOasisHitCap(fighter, opponent, battle, hitChance);
+
+  const hit = rollHit(hitChance);
+
+  if (!hit) {
+    if (fennecOasisIsActive(battle, opponent)) {
+      addLog(
+        battle,
+        "The Oasis distorts Phantom Current. The strike cuts through a false image."
+      );
+    }
+
+    addLog(
+      battle,
+      fighter.name +
+        "'s Phantom Current strike misses " +
+        opponent.name +
+        "."
+    );
+
+    handleReactiveChargeOnMiss(fighter, opponent, battle);
+
     fighter.phantomCurrentActive = false;
     return;
   }
@@ -624,13 +835,31 @@ function resolvePhantomCurrentStrike(fighter, opponent, battle) {
     "special"
   );
 
-  const damage = Math.max(1, Math.round(damageInfo.damage * 2));
+  let damage = Math.max(1, Math.round(damageInfo.damage * 2));
+
+  damage = applyIllusoryDanceDefense(opponent, damage, battle);
+
+  damage = applyAncestralRetreatDefense(opponent, fighter, damage, battle);
 
   applyDamage(opponent, damage);
 
   addLog(
     battle,
-    `${fighter.name} strikes from Phantom Current for ${damage} damage.`
+    fighter.name +
+      " strikes from Phantom Current for " +
+      damage +
+      " damage."
+  );
+
+  addLog(
+    battle,
+    "Phantom Current calc -> Speed precision: " +
+      Math.round(precision * 10) / 10 +
+      " | Evasion: " +
+      Math.round(evasion * 10) / 10 +
+      " | Hit chance: " +
+      Math.round(hitChance * 10) / 10 +
+      "%."
   );
 
   fighter.phantomCurrentActive = false;
@@ -676,19 +905,19 @@ export function getEffectiveStat(fighter, stat, battle, opponent = null, actionT
   let value = fighter.stats[stat];
 
   if (fighter.passive?.id === "circadian-cycle") {
-  if (isCircadianDay(battle)) {
-    if (stat === "attack") value *= 0.5;
-    if (stat === "defense") value *= 1.5;
-    if (stat === "technique") value *= 0.75;
-    if (stat === "agility") value *= 0.75;
-  }
+    if (isCircadianDay(battle)) {
+      if (stat === "attack") value *= 0.5;
+      if (stat === "defense") value *= 1.5;
+      if (stat === "technique") value *= 0.75;
+      if (stat === "agility") value *= 0.75;
+    }
 
-  if (isCircadianNight(battle)) {
-    if (stat === "attack") value *= 1.5;
-    if (stat === "agility") value *= 1.25;
-    if (stat === "technique") value *= 1.25;
+    if (isCircadianNight(battle)) {
+      if (stat === "attack") value *= 1.5;
+      if (stat === "agility") value *= 1.25;
+      if (stat === "technique") value *= 1.25;
+    }
   }
-}
 
   if (
     battle &&
@@ -696,6 +925,14 @@ export function getEffectiveStat(fighter, stat, battle, opponent = null, actionT
     ["attack", "defense", "speed", "agility", "technique", "explosiveness"].includes(stat)
   ) {
     value *= getBiomeModifierForFighter(fighter, battle.biome);
+  }
+
+  if (
+    battle &&
+    fennecOasisIsActive(battle, fighter) &&
+    ["attack", "defense", "speed", "agility", "technique", "explosiveness"].includes(stat)
+  ) {
+    value += fighter.stats[stat] * 0.1;
   }
 
   const ignoresFatigue = fighter.passive?.id === "savage-endurance";
@@ -707,7 +944,8 @@ export function getEffectiveStat(fighter, stat, battle, opponent = null, actionT
     value *= getFatigueMultiplier(fighter);
   }
 
-  const directStatModifier = getDerivedModifierPercent(fighter, `${stat}Pct`);
+  const directStatModifier = getDerivedModifierPercent(fighter, stat + "Pct");
+
   if (directStatModifier !== 0) {
     value *= 1 + directStatModifier / 100;
   }
@@ -722,22 +960,24 @@ export function getEffectiveStat(fighter, stat, battle, opponent = null, actionT
 
   if (stat === "attack") {
     const momentumBonusPct = getMomentumAttackBonusPercent(fighter);
+
     if (momentumBonusPct > 0) {
       value *= 1 + momentumBonusPct / 100;
     }
 
     const falconBonusPct = getFalconDamageBonusPercent(fighter);
+
     if (falconBonusPct > 0) {
       value *= 1 + falconBonusPct / 100;
     }
   }
 
   if (
-  fighter.concentrationActive &&
-  (stat === "defense" || stat === "agility")
-) {
-  value *= 1.1;
-}
+    fighter.concentrationActive &&
+    (stat === "defense" || stat === "agility")
+  ) {
+    value *= 1.1;
+  }
 
   if (stat === "speed" && fighter.special?.id === "arctic-storm") {
     if (
@@ -1155,11 +1395,19 @@ const counterDamage = Math.round(attackerAttack *0.5);
 }
 
 function handleReactiveChargeOnMiss(attacker, defender, battle) {
-  if (defender.special?.chargeType === "reactive") {
+  if (
+    defender.special &&
+    (defender.special.chargeType === "reactive" ||
+      defender.special.chargeType === "evasive")
+  ) {
     gainSpecialCharge(defender, 1, battle);
   }
 
-  if (defender.special?.id === "illusory-dance" && defender.illusoryDanceActive) {
+  if (
+    defender.special &&
+    defender.special.id === "illusory-dance" &&
+    defender.illusoryDanceActive
+  ) {
     activateIllusoryDanceBuff(defender, battle);
   }
 
@@ -1178,6 +1426,22 @@ function consumeNextAttackBuff(attacker) {
 }
 
 export function resolveConcentration(fighter, battle) {
+  const opponent =
+    battle.fighterA === fighter ? battle.fighterB : battle.fighterA;
+
+  if (fennecOasisIsActive(battle, opponent)) {
+    spendStamina(fighter, 10, battle);
+
+    addLog(
+      battle,
+      "The burning oasis disrupts " +
+        fighter.name +
+        "'s concentration. It fails and loses 10 stamina."
+    );
+
+    return;
+  }
+
   restoreHp(fighter, 20);
   restoreStamina(fighter, 20, battle);
   fighter.concentratedLastTurn = true;
@@ -1186,9 +1450,6 @@ export function resolveConcentration(fighter, battle) {
   if (fighter.passive && fighter.passive.id === "residual-neurotoxin") {
     fighter.residualNeurotoxinActive = true;
   }
-
-  const opponent =
-    battle.fighterA === fighter ? battle.fighterB : battle.fighterA;
 
   if (
     opponent &&
@@ -1211,7 +1472,7 @@ export function resolveConcentration(fighter, battle) {
 
     if (opponent.matamataStalkCharges >= 3) {
       opponent.matamataAmbushReady = true;
-      opponent.matamataAmbushReadyTurn = battle.turn + 1; 
+      opponent.matamataAmbushReadyTurn = battle.turn + 1;
 
       addLog(
         battle,
@@ -1220,6 +1481,8 @@ export function resolveConcentration(fighter, battle) {
       );
     }
   }
+
+  handleFennecMirageProgress(fighter, battle, "concentration");
 
   addLog(
     battle,
@@ -1323,6 +1586,8 @@ export function performAttack(attacker, defender, actionType, battle) {
     hitChance = Math.min(hitChance, 25);
   }
 
+    hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
+
   const circadianNightGuaranteedHit =
     attacker.passive &&
     attacker.passive.id === "circadian-cycle" &&
@@ -1334,6 +1599,22 @@ export function performAttack(attacker, defender, actionType, battle) {
       : rollHit(hitChance);
 
   if (!hit) {
+    if (fennecOasisIsActive(battle, defender)) {
+      const oasisMissLogs = [
+        "The Oasis bends the horizon. The blow cuts through empty heat.",
+        "Heat distortion deceives the senses. The attack finds only mirage.",
+        "The Oasis swallows the strike before it reaches the Fennec.",
+        "The Fennec vanishes behind shimmering air, leaving only dust behind.",
+        "The burning Oasis twists the battlefield. The attacker strikes an illusion.",
+        "A false image flickers in the haze. The real Fennec is already gone."
+      ];
+
+      addLog(
+        battle,
+        oasisMissLogs[Math.floor(Math.random() * oasisMissLogs.length)]
+      );
+    }
+
     addLog(
       battle,
       attacker.name +
@@ -1453,6 +1734,7 @@ export function performAttack(attacker, defender, actionType, battle) {
   }
 
   const passiveBonuses = getPassiveBonuses(attacker, defender, battle, actionType);
+
   if (actionType === "explosive" && passiveBonuses.explosiveDamagePct > 0) {
     baseDamage = Math.round(
       baseDamage * (1 + passiveBonuses.explosiveDamagePct / 100)
@@ -1489,9 +1771,7 @@ export function performAttack(attacker, defender, actionType, battle) {
   }
 
   finalDamage = applyMatamataAmbushBonus(attacker, defender, finalDamage, battle);
-
   finalDamage = applyIllusoryDanceDefense(defender, finalDamage, battle);
-
   finalDamage = applyAncestralRetreatDefense(defender, attacker, finalDamage, battle);
 
   applyDamage(defender, finalDamage);
@@ -1549,6 +1829,7 @@ export function performAttack(attacker, defender, actionType, battle) {
   increaseFalconStacks(attacker, battle);
   increaseMacaqueChain(attacker, defender, battle);
   handleIguanaPassive(attacker, actionType, battle);
+  handleFennecMirageProgress(attacker, battle, actionType);
   handlePostHitPassive(attacker, defender, battle, critical, actionType);
   handleChargeGain(attacker, defender, true, battle);
 
@@ -1570,12 +1851,18 @@ function performTigerSpecial(attacker, defender, battle) {
 
   const precision = calculatePrecisePrecision(attacker, defender, battle);
   const evasion = calculateEvasion(defender, battle);
-  const hit = nextAttackBuff.guaranteedHit
-    ? true
-    : rollHit(calculateHitChanceFromValues(precision, evasion));
+  let hitChance = calculateHitChanceFromValues(precision, evasion);
+
+  hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
+
+  const hit = nextAttackBuff.guaranteedHit ? true : rollHit(hitChance);
 
   if (!hit) {
-    addLog(battle, `${attacker.name} uses Lethal Bite but misses ${defender.name}.`);
+    addLog(
+      battle,
+      attacker.name + " uses Lethal Bite but misses " + defender.name + "."
+    );
+
     consumeSpecialCharge(attacker);
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
@@ -1597,15 +1884,17 @@ function performTigerSpecial(attacker, defender, battle) {
 
   if (nextAttackBuff.damagePct > 0) {
     damage = Math.round(damage * (1 + nextAttackBuff.damagePct / 100));
+
     addLog(
       battle,
-      `${attacker.name}'s Illusory Dance buff empowers the attack (+50% damage, guaranteed hit).`
+      attacker.name +
+        "'s Illusory Dance buff empowers the attack (+50% damage, guaranteed hit)."
     );
+
     consumeNextAttackBuff(attacker);
   }
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
-
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
@@ -1613,12 +1902,21 @@ function performTigerSpecial(attacker, defender, battle) {
 
   addLog(
     battle,
-    `${attacker.name} uses Lethal Bite, dealing ${damage} damage, ignoring 50% Defense and applying Bleed.`
+    attacker.name +
+      " uses Lethal Bite, dealing " +
+      damage +
+      " damage, ignoring 50% Defense and applying Bleed."
   );
 
   addLog(
     battle,
-    `Lethal Bite calc → Attack: ${damageInfo.attackValue} | Effective Defense: ${damageInfo.defenseValue} | Multiplier: ${damageInfo.multiplier}%.`
+    "Lethal Bite calc -> Attack: " +
+      damageInfo.attackValue +
+      " | Effective Defense: " +
+      damageInfo.defenseValue +
+      " | Multiplier: " +
+      damageInfo.multiplier +
+      "%."
   );
 
   increaseMomentum(attacker, battle);
@@ -1634,14 +1932,18 @@ function performHoneyBadgerSpecial(attacker, defender, battle) {
 
   const precision = calculateNormalPrecision(attacker, defender, battle);
   const evasion = calculateEvasion(defender, battle);
-  const hitChance = calculateHitChanceFromValues(precision, evasion);
+  let hitChance = calculateHitChanceFromValues(precision, evasion);
+
+  hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
+
   const hit = rollHit(hitChance);
 
   if (!hit) {
     addLog(
       battle,
-      `${attacker.name} uses Mutilation but misses ${defender.name}.`
+      attacker.name + " uses Mutilation but misses " + defender.name + "."
     );
+
     consumeSpecialCharge(attacker);
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
@@ -1660,8 +1962,8 @@ function performHoneyBadgerSpecial(attacker, defender, battle) {
   );
 
   let damage = damageInfo.damage;
-  damage = applyIllusoryDanceDefense(defender, damage, battle);
 
+  damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
@@ -1670,12 +1972,23 @@ function performHoneyBadgerSpecial(attacker, defender, battle) {
 
   addLog(
     battle,
-    `${attacker.name} uses Mutilation, dealing ${damage} damage and reducing ${defender.name}'s Attack, Speed and Agility by 30% for 2 turns, while blocking Quick Attack.`
+    attacker.name +
+      " uses Mutilation, dealing " +
+      damage +
+      " damage and reducing " +
+      defender.name +
+      "'s Attack, Speed and Agility by 30% for 2 turns, while blocking Quick Attack."
   );
 
   addLog(
     battle,
-    `Mutilation calc → Attack: ${damageInfo.attackValue} | Defense: ${damageInfo.defenseValue} | Multiplier: ${damageInfo.multiplier}%.`
+    "Mutilation calc -> Attack: " +
+      damageInfo.attackValue +
+      " | Defense: " +
+      damageInfo.defenseValue +
+      " | Multiplier: " +
+      damageInfo.multiplier +
+      "%."
   );
 
   increaseMomentum(attacker, battle);
@@ -1691,7 +2004,7 @@ function performWalrusSpecial(attacker, battle) {
   if (battleHasEffect(battle, "hail")) {
     addLog(
       battle,
-      `${attacker.name} cannot use Arctic Storm because Hail is already active.`
+      attacker.name + " cannot use Arctic Storm because Hail is already active."
     );
     return;
   }
@@ -1701,14 +2014,21 @@ function performWalrusSpecial(attacker, battle) {
 
   if (battle.biome === "arctic") {
     attacker.arcticStormPermanentSpeed = true;
+
     addLog(
       battle,
-      `${attacker.name} uses Arctic Storm. Hail begins for ${duration} turns and its speed bonus is permanent in Arctic biome.`
+      attacker.name +
+        " uses Arctic Storm. Hail begins for " +
+        duration +
+        " turns and its speed bonus is permanent in Arctic biome."
     );
   } else {
     addLog(
       battle,
-      `${attacker.name} uses Arctic Storm. Hail begins for ${duration} turns and doubles its Speed while active.`
+      attacker.name +
+        " uses Arctic Storm. Hail begins for " +
+        duration +
+        " turns and doubles its Speed while active."
     );
   }
 
@@ -1726,7 +2046,8 @@ function performShimaEnagaSpecial(attacker, battle) {
 
   addLog(
     battle,
-    `${attacker.name} uses Illusory Dance. Incoming damage is reduced by 50% this turn (minimum 20% damage taken).`
+    attacker.name +
+      " uses Illusory Dance. Incoming damage is reduced by 50% this turn (minimum 20% damage taken)."
   );
 
   resetMomentum(attacker, battle, "special");
@@ -1742,7 +2063,10 @@ function performMantisShrimpSpecial(attacker, defender, battle) {
 
   const precision = getEffectiveStat(attacker, "explosiveness", battle, defender, "special");
   const evasion = calculateEvasion(defender, battle);
-  const hitChance = calculateHitChanceFromValues(precision, evasion);
+  let hitChance = calculateHitChanceFromValues(precision, evasion);
+
+  hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
+
   const hit = rollHit(hitChance);
 
   const damageInfo = calculateDamageWithDefenseFactor(
@@ -1764,7 +2088,16 @@ function performMantisShrimpSpecial(attacker, defender, battle) {
 
     addLog(
       battle,
-      `${attacker.name} uses Ballistic Strike but misses. ${defender.name} still takes ${partialDamageToEnemy} damage and ${attacker.name} takes ${selfDamage} self-damage.`
+      attacker.name +
+        " uses Ballistic Strike but misses. " +
+        defender.name +
+        " still takes " +
+        partialDamageToEnemy +
+        " damage and " +
+        attacker.name +
+        " takes " +
+        selfDamage +
+        " self-damage."
     );
 
     resetMomentum(attacker, battle, "miss");
@@ -1785,14 +2118,18 @@ function performMantisShrimpSpecial(attacker, defender, battle) {
   }
 
   finalDamage = applyIllusoryDanceDefense(defender, finalDamage, battle);
-
-  damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  finalDamage = applyAncestralRetreatDefense(defender, attacker, finalDamage, battle);
 
   applyDamage(defender, finalDamage);
 
   addLog(
     battle,
-    `${attacker.name} uses Ballistic Strike and deals ${finalDamage} damage${critical ? " (CRITICAL)" : ""}.`
+    attacker.name +
+      " uses Ballistic Strike and deals " +
+      finalDamage +
+      " damage" +
+      (critical ? " (CRITICAL)" : "") +
+      "."
   );
 
   increaseMomentum(attacker, battle);
@@ -1808,14 +2145,18 @@ function performDungBeetleSpecial(attacker, defender, battle) {
 
   const precision = getEffectiveStat(attacker, "attack", battle, defender, "special");
   const evasion = calculateEvasion(defender, battle);
-  const hitChance = calculateHitChanceFromValues(precision, evasion);
+  let hitChance = calculateHitChanceFromValues(precision, evasion);
+
+  hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
+
   const hit = rollHit(hitChance);
 
   if (!hit) {
     addLog(
       battle,
-      `${attacker.name} uses Dung Throw but misses ${defender.name}.`
+      attacker.name + " uses Dung Throw but misses " + defender.name + "."
     );
+
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
@@ -1836,7 +2177,6 @@ function performDungBeetleSpecial(attacker, defender, battle) {
   let damage = Math.max(1, Math.round(damageInfo.damage * 0.5));
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
-
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
@@ -1844,7 +2184,12 @@ function performDungBeetleSpecial(attacker, defender, battle) {
 
   addLog(
     battle,
-    `${attacker.name} uses Dung Throw, dealing ${damage} damage and reducing ${defender.name}'s Agility by 50% for 3 turns.`
+    attacker.name +
+      " uses Dung Throw, dealing " +
+      damage +
+      " damage and reducing " +
+      defender.name +
+      "'s Agility by 50% for 3 turns."
   );
 
   increaseMomentum(attacker, battle);
@@ -1865,14 +2210,16 @@ function performCaimanSpecial(attacker, defender, battle) {
     let damage = Math.max(1, Math.round(attackValue * 2));
 
     damage = applyIllusoryDanceDefense(defender, damage, battle);
-
     damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
 
     applyDamage(defender, damage);
 
     addLog(
       battle,
-      `${attacker.name} uses Death Roll on a bitten target: ${damage} damage, ignores defense and cannot be dodged.`
+      attacker.name +
+        " uses Death Roll on a bitten target: " +
+        damage +
+        " damage, ignores defense and cannot be dodged."
     );
 
     consumeSpecialCharge(attacker);
@@ -1881,14 +2228,18 @@ function performCaimanSpecial(attacker, defender, battle) {
 
   const precision = calculateNormalPrecision(attacker, defender, battle);
   const evasion = calculateEvasion(defender, battle);
-  const hitChance = calculateHitChanceFromValues(precision, evasion);
+  let hitChance = calculateHitChanceFromValues(precision, evasion);
+
+  hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
+
   const hit = rollHit(hitChance);
 
   if (!hit) {
     addLog(
       battle,
-      `${attacker.name} uses Death Roll but misses ${defender.name}.`
+      attacker.name + " uses Death Roll but misses " + defender.name + "."
     );
+
     consumeSpecialCharge(attacker);
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
@@ -1909,15 +2260,128 @@ function performCaimanSpecial(attacker, defender, battle) {
   let damage = damageInfo.damage;
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
-
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
 
   addLog(
     battle,
-    `${attacker.name} uses Death Roll, dealing ${damage} damage.`
+    attacker.name + " uses Death Roll, dealing " + damage + " damage."
   );
+
+  consumeSpecialCharge(attacker);
+}
+
+function performFennecSpecial(attacker, defender, battle) {
+  attacker.concentratedLastTurn = false;
+  attacker.overinflationUsedThisTurn = false;
+
+  const precision = calculatePrecisePrecision(attacker, defender, battle);
+  const evasion = calculateEvasion(defender, battle);
+  let hitChance = calculateHitChanceFromValues(precision, evasion);
+
+  hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
+
+  const hit = rollHit(hitChance);
+
+  if (!hit) {
+    addLog(
+      battle,
+      attacker.name + " uses Anubis' Staff but misses " + defender.name + "."
+    );
+
+    consumeSpecialCharge(attacker);
+    resetMomentum(attacker, battle, "miss");
+    resetParasiticControlHits(attacker, battle, "miss");
+    resetFalconStacks(attacker, battle, "miss");
+    resetMacaqueChain(attacker, battle, "miss");
+    handleReactiveChargeOnMiss(attacker, defender, battle);
+
+    return;
+  }
+
+  const damageInfo = calculateDamageWithDefenseFactor(
+    attacker,
+    defender,
+    battle,
+    1,
+    "special"
+  );
+
+  let damage = Math.max(1, Math.round(damageInfo.damage * 2));
+
+  damage = applyIllusoryDanceDefense(defender, damage, battle);
+  damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+
+  applyDamage(defender, damage);
+
+  const oasisActive = fennecOasisIsActive(battle, attacker);
+  const healRatio = oasisActive ? 1 : 0.5;
+  const staminaStealRatio = oasisActive ? 0.5 : 0.25;
+
+  const healAmount = Math.max(1, Math.round(damage * healRatio));
+  const staminaToSteal = Math.max(1, Math.round(damage * staminaStealRatio));
+  const stolenStamina = Math.min(staminaToSteal, defender.stamina);
+
+  restoreHp(attacker, healAmount);
+
+  if (stolenStamina > 0) {
+    spendStamina(defender, stolenStamina, battle);
+    restoreStamina(attacker, stolenStamina, battle);
+  }
+
+  addLog(
+    battle,
+    attacker.name +
+      " uses Anubis' Staff, dealing " +
+      damage +
+      " damage."
+  );
+
+  if (oasisActive) {
+    addLog(
+      battle,
+      "Oasis empowers Anubis' Staff: " +
+        attacker.name +
+        " restores " +
+        healAmount +
+        " HP and steals " +
+        stolenStamina +
+        " stamina from " +
+        defender.name +
+        "."
+    );
+  } else {
+    addLog(
+      battle,
+      attacker.name +
+        " restores " +
+        healAmount +
+        " HP and steals " +
+        stolenStamina +
+        " stamina from " +
+        defender.name +
+        "."
+    );
+  }
+
+  addLog(
+    battle,
+    "Anubis' Staff calc -> Attack: " +
+      damageInfo.attackValue +
+      " | Defense: " +
+      damageInfo.defenseValue +
+      " | Multiplier: " +
+      damageInfo.multiplier +
+      "% | Final damage before drain: " +
+      damage +
+      "."
+  );
+
+  increaseMomentum(attacker, battle);
+  increaseParasiticControlHits(attacker, defender, battle);
+  increaseFalconStacks(attacker, battle);
+  increaseMacaqueChain(attacker, defender, battle);
 
   consumeSpecialCharge(attacker);
 }
@@ -1954,7 +2418,7 @@ function performAxolotlSpecial(attacker, battle) {
   if (healAmount <= 0) {
     addLog(
       battle,
-      `${attacker.name} uses Total Regeneration but has nothing to heal.`
+      attacker.name + " uses Total Regeneration but has nothing to heal."
     );
   } else {
     const hpBefore = attacker.hp;
@@ -1963,7 +2427,7 @@ function performAxolotlSpecial(attacker, battle) {
 
     addLog(
       battle,
-      `${attacker.name} uses Total Regeneration and restores ${actualHealed} HP.`
+      attacker.name + " uses Total Regeneration and restores " + actualHealed + " HP."
     );
   }
 
@@ -1979,14 +2443,18 @@ function performEmeraldWaspSpecial(attacker, defender, battle) {
 
   const precision = getEffectiveStat(attacker, "technique", battle, defender, "special");
   const evasion = calculateEvasion(defender, battle);
-  const hitChance = calculateHitChanceFromValues(precision, evasion);
+  let hitChance = calculateHitChanceFromValues(precision, evasion);
+
+  hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
+
   const hit = rollHit(hitChance);
 
   if (!hit) {
     addLog(
       battle,
-      `${attacker.name} uses Nervous Disruption but misses ${defender.name}.`
+      attacker.name + " uses Nervous Disruption but misses " + defender.name + "."
     );
+
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
@@ -2007,7 +2475,6 @@ function performEmeraldWaspSpecial(attacker, defender, battle) {
   let damage = damageInfo.damage;
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
-
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
@@ -2017,7 +2484,12 @@ function performEmeraldWaspSpecial(attacker, defender, battle) {
 
   addLog(
     battle,
-    `${attacker.name} uses Nervous Disruption, dealing ${damage} damage. On ${defender.name}'s next turn, it hits itself and cannot use Concentration or Special Attack.`
+    attacker.name +
+      " uses Nervous Disruption, dealing " +
+      damage +
+      " damage. On " +
+      defender.name +
+      "'s next turn, it hits itself and cannot use Concentration or Special Attack."
   );
 
   increaseParasiticControlHits(attacker, defender, battle);
@@ -2034,14 +2506,18 @@ function performFalconSpecial(attacker, defender, battle) {
 
   const precision = calculatePrecisePrecision(attacker, defender, battle);
   const evasion = calculateEvasion(defender, battle);
-  const hitChance = calculateHitChanceFromValues(precision, evasion);
+  let hitChance = calculateHitChanceFromValues(precision, evasion);
+
+  hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
+
   const hit = rollHit(hitChance);
 
   if (!hit) {
     addLog(
       battle,
-      `${attacker.name} uses Deadly Dive but misses ${defender.name}.`
+      attacker.name + " uses Deadly Dive but misses " + defender.name + "."
     );
+
     resetFalconStacks(attacker, battle, "miss");
     consumeSpecialCharge(attacker);
     return;
@@ -2063,7 +2539,6 @@ function performFalconSpecial(attacker, defender, battle) {
   let damage = Math.max(1, Math.round(damageInfo.damage * multiplier));
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
-
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
@@ -2072,7 +2547,14 @@ function performFalconSpecial(attacker, defender, battle) {
 
   addLog(
     battle,
-    `${attacker.name} uses Deadly Dive (${multiplier}x), dealing ${damage} damage and reducing ${defender.name}'s Technique and Agility by 25% for 2 turns.`
+    attacker.name +
+      " uses Deadly Dive (" +
+      multiplier +
+      "x), dealing " +
+      damage +
+      " damage and reducing " +
+      defender.name +
+      "'s Technique and Agility by 25% for 2 turns."
   );
 
   attacker.falconStacks = 0;
@@ -2086,7 +2568,7 @@ function performSailfishSpecial(attacker, battle) {
 
   addLog(
     battle,
-    `${attacker.name} uses Phantom Current and becomes untargetable this turn.`
+    attacker.name + " uses Phantom Current and becomes untargetable this turn."
   );
 
   consumeSpecialCharge(attacker);
@@ -2102,8 +2584,9 @@ function performMacaqueSpecial(attacker, defender, battle) {
   if (damage <= 0) {
     addLog(
       battle,
-      `${attacker.name} uses Looting Burst but has no stored loot.`
+      attacker.name + " uses Looting Burst but has no stored loot."
     );
+
     attacker.macaqueLoot = 0;
     attacker.macaqueHitChain = 0;
     consumeSpecialCharge(attacker);
@@ -2114,7 +2597,12 @@ function performMacaqueSpecial(attacker, defender, battle) {
 
   addLog(
     battle,
-    `${attacker.name} uses Looting Burst, consuming ${loot} loot to deal ${damage} damage.`
+    attacker.name +
+      " uses Looting Burst, consuming " +
+      loot +
+      " loot to deal " +
+      damage +
+      " damage."
   );
 
   attacker.macaqueLoot = 0;
@@ -2157,7 +2645,14 @@ function performIguanaSpecial(attacker, defender, battle) {
 
   addLog(
     battle,
-    `${attacker.name} uses Refresh, restoring ${actualHealed} HP and ${actualRestoredStamina} Stamina, and reducing ${defender.name}'s Technique and Agility by 20% for 1 turn.`
+    attacker.name +
+      " uses Refresh, restoring " +
+      actualHealed +
+      " HP and " +
+      actualRestoredStamina +
+      " Stamina, and reducing " +
+      defender.name +
+      "'s Technique and Agility by 20% for 1 turn."
   );
 
   consumeSpecialCharge(attacker);
@@ -2169,14 +2664,21 @@ function performFireSalamanderSpecial(attacker, defender, battle) {
 
   const precision = getEffectiveStat(attacker, "technique", battle, defender, "special");
   const evasion = calculateEvasion(defender, battle);
-  const hitChance = calculateHitChanceFromValues(precision, evasion);
+  let hitChance = calculateHitChanceFromValues(precision, evasion);
+
+  hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
+
   const hit = rollHit(hitChance);
 
   if (!hit) {
     addLog(
       battle,
-      `${attacker.name} uses Neurotoxic Injection (Tetrodotoxin) but misses ${defender.name}.`
+      attacker.name +
+        " uses Neurotoxic Injection (Tetrodotoxin) but misses " +
+        defender.name +
+        "."
     );
+
     consumeSpecialCharge(attacker);
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
@@ -2195,8 +2697,8 @@ function performFireSalamanderSpecial(attacker, defender, battle) {
   );
 
   let damage = damageInfo.damage;
-  damage = applyIllusoryDanceDefense(defender, damage, battle);
 
+  damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
@@ -2231,7 +2733,13 @@ function performFireSalamanderSpecial(attacker, defender, battle) {
         const toxinDamage = 15;
         target.hp = Math.max(0, target.hp - toxinDamage);
         target.damageTakenThisTurn += toxinDamage;
-        battle.log.push(`${target.name} suffers ${toxinDamage} damage from Neurotoxic Injection (Tetrodotoxin).`);
+
+        battle.log.push(
+          target.name +
+            " suffers " +
+            toxinDamage +
+            " damage from Neurotoxic Injection (Tetrodotoxin)."
+        );
 
         if (target.hp <= 0) {
           target.alive = false;
@@ -2243,7 +2751,12 @@ function performFireSalamanderSpecial(attacker, defender, battle) {
 
   addLog(
     battle,
-    `${attacker.name} uses Neurotoxic Injection (Tetrodotoxin), dealing ${damage} damage, reducing ${defender.name}'s Agility, Technique and Speed by 25% for 2 turns, and applying 30 fixed damage over time.`
+    attacker.name +
+      " uses Neurotoxic Injection (Tetrodotoxin), dealing " +
+      damage +
+      " damage, reducing " +
+      defender.name +
+      "'s Agility, Technique and Speed by 25% for 2 turns, and applying 30 fixed damage over time."
   );
 
   consumeSpecialCharge(attacker);
@@ -2384,6 +2897,10 @@ function performSpecialAction(attacker, defender, battle) {
     case "ancestral-retreat":
        performMatamataSpecial(attacker, battle);
       break;
+    case "anubis-staff":
+       performFennecSpecial(attacker, defender, battle);
+      break;
+
     default:
       addLog(battle, `${attacker.name} has no implemented special logic yet.`);
       consumeSpecialCharge(attacker);

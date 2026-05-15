@@ -662,4 +662,44 @@ export const animals = {
       chargeHits: 4
     }
   },
+
+"fennec": {
+  id: "fennec",
+  name: "Fennec",
+  category: "mammals",
+
+  stats: {
+    life: 63,
+    attack: 78,
+    defense: 52,
+    resistance: 68,
+    technique: 94,
+    speed: 86,
+    agility: 92,
+    explosiveness: 67
+  },
+
+  biomes: {
+    favorable: ["desert", "mountain"],
+    neutral: ["forest", "marine"],
+    unfavorable: ["arctic", "jungle"]
+  },
+
+  passive: {
+    id: "thoths-mirage",
+    name: "Thoth's Mirage",
+    description:
+      "Prepares the Oasis by completing 1 successful Quick Attack, 1 successful Explosive Attack, and 2 uses of Concentration. When all requirements are completed, the Fennec unlocks Oasis. Oasis lasts 3 full turns, or 6 full turns if activated while the current biome is Desert."
+  },
+
+  special: {
+    id: "anubis-staff",
+    name: "Anubis' Staff",
+    description:
+      "Evasive special. Deals x2 damage. Outside Oasis, heals the Fennec for 50% of the damage dealt and steals stamina equal to 25% of the damage dealt. During Oasis, heals for 100% of the damage dealt and steals stamina equal to 50% of the damage dealt.",
+    chargeType: "evasive",
+    chargeHits: 4
+  }
+},
+
 }

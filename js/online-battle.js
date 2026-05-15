@@ -130,6 +130,7 @@ function getImageCandidates(id, animal) {
     "honey-badger": ["./images/animals/mammals/honey-badger.png"],
     pufferfish: ["./images/animals/fish/pufferfish.png"],
     "eurasian-eagle-owl": ["./images/animals/birds/eurasian-eagle-owl.png"],
+    "fennec": ["./images/animals/mammals/fennec.png"],
   };
 
   return [direct, ...(legacy[id] ?? [])];
@@ -293,6 +294,56 @@ function getExtraResourceText(fighter) {
       "/3" +
       "\nAmbush ready: " +
       ready
+    );
+  }
+
+  if (fighter.passive && fighter.passive.id === "thoths-mirage") {
+    var progress = fighter.fennecMirageProgress || {
+      quick: false,
+      explosive: false,
+      concentration: 0
+    };
+
+    var quickDone = progress.quick ? "YES" : "NO";
+    var explosiveDone = progress.explosive ? "YES" : "NO";
+    var concentrationCount = progress.concentration || 0;
+
+    var oasisEffect = null;
+
+    if (currentBattle && currentBattle.battleEffects) {
+      for (var i = 0; i < currentBattle.battleEffects.length; i++) {
+        if (
+          currentBattle.battleEffects[i].id === "oasis" &&
+          currentBattle.battleEffects[i].sourceId === fighter.id
+        ) {
+          oasisEffect = currentBattle.battleEffects[i];
+          break;
+        }
+      }
+    }
+
+    var oasisText = "Oasis: INACTIVE";
+
+    if (oasisEffect) {
+      oasisText =
+        "Oasis: ACTIVE (" +
+        oasisEffect.duration +
+        " turn" +
+        (oasisEffect.duration === 1 ? "" : "s") +
+        " left)";
+    }
+
+    return (
+      "Thoth's Mirage" +
+      "\nQuick: " +
+      quickDone +
+      "  Explosive: " +
+      explosiveDone +
+      "\nConcentration: " +
+      concentrationCount +
+      "/2" +
+      "\n" +
+      oasisText
     );
   }
 
@@ -685,6 +736,7 @@ function buildTurnSummary(newLines) {
       line.match(/^(.+?) uses Looting Burst\b/) ||
       line.match(/^(.+?) uses Refresh\b/) ||
       line.match(/^(.+?) uses Mutilation\b/) ||
+      line.match(/^(.+?) uses Anubis' Staff\b/) ||
       line.match(/^(.+?) uses Ancestral Retreat\b/) ||
       line.match(/^(.+?) uses Neurotoxic Injection \(Tetrodotoxin\)\b/) ||
       line.match(/^(.+?) uses Overinflation\b/) ||
@@ -773,6 +825,21 @@ function buildTurnSummary(newLines) {
       line.includes("explodes") ||
       line.includes("Immobile Stalk") ||
       line.includes("Ancestral Retreat") ||
+      line.includes("Thoth's Mirage") ||
+      line.includes("Oasis") ||
+      line.includes("Anubis' Staff") ||
+      line.includes("hit chance is capped") ||
+      line.includes("burning oasis") ||
+      line.includes("desert answers the mirage") ||
+      line.includes("empty heat") ||
+      line.includes("attack finds only mirage") ||
+      line.includes("swallows the strike") ||
+      line.includes("shimmering air") ||
+      line.includes("strikes an illusion") ||
+      line.includes("false image") ||
+      line.includes("real Fennec is already gone") ||
+      line.includes("The Oasis bends the horizon") ||
+      line.includes("Heat distortion deceives the senses") ||
       line.includes("reflects");
 
     if (important) {
@@ -799,6 +866,9 @@ function deriveTurnOutcome(summaryLines) {
   if (joined.includes("Nervous Disruption")) return "Special Triggered";
   if (joined.includes("Total Regeneration")) return "Special Triggered";
   if (joined.includes("Ancestral Retreat")) return "Special Triggered";
+  if (joined.includes("Anubis' Staff")) return "Special Triggered";
+  if (joined.includes("Thoth's Mirage")) return "Passive Triggered";
+  if (joined.includes("Oasis")) return "Oasis Active";
   if (joined.includes("Death Roll")) return "Special Triggered";
   if (joined.includes("Dung Throw")) return "Special Triggered";
   if (joined.includes("Ballistic Strike")) return "Special Triggered";
