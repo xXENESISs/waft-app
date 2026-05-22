@@ -650,7 +650,7 @@ export const animals = {
       id: "immobile-stalk",
       name: "Immobile Stalk",
       description:
-        "Each time the opponent uses Concentration, Matamata gains 1 stalk charge. At 3 charges, starting on the next turn, its next attack cannot miss, deals double damage, and absorbs 20 stamina from the opponent."
+        "Each time the opponent uses Concentration, Matamata gains 1 stalk charge. At 4 charges, starting on the next turn, its next attack cannot miss, deals double damage, and absorbs 20 stamina from the opponent."
     },
 
     special: {
@@ -699,6 +699,42 @@ export const animals = {
       "Evasive special. Deals x2 damage. Outside Oasis, heals the Fennec for 50% of the damage dealt and steals stamina equal to 25% of the damage dealt. During Oasis, heals for 100% of the damage dealt and steals stamina equal to 50% of the damage dealt.",
     chargeType: "evasive",
     chargeHits: 4
+  }
+},
+
+"giant-asian-mantis": {
+  id: "giant-asian-mantis",
+  name: "Giant Asian Mantis",
+  category: "arthropods-and-other-invertebrates",
+  
+  stats: {
+    life: 78,
+    attack: 87,
+    defense: 69,
+    resistance: 68,
+    technique: 72,
+    speed: 74,
+    agility: 66,
+    explosiveness: 86
+  },
+  biomes: {
+    favorable: ["forest", "jungle"],
+    neutral: ["marine", "mountain"],
+    unfavorable: ["desert", "arctic"]
+  },
+  passive: {
+    id: "decapitation",
+    name: "Decapitation",
+    description:
+      "After any successful direct hit, if the enemy is at 25% HP or lower, the Giant Asian Mantis has a 20% chance to decapitate the enemy, killing it instantly."
+  },
+  special: {
+    id: "raptorial-chain",
+    name: "Raptorial Chain",
+    description:
+      "Offensive special. Performs up to 5 consecutive strikes. Each strike deals 50% normal damage and rolls accuracy separately. If one strike misses, the chain stops immediately. If at least 3 strikes hit, the enemy suffers -20% Defense for 2 turns. After each successful strike, if the enemy is at 25% HP or lower, Decapitation can trigger.",
+    chargeType: "offensive",
+    chargeHits: 5
   }
 },
 

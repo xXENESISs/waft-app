@@ -131,6 +131,7 @@ function getImageCandidates(id, animal) {
     pufferfish: ["./images/animals/fish/pufferfish.png"],
     "eurasian-eagle-owl": ["./images/animals/birds/eurasian-eagle-owl.png"],
     "fennec": ["./images/animals/mammals/fennec.png"],
+    "giant-asian-mantis": ["./images/animals/arthropods/asian-giant-mantis.png"],
   };
 
   return [direct, ...(legacy[id] ?? [])];
@@ -313,7 +314,7 @@ function getExtraResourceText(fighter) {
     return (
       "Immobile Stalk: " +
       charges +
-      "/3" +
+      "/4" +
       "\nAmbush ready: " +
       ready
     );
@@ -862,6 +863,11 @@ function buildTurnSummary(newLines) {
       line.includes("real Fennec is already gone") ||
       line.includes("The Oasis bends the horizon") ||
       line.includes("Heat distortion deceives the senses") ||
+      line.includes("Decapitation") ||
+      line.includes("Raptorial Chain") ||
+      line.includes("Raptorial Defense Down") ||
+      line.includes("severed head") ||
+      line.includes("raptorial blades") ||
       line.includes("reflects");
 
     if (important) {
@@ -905,6 +911,8 @@ function deriveTurnOutcome(summaryLines) {
   if (joined.includes("suffers")) return "Damage / Effect Tick";
   if (joined.includes("activates Suffocating Humidity")) return "Humidity Activated";
   if (joined.includes("cannot use")) return "Action Blocked";
+  if (joined.includes("Decapitation")) return "Execution";
+  if (joined.includes("Raptorial Chain")) return "Special Triggered"; 
 
   return "Resolved";
 }

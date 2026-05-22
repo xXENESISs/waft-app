@@ -1243,6 +1243,62 @@ function applyAncestralRetreatDefense(defender, attacker, damage, battle) {
   return reducedDamage;
 }
 
+function tryMantisDecapitation(attacker, defender, battle) {
+  if (
+    !attacker ||
+    !defender ||
+    !battle ||
+    !attacker.passive ||
+    attacker.passive.id !== "decapitation" ||
+    !defender.alive
+  ) {
+    return false;
+  }
+
+  if (defender.hp > defender.maxHp * 0.25) {
+    return false;
+  }
+
+  const decapitationChance = 0.2;
+
+  if (Math.random() >= decapitationChance) {
+    addLog(
+      battle,
+      attacker.name +
+        "'s Decapitation threatens " +
+        defender.name +
+        ", but the execution fails."
+    );
+
+    return false;
+  }
+
+  defender.hp = 0;
+  defender.alive = false;
+
+    addLog(
+    battle,
+    attacker.name +
+      "'s Decapitation triggers: " +
+      defender.name +
+      " is instantly killed."
+  );
+
+  addLog(
+    battle,
+    attacker.name +
+      "'s raptorial blades shear through " +
+      defender.name +
+      "'s neck. " +
+      defender.name +
+      "'s severed head hits the ground."
+  );
+
+  finishBattleIfNeeded(battle);
+
+  return true;
+}
+
 export function canUseAction(fighter, actionType, battle = null) {
   if (!ACTIONS[actionType]) return false;
 
@@ -1458,7 +1514,7 @@ export function resolveConcentration(fighter, battle) {
     !opponent.matamataAmbushReady
   ) {
     opponent.matamataStalkCharges = Math.min(
-      3,
+      4,
       (opponent.matamataStalkCharges || 0) + 1
     );
 
@@ -1467,10 +1523,10 @@ export function resolveConcentration(fighter, battle) {
       opponent.name +
         "'s Immobile Stalk gains 1 charge (" +
         opponent.matamataStalkCharges +
-        "/3)."
+        "/4)."
     );
 
-    if (opponent.matamataStalkCharges >= 3) {
+    if (opponent.matamataStalkCharges >= 4) {
       opponent.matamataAmbushReady = true;
       opponent.matamataAmbushReadyTurn = battle.turn + 1;
 
@@ -1789,6 +1845,15 @@ export function performAttack(attacker, defender, actionType, battle) {
       (critical ? " (CRITICAL)" : "") +
       "."
   );
+
+    if (tryMantisDecapitation(attacker, defender, battle)) {
+    return {
+      hit: true,
+      damage: finalDamage,
+      critical,
+      hitChance
+    };
+  }
 
   if (defender.id === "pufferfish" && attacker.alive) {
     applyDamage(attacker, 10);
@@ -2136,6 +2201,174 @@ function performMantisShrimpSpecial(attacker, defender, battle) {
   increaseParasiticControlHits(attacker, defender, battle);
   increaseFalconStacks(attacker, battle);
   increaseMacaqueChain(attacker, defender, battle);
+  consumeSpecialCharge(attacker);
+}
+
+function performGiantAsianMantisSpecial(attacker, defender, battle) {
+  attacker.concentratedLastTurn = false;
+  attacker.overinflationUsedThisTurn = false;
+
+  let successfulHits = 0;
+  let totalDamage = 0;
+
+  addLog(
+    battle,
+    attacker.name + " uses Raptorial Chain, unleashing a sequence of raptorial strikes."
+  );
+
+  for (let strikeNumber = 1; strikeNumber <= 5; strikeNumber++) {
+    const precision =
+      getEffectiveStat(attacker, "technique", battle, defender, "special") * 0.6 +
+      getEffectiveStat(attacker, "explosiveness", battle, defender, "special") * 0.25 +
+      getEffectiveStat(attacker, "speed", battle, defender, "special") * 0.15;
+
+    const evasion = calculateEvasion(defender, battle);
+    let hitChance = calculateHitChanceFromValues(precision, evasion);
+
+    hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
+
+    const hit = rollHit(hitChance);
+
+    if (!hit) {
+      addLog(
+        battle,
+        attacker.name +
+          "'s Raptorial Chain breaks at strike " +
+          strikeNumber +
+          ". The blow misses " +
+          defender.name +
+          "."
+      );
+
+      resetMomentum(attacker, battle, "miss");
+      resetParasiticControlHits(attacker, battle, "miss");
+      resetFalconStacks(attacker, battle, "miss");
+      resetMacaqueChain(attacker, battle, "miss");
+      handleReactiveChargeOnMiss(attacker, defender, battle);
+      break;
+    }
+
+    const damageInfo = calculateDamageWithDefenseFactor(
+      attacker,
+      defender,
+      battle,
+      1,
+      "special"
+    );
+
+    let damage = Math.max(1, Math.round(damageInfo.damage * 0.5));
+
+    damage = applyIllusoryDanceDefense(defender, damage, battle);
+    damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+
+    applyDamage(defender, damage);
+
+    successfulHits += 1;
+    totalDamage += damage;
+
+    addLog(
+      battle,
+      attacker.name +
+        "'s Raptorial Chain strike " +
+        strikeNumber +
+        " hits " +
+        defender.name +
+        " for " +
+        damage +
+        " damage."
+    );
+
+    if (
+      attacker.alive &&
+      defender &&
+      (defender.id === "pufferfish" ||
+        defender.id === "puffer-fish" ||
+        defender.name === "Pufferfish")
+    ) {
+      applyDamage(attacker, 10);
+
+      addLog(
+        battle,
+        attacker.name +
+          " suffers 10 damage from " +
+          defender.name +
+          "'s spines."
+      );
+
+      if (!attacker.alive) {
+        addLog(
+          battle,
+          attacker.name +
+            "'s Raptorial Chain ends as the spines bring it down."
+        );
+
+        finishBattleIfNeeded(battle);
+        consumeSpecialCharge(attacker);
+        return;
+      }
+    }
+
+    if (tryMantisDecapitation(attacker, defender, battle)) {
+      addLog(
+        battle,
+        attacker.name +
+          "'s Raptorial Chain ends as the execution is completed."
+      );
+
+      consumeSpecialCharge(attacker);
+      return;
+    }
+
+    if (!defender.alive) {
+      consumeSpecialCharge(attacker);
+      return;
+    }
+  }
+
+  if (successfulHits >= 3 && defender.alive) {
+    addEffect(
+      defender,
+      {
+        id: "raptorial-defense-down",
+        name: "Raptorial Defense Down",
+        duration: 2,
+        stackable: false,
+        allowsConcentration: true,
+        modifiers: {
+          defensePct: -20
+        }
+      },
+      battle
+    );
+
+    addLog(
+      battle,
+      attacker.name +
+        "'s Raptorial Chain opens " +
+        defender.name +
+        "'s guard: Defense is reduced by 20% for 2 turns."
+    );
+  }
+
+  addLog(
+    battle,
+    attacker.name +
+      "'s Raptorial Chain ends with " +
+      successfulHits +
+      " successful hit" +
+      (successfulHits === 1 ? "" : "s") +
+      " and " +
+      totalDamage +
+      " total damage."
+  );
+
+  if (successfulHits > 0) {
+    increaseMomentum(attacker, battle);
+    increaseParasiticControlHits(attacker, defender, battle);
+    increaseFalconStacks(attacker, battle);
+    increaseMacaqueChain(attacker, defender, battle);
+  }
+
   consumeSpecialCharge(attacker);
 }
 
@@ -2899,6 +3132,9 @@ function performSpecialAction(attacker, defender, battle) {
       break;
     case "anubis-staff":
        performFennecSpecial(attacker, defender, battle);
+      break;
+    case "raptorial-chain":
+       performGiantAsianMantisSpecial(attacker, defender, battle);
       break;
 
     default:
