@@ -68,13 +68,14 @@ function prettyActionLabel(action, fighter = null) {
   }
 
   const labels = {
-    normal: "Normal Attack",
-    quick: "Quick Attack",
-    precise: "Precise Attack",
-    explosive: "Explosive Attack",
-    concentration: "Concentration",
-    special: "Special Attack"
-  };
+  normal: "Normal Attack",
+  quick: "Quick Attack",
+  precise: "Precise Attack",
+  explosive: "Explosive Attack",
+  concentration: "Concentration",
+  special: "Special Attack",
+  "larval-command": "Larval Command"
+};
 
   return labels[action] ?? action;
 }
@@ -132,6 +133,7 @@ function getImageCandidates(id, animal) {
     "eurasian-eagle-owl": ["./images/animals/birds/eurasian-eagle-owl.png"],
     "fennec": ["./images/animals/mammals/fennec.png"],
     "giant-asian-mantis": ["./images/animals/arthropods/asian-giant-mantis.png"],
+    "darwins-frog": ["./images/animals/amphibians/darwins-frog.png"],
   };
 
   return [direct, ...(legacy[id] ?? [])];
@@ -368,6 +370,13 @@ function getExtraResourceText(fighter) {
       "\n" +
       oasisText
     );
+  }
+
+    if (fighter.passive && fighter.passive.id === "larval-gestation") {
+    var larvae = fighter.darwinsLarvae || 0;
+    var maxLarvae = fighter.darwinsMaxLarvae || 5;
+
+    return "Larvae: " + larvae + "/" + maxLarvae;
   }
 
   return "";
@@ -615,6 +624,8 @@ function updateSpecialButton(player) {
   const titleEl = document.getElementById("btn-special-title");
   const descEl = document.getElementById("btn-special-desc");
 
+  if (!specialBtn || !titleEl || !descEl) return;
+
   if (!player?.special) {
     titleEl.textContent = "Special Attack";
     descEl.textContent = "No special available.";
@@ -633,6 +644,31 @@ function updateSpecialButton(player) {
   } else {
     specialBtn.classList.remove("special-ready");
   }
+}
+
+function updateLarvalCommandButton(player) {
+  const larvalBtn = document.getElementById("larvalCommandBtn");
+  const titleEl = document.getElementById("btn-larval-title");
+  const descEl = document.getElementById("btn-larval-desc");
+
+  if (!larvalBtn || !titleEl || !descEl) return;
+
+  if (!player || player.passive?.id !== "larval-gestation") {
+    larvalBtn.style.display = "none";
+    return;
+  }
+
+  const larvae = player.darwinsLarvae || 0;
+  const maxLarvae = player.darwinsMaxLarvae || 5;
+
+  larvalBtn.style.display = "block";
+  titleEl.textContent = "Larval Command";
+  descEl.textContent =
+    "Larvae: " +
+    larvae +
+    "/" +
+    maxLarvae +
+    ". Assign larvae to attack, defend or sacrifice.";
 }
 
 function updateStaticActionButtons() {
@@ -667,8 +703,15 @@ function updateActionButtons() {
     return;
   }
 
-  buttons.forEach((btn) => {
+    buttons.forEach((btn) => {
     const action = btn.dataset.action;
+
+    if (action === "larval-command") {
+      const larvae = player.darwinsLarvae || 0;
+      btn.disabled = !(player.passive?.id === "larval-gestation" && larvae > 0);
+      return;
+    }
+
     btn.disabled = !canUseAction(player, action, currentBattle);
   });
 }
@@ -683,9 +726,15 @@ function renderBattle() {
   renderFighter("enemy", enemy);
   renderSummary();
   renderLog();
+
   updateStaticActionButtons();
-  updateSpecialButton(player);
-  updateActionButtons();
+updateSpecialButton(player);
+
+if (typeof updateLarvalCommandButton === "function") {
+  updateLarvalCommandButton(player);
+}
+
+updateActionButtons();
 
   document.getElementById("playerTooltip").innerHTML = formatTooltip(player);
   document.getElementById("enemyTooltip").innerHTML = formatTooltip(enemy);
@@ -761,6 +810,7 @@ function buildTurnSummary(newLines) {
       line.match(/^(.+?) uses Mutilation\b/) ||
       line.match(/^(.+?) uses Anubis' Staff\b/) ||
       line.match(/^(.+?) uses Ancestral Retreat\b/) ||
+      line.match(/^(.+?) uses Darwinian Expulsion\b/) ||
       line.match(/^(.+?) uses Neurotoxic Injection \(Tetrodotoxin\)\b/) ||
       line.match(/^(.+?) uses Overinflation\b/) ||
       line.match(/^(.+?) explodes\b/);
@@ -868,7 +918,29 @@ function buildTurnSummary(newLines) {
       line.includes("Raptorial Defense Down") ||
       line.includes("severed head") ||
       line.includes("raptorial blades") ||
-      line.includes("reflects");
+      line.includes("reflects") ||
+
+      // Darwin's Frog / Larval system
+      line.includes("Darwinian Expulsion") ||
+      line.includes("Larval Command") ||
+      line.includes("commands its larvae") ||
+      line.includes("Larval Sacrifice") ||
+      line.includes("Larval Defense") ||
+      line.includes("Larval Attack") ||
+      line.includes("conserves") && line.includes("larva") ||
+      line.includes("larvae") ||
+      line.includes("larva") ||
+      line.includes("overflowing larva") ||
+      line.includes("maximum larvae") ||
+      line.includes("blocks all the incoming direct damage") ||
+      line.includes("blocks half of the incoming direct damage") ||
+      line.includes("blocks secondary effects and status changes") ||
+      line.includes("fails to apply") ||
+      line.includes("fails to reduce") ||
+      line.includes("fails to take control") ||
+      line.includes("fails to open") ||
+      line.includes("fails to drain") ||
+      line.includes("Tetrodotoxin effects");
 
     if (important) {
       summary.push(line);
@@ -1254,34 +1326,44 @@ async function resolveLocalTurn(playerAction) {
 
   isAnimatingTurn = true;
 
-  const { player, enemy } = getBattleFighters();
-  const enemyAction = chooseEnemyAction(enemy);
-  const oldLogLength = currentBattle.log.length;
+  try {
+    const { player, enemy } = getBattleFighters();
+    const enemyAction = chooseEnemyAction(enemy);
+    const oldLogLength = currentBattle.log.length;
 
-  lastPlayerAction = prettyActionLabel(playerAction, player);
-  lastEnemyAction = prettyActionLabel(enemyAction, enemy);
+    lastPlayerAction = prettyActionLabel(playerAction, player);
+    lastEnemyAction = prettyActionLabel(enemyAction, enemy);
 
-  if (currentBattle.fighterA.id === player.id) {
-    resolveTurn(currentBattle, playerAction, enemyAction);
-  } else {
-    resolveTurn(currentBattle, enemyAction, playerAction);
+    if (currentBattle.fighterA.id === player.id) {
+      resolveTurn(currentBattle, playerAction, enemyAction);
+    } else {
+      resolveTurn(currentBattle, enemyAction, playerAction);
+    }
+
+    const newLines = currentBattle.log.slice(oldLogLength);
+    const summaryLines = buildTurnSummary(newLines);
+
+    lastTurnSummaryLines = [""];
+    lastTurnOutcome = deriveTurnOutcome(summaryLines);
+
+    renderBattle();
+
+    await runShakeSequence(newLines, player, enemy);
+    await typeTurnSummary(summaryLines);
+
+    lastTurnSummaryLines = summaryLines;
+  } catch (error) {
+    console.error("Turn resolution failed:", error);
+
+    lastTurnSummaryLines = [
+      "Turn resolution failed. Check the console for the exact error."
+    ];
+
+    lastTurnOutcome = "Error";
+  } finally {
+    isAnimatingTurn = false;
+    renderBattle();
   }
-
-  const newLines = currentBattle.log.slice(oldLogLength);
-  const summaryLines = buildTurnSummary(newLines);
-
-  lastTurnSummaryLines = [""];
-  lastTurnOutcome = deriveTurnOutcome(summaryLines);
-
-  renderBattle();
-
-  await runShakeSequence(newLines, player, enemy);
-  await typeTurnSummary(summaryLines);
-
-  lastTurnSummaryLines = summaryLines;
-  isAnimatingTurn = false;
-
-  renderBattle();
 }
 
 async function resolveMultiplayerTurnFromServer(data) {
@@ -1317,6 +1399,167 @@ async function resolveMultiplayerTurnFromServer(data) {
   lastTurnSummaryLines = summaryLines;
   isAnimatingTurn = false;
 
+  renderBattle();
+}
+
+let larvalDraftCommand = {
+  attack: 0,
+  defense: 0,
+  sacrifice: 0
+};
+
+function getLarvalDraftTotal() {
+  return (
+    larvalDraftCommand.attack +
+    larvalDraftCommand.defense +
+    larvalDraftCommand.sacrifice
+  );
+}
+
+function getCurrentPlayerLarvae() {
+  if (!currentBattle) return 0;
+
+  const { player } = getBattleFighters();
+
+  return player.darwinsLarvae || 0;
+}
+
+function renderLarvalCommandModal() {
+  const larvae = getCurrentPlayerLarvae();
+  const totalUsed = getLarvalDraftTotal();
+  const conserved = Math.max(0, larvae - totalUsed);
+
+  document.getElementById("larvalAvailableText").textContent =
+    "Larvae available: " + larvae + "/5";
+
+  document.getElementById("larvalAttackValue").textContent = larvalDraftCommand.attack;
+  document.getElementById("larvalDefenseValue").textContent = larvalDraftCommand.defense;
+  document.getElementById("larvalSacrificeValue").textContent = larvalDraftCommand.sacrifice;
+  document.getElementById("larvalConserveValue").textContent = conserved;
+
+  document.getElementById("larvalAttackMinus").disabled = larvalDraftCommand.attack <= 0;
+  document.getElementById("larvalDefenseMinus").disabled = larvalDraftCommand.defense <= 0;
+  document.getElementById("larvalSacrificeMinus").disabled = larvalDraftCommand.sacrifice <= 0;
+
+  document.getElementById("larvalAttackPlus").disabled = totalUsed >= larvae;
+  document.getElementById("larvalDefensePlus").disabled =
+    totalUsed >= larvae || larvalDraftCommand.defense >= 2;
+  document.getElementById("larvalSacrificePlus").disabled = totalUsed >= larvae;
+}
+
+async function openLarvalCommandPrompt() {
+  if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return;
+
+  const { player } = getBattleFighters();
+
+  if (!player || player.passive?.id !== "larval-gestation") {
+    alert("Only Darwin's Frog can command larvae.");
+    return;
+  }
+
+  const larvae = player.darwinsLarvae || 0;
+
+  if (larvae <= 0) {
+    alert("No larvae available.");
+    return;
+  }
+
+  larvalDraftCommand = player.darwinsLarvalCommand
+    ? {
+        attack: player.darwinsLarvalCommand.attack || 0,
+        defense: player.darwinsLarvalCommand.defense || 0,
+        sacrifice: player.darwinsLarvalCommand.sacrifice || 0
+      }
+    : {
+        attack: 0,
+        defense: 0,
+        sacrifice: 0
+      };
+
+  const modal = document.getElementById("larvalCommandModal");
+  modal.style.display = "flex";
+
+  renderLarvalCommandModal();
+}
+
+function closeLarvalCommandModal() {
+  const modal = document.getElementById("larvalCommandModal");
+  modal.style.display = "none";
+}
+
+function adjustLarvalDraft(type, delta) {
+  const larvae = getCurrentPlayerLarvae();
+  const currentValue = larvalDraftCommand[type] || 0;
+
+  if (delta > 0 && getLarvalDraftTotal() >= larvae) {
+    return;
+  }
+
+  if (type === "defense" && delta > 0 && currentValue >= 2) {
+    return;
+  }
+
+  larvalDraftCommand[type] = Math.max(0, currentValue + delta);
+
+  renderLarvalCommandModal();
+}
+
+function clearLarvalDraft() {
+  larvalDraftCommand = {
+    attack: 0,
+    defense: 0,
+    sacrifice: 0
+  };
+
+  renderLarvalCommandModal();
+}
+
+function confirmLarvalCommandModal() {
+  if (!currentBattle || currentBattle.finished) return;
+
+  const { player } = getBattleFighters();
+  const larvae = player.darwinsLarvae || 0;
+  const totalUsed = getLarvalDraftTotal();
+
+  if (totalUsed > larvae) {
+    alert("You assigned more larvae than available.");
+    return;
+  }
+
+  if (totalUsed <= 0) {
+    player.darwinsLarvalCommand = null;
+
+    lastTurnOutcome = "Larvae Conserved";
+    lastTurnSummaryLines = [
+      "Larval Command cleared.",
+      "All larvae will be conserved.",
+      "Choose a main action to resolve the turn."
+    ];
+
+    closeLarvalCommandModal();
+    renderBattle();
+    return;
+  }
+
+  player.darwinsLarvalCommand = {
+    attack: larvalDraftCommand.attack,
+    defense: larvalDraftCommand.defense,
+    sacrifice: larvalDraftCommand.sacrifice
+  };
+
+  const conserved = larvae - totalUsed;
+
+  lastTurnOutcome = "Larvae Prepared";
+  lastTurnSummaryLines = [
+    "Larval Command prepared.",
+    "Attack larvae: " + larvalDraftCommand.attack,
+    "Defense larvae: " + larvalDraftCommand.defense,
+    "Sacrifice larvae: " + larvalDraftCommand.sacrifice,
+    "Conserved larvae: " + conserved,
+    "Choose a main action to resolve the turn."
+  ];
+
+  closeLarvalCommandModal();
   renderBattle();
 }
 
@@ -1479,13 +1722,34 @@ function init() {
 
   document.getElementById("startBattleBtn").addEventListener("click", startBattle);
 
-  document.querySelectorAll(".action-btn").forEach((btn) => {
+    document.querySelectorAll(".action-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const action = btn.dataset.action;
+
+      if (action === "larval-command") {
+        await openLarvalCommandPrompt();
+        return;
+      }
+
       await playTurn(action);
     });
+
     btn.disabled = true;
   });
+
+    document.getElementById("larvalCommandCloseBtn").addEventListener("click", closeLarvalCommandModal);
+
+  document.getElementById("larvalAttackMinus").addEventListener("click", () => adjustLarvalDraft("attack", -1));
+  document.getElementById("larvalAttackPlus").addEventListener("click", () => adjustLarvalDraft("attack", 1));
+
+  document.getElementById("larvalDefenseMinus").addEventListener("click", () => adjustLarvalDraft("defense", -1));
+  document.getElementById("larvalDefensePlus").addEventListener("click", () => adjustLarvalDraft("defense", 1));
+
+  document.getElementById("larvalSacrificeMinus").addEventListener("click", () => adjustLarvalDraft("sacrifice", -1));
+  document.getElementById("larvalSacrificePlus").addEventListener("click", () => adjustLarvalDraft("sacrifice", 1));
+
+  document.getElementById("larvalClearBtn").addEventListener("click", clearLarvalDraft);
+  document.getElementById("larvalConfirmBtn").addEventListener("click", confirmLarvalCommandModal);
 
   initFlipButtons();
   updateStaticActionButtons();

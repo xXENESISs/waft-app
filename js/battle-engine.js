@@ -46,6 +46,11 @@ const ACTIONS = {
     name: "Special Attack",
     staminaCost: 0,
     priority: 1
+  },
+  "larval-command": {
+    name: "Larval Command",
+    staminaCost: 0,
+    priority: 7
   }
 };
 
@@ -144,7 +149,13 @@ export function createFighter(id) {
       explosive: false,
       concentration: 0
     },
-    fennecOasisReady: false
+    fennecOasisReady: false,
+
+    darwinsLarvae: 0,
+    darwinsMaxLarvae: 5,
+    darwinsLarvalDefense: 0,
+    darwinsLarvalBlocksEffects: false,
+    darwinsLarvalCommand: null,
   };
 }
 
@@ -776,7 +787,9 @@ function performMarineEcho(attacker, defender, battle) {
     "passive"
   );
 
-  const damage = damageInfo.damage;
+  let damage = damageInfo.damage;
+
+  damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
 
@@ -838,8 +851,8 @@ function resolvePhantomCurrentStrike(fighter, opponent, battle) {
   let damage = Math.max(1, Math.round(damageInfo.damage * 2));
 
   damage = applyIllusoryDanceDefense(opponent, damage, battle);
-
   damage = applyAncestralRetreatDefense(opponent, fighter, damage, battle);
+  damage = applyDarwinsLarvalDefense(opponent, fighter, damage, battle);
 
   applyDamage(opponent, damage);
 
@@ -1243,6 +1256,60 @@ function applyAncestralRetreatDefense(defender, attacker, damage, battle) {
   return reducedDamage;
 }
 
+function applyDarwinsLarvalDefense(defender, attacker, damage, battle) {
+  if (
+    !defender ||
+    !battle ||
+    !isDarwinsFrog(defender) ||
+    !defender.darwinsLarvalDefense ||
+    defender.darwinsLarvalDefense <= 0 ||
+    damage <= 0
+  ) {
+    return damage;
+  }
+
+  const larvaeDefending = defender.darwinsLarvalDefense;
+  const originalDamage = damage;
+
+  let reducedDamage = damage;
+
+  if (larvaeDefending === 1) {
+    reducedDamage = Math.max(0, Math.round(originalDamage * 0.5));
+  }
+
+  if (larvaeDefending >= 2) {
+    reducedDamage = 0;
+  }
+
+  addLog(
+    battle,
+    defender.name +
+      "'s Larval Defense blocks " +
+      (larvaeDefending >= 2 ? "all" : "half of") +
+      " the incoming direct damage (" +
+      originalDamage +
+      " → " +
+      reducedDamage +
+      ")."
+  );
+
+  return reducedDamage;
+}
+
+function darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle) {
+  if (!defender || !defender.darwinsLarvalBlocksEffects) {
+    return false;
+  }
+
+  addLog(
+    battle,
+    defender.name +
+      "'s Larval Defense blocks secondary effects and status changes."
+  );
+
+  return true;
+}
+
 function tryMantisDecapitation(attacker, defender, battle) {
   if (
     !attacker ||
@@ -1299,6 +1366,91 @@ function tryMantisDecapitation(attacker, defender, battle) {
   return true;
 }
 
+function isDarwinsFrog(fighter) {
+  return (
+    fighter &&
+    fighter.passive &&
+    fighter.passive.id === "larval-gestation"
+  );
+}
+
+function addDarwinsLarvae(fighter, amount, battle, reason = "Larval Gestation") {
+  if (!isDarwinsFrog(fighter)) {
+    return 0;
+  }
+
+  const maxLarvae = fighter.darwinsMaxLarvae || 5;
+  const currentLarvae = fighter.darwinsLarvae || 0;
+  const availableSpace = Math.max(0, maxLarvae - currentLarvae);
+  const larvaeAdded = Math.min(amount, availableSpace);
+
+  if (larvaeAdded <= 0) {
+    addLog(
+      battle,
+      fighter.name +
+        "'s " +
+        reason +
+        " cannot generate more larvae (" +
+        currentLarvae +
+        "/" +
+        maxLarvae +
+        ")."
+    );
+
+    return 0;
+  }
+
+  fighter.darwinsLarvae = currentLarvae + larvaeAdded;
+
+  addLog(
+    battle,
+    fighter.name +
+      "'s " +
+      reason +
+      " generates " +
+      larvaeAdded +
+      " larva" +
+      (larvaeAdded === 1 ? "" : "e") +
+      " (" +
+      fighter.darwinsLarvae +
+      "/" +
+      maxLarvae +
+      ")."
+  );
+
+  return larvaeAdded;
+}
+
+function handleDarwinsLarvalGestation(fighter, battle) {
+  if (!isDarwinsFrog(fighter)) {
+    return;
+  }
+
+  if ((fighter.darwinsLarvae || 0) >= (fighter.darwinsMaxLarvae || 5)) {
+    return;
+  }
+
+  if (Math.random() < 0.25) {
+    addDarwinsLarvae(fighter, 1, battle, "Larval Gestation");
+  }
+}
+
+function normalizeDarwinsLarvalCommand(command) {
+  const safeCommand = command || {};
+
+  return {
+    attack: Math.max(0, Math.floor(safeCommand.attack || 0)),
+    defense: Math.max(0, Math.min(2, Math.floor(safeCommand.defense || 0))),
+    sacrifice: Math.max(0, Math.floor(safeCommand.sacrifice || 0))
+  };
+}
+
+function getDarwinsLarvalCommandCost(command) {
+  const normalized = normalizeDarwinsLarvalCommand(command);
+
+  return normalized.attack + normalized.defense + normalized.sacrifice;
+}
+
 export function canUseAction(fighter, actionType, battle = null) {
   if (!ACTIONS[actionType]) return false;
 
@@ -1308,6 +1460,15 @@ export function canUseAction(fighter, actionType, battle = null) {
         ? battle.fighterB
         : battle.fighterA
       : null;
+
+  if (actionType === "larval-command") {
+    if (!isDarwinsFrog(fighter)) return false;
+
+    const commandCost = getDarwinsLarvalCommandCost(fighter.darwinsLarvalCommand);
+    const larvae = fighter.darwinsLarvae || 0;
+
+    return commandCost > 0 && commandCost <= larvae;
+  }
 
   if (actionType === "quick" && isQuickAttackBlocked(fighter)) {
     return false;
@@ -1323,12 +1484,12 @@ export function canUseAction(fighter, actionType, battle = null) {
     if (!fighter.special) return false;
 
     if (
-  fighter.special.id === "nocturnal-hunt" &&
-  battle &&
-  !isCircadianNight(battle)
-) {
-  return false;
-}
+      fighter.special.id === "nocturnal-hunt" &&
+      battle &&
+      !isCircadianNight(battle)
+    ) {
+      return false;
+    }
 
     if (fighter.special.id === "overinflation") {
       return fighter.overinflationUses > 0;
@@ -1548,6 +1709,15 @@ export function resolveConcentration(fighter, battle) {
 }
 
 function handlePostHitPassive(attacker, defender, battle, wasCritical, actionType = null) {
+  if (defender.darwinsLarvalBlocksEffects) {
+    addLog(
+      battle,
+      defender.name +
+        "'s Larval Defense blocks secondary effects and status changes."
+    );
+    return;
+  }
+
   if (attacker.passive?.id === "frozen-impact" && wasCritical) {
     const duration = battle.biome === "arctic" ? 4 : 2;
     addEffect(defender, createAgilityDownEffect(duration, 20), battle);
@@ -1829,6 +1999,7 @@ export function performAttack(attacker, defender, actionType, battle) {
   finalDamage = applyMatamataAmbushBonus(attacker, defender, finalDamage, battle);
   finalDamage = applyIllusoryDanceDefense(defender, finalDamage, battle);
   finalDamage = applyAncestralRetreatDefense(defender, attacker, finalDamage, battle);
+  finalDamage = applyDarwinsLarvalDefense(defender, attacker, finalDamage, battle);
 
   applyDamage(defender, finalDamage);
 
@@ -1961,17 +2132,34 @@ function performTigerSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
-  addEffect(defender, createBleedEffect(2, 15), battle);
 
-  addLog(
-    battle,
-    attacker.name +
-      " uses Lethal Bite, dealing " +
-      damage +
-      " damage, ignoring 50% Defense and applying Bleed."
-  );
+  if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
+    addLog(
+      battle,
+      attacker.name + "'s Lethal Bite fails to apply Bleed."
+    );
+
+    addLog(
+      battle,
+      attacker.name +
+        " uses Lethal Bite, dealing " +
+        damage +
+        " damage, ignoring 50% Defense."
+    );
+  } else {
+    addEffect(defender, createBleedEffect(2, 15), battle);
+
+    addLog(
+      battle,
+      attacker.name +
+        " uses Lethal Bite, dealing " +
+        damage +
+        " damage, ignoring 50% Defense and applying Bleed."
+    );
+  }
 
   addLog(
     battle,
@@ -2030,20 +2218,36 @@ function performHoneyBadgerSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
 
-  addEffect(defender, createMutilationEffect(2), battle);
+  if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
+    addLog(
+      battle,
+      attacker.name + "'s Mutilation fails to apply its disabling effect."
+    );
 
-  addLog(
-    battle,
-    attacker.name +
-      " uses Mutilation, dealing " +
-      damage +
-      " damage and reducing " +
-      defender.name +
-      "'s Attack, Speed and Agility by 30% for 2 turns, while blocking Quick Attack."
-  );
+    addLog(
+      battle,
+      attacker.name +
+        " uses Mutilation, dealing " +
+        damage +
+        " damage."
+    );
+  } else {
+    addEffect(defender, createMutilationEffect(2), battle);
+
+    addLog(
+      battle,
+      attacker.name +
+        " uses Mutilation, dealing " +
+        damage +
+        " damage and reducing " +
+        defender.name +
+        "'s Attack, Speed and Agility by 30% for 2 turns, while blocking Quick Attack."
+    );
+  }
 
   addLog(
     battle,
@@ -2145,8 +2349,15 @@ function performMantisShrimpSpecial(attacker, defender, battle) {
   const specialBaseDamage = Math.max(1, Math.round(damageInfo.damage * 2));
 
   if (!hit) {
-    const partialDamageToEnemy = Math.max(1, Math.round(specialBaseDamage * 0.25));
+    let partialDamageToEnemy = Math.max(1, Math.round(specialBaseDamage * 0.25));
     const selfDamage = Math.max(1, Math.round(specialBaseDamage * 0.5));
+
+    partialDamageToEnemy = applyDarwinsLarvalDefense(
+      defender,
+      attacker,
+      partialDamageToEnemy,
+      battle
+    );
 
     applyDamage(defender, partialDamageToEnemy);
     applyDamage(attacker, selfDamage);
@@ -2184,6 +2395,7 @@ function performMantisShrimpSpecial(attacker, defender, battle) {
 
   finalDamage = applyIllusoryDanceDefense(defender, finalDamage, battle);
   finalDamage = applyAncestralRetreatDefense(defender, attacker, finalDamage, battle);
+  finalDamage = applyDarwinsLarvalDefense(defender, attacker, finalDamage, battle);
 
   applyDamage(defender, finalDamage);
 
@@ -2260,6 +2472,7 @@ function performGiantAsianMantisSpecial(attacker, defender, battle) {
 
     damage = applyIllusoryDanceDefense(defender, damage, battle);
     damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+    damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
     applyDamage(defender, damage);
 
@@ -2308,7 +2521,7 @@ function performGiantAsianMantisSpecial(attacker, defender, battle) {
       }
     }
 
-    if (tryMantisDecapitation(attacker, defender, battle)) {
+    if (!defender.darwinsLarvalBlocksEffects && tryMantisDecapitation(attacker, defender, battle)) {
       addLog(
         battle,
         attacker.name +
@@ -2326,28 +2539,38 @@ function performGiantAsianMantisSpecial(attacker, defender, battle) {
   }
 
   if (successfulHits >= 3 && defender.alive) {
-    addEffect(
-      defender,
-      {
-        id: "raptorial-defense-down",
-        name: "Raptorial Defense Down",
-        duration: 2,
-        stackable: false,
-        allowsConcentration: true,
-        modifiers: {
-          defensePct: -20
-        }
-      },
-      battle
-    );
+    if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
+      addLog(
+        battle,
+        attacker.name +
+          "'s Raptorial Chain fails to open " +
+          defender.name +
+          "'s guard."
+      );
+    } else {
+      addEffect(
+        defender,
+        {
+          id: "raptorial-defense-down",
+          name: "Raptorial Defense Down",
+          duration: 2,
+          stackable: false,
+          allowsConcentration: true,
+          modifiers: {
+            defensePct: -20
+          }
+        },
+        battle
+      );
 
-    addLog(
-      battle,
-      attacker.name +
-        "'s Raptorial Chain opens " +
-        defender.name +
-        "'s guard: Defense is reduced by 20% for 2 turns."
-    );
+      addLog(
+        battle,
+        attacker.name +
+          "'s Raptorial Chain opens " +
+          defender.name +
+          "'s guard: Defense is reduced by 20% for 2 turns."
+      );
+    }
   }
 
   addLog(
@@ -2411,19 +2634,36 @@ function performDungBeetleSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
-  addEffect(defender, createAgilityDownEffect(3, 50), battle);
 
-  addLog(
-    battle,
-    attacker.name +
-      " uses Dung Throw, dealing " +
-      damage +
-      " damage and reducing " +
-      defender.name +
-      "'s Agility by 50% for 3 turns."
-  );
+  if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
+    addLog(
+      battle,
+      attacker.name + "'s Dung Throw fails to reduce Agility."
+    );
+
+    addLog(
+      battle,
+      attacker.name +
+        " uses Dung Throw, dealing " +
+        damage +
+        " damage."
+    );
+  } else {
+    addEffect(defender, createAgilityDownEffect(3, 50), battle);
+
+    addLog(
+      battle,
+      attacker.name +
+        " uses Dung Throw, dealing " +
+        damage +
+        " damage and reducing " +
+        defender.name +
+        "'s Agility by 50% for 3 turns."
+    );
+  }
 
   increaseMomentum(attacker, battle);
   increaseParasiticControlHits(attacker, defender, battle);
@@ -2444,6 +2684,7 @@ function performCaimanSpecial(attacker, defender, battle) {
 
     damage = applyIllusoryDanceDefense(defender, damage, battle);
     damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+    damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
     applyDamage(defender, damage);
 
@@ -2494,6 +2735,7 @@ function performCaimanSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
 
@@ -2545,22 +2787,31 @@ function performFennecSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
+
+  const drainBlocked = darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle);
 
   const oasisActive = fennecOasisIsActive(battle, attacker);
   const healRatio = oasisActive ? 1 : 0.5;
   const staminaStealRatio = oasisActive ? 0.5 : 0.25;
 
-  const healAmount = Math.max(1, Math.round(damage * healRatio));
-  const staminaToSteal = Math.max(1, Math.round(damage * staminaStealRatio));
-  const stolenStamina = Math.min(staminaToSteal, defender.stamina);
+  let healAmount = 0;
+  let stolenStamina = 0;
 
-  restoreHp(attacker, healAmount);
+  if (!drainBlocked && damage > 0) {
+    healAmount = Math.max(1, Math.round(damage * healRatio));
 
-  if (stolenStamina > 0) {
-    spendStamina(defender, stolenStamina, battle);
-    restoreStamina(attacker, stolenStamina, battle);
+    const staminaToSteal = Math.max(1, Math.round(damage * staminaStealRatio));
+    stolenStamina = Math.min(staminaToSteal, defender.stamina);
+
+    restoreHp(attacker, healAmount);
+
+    if (stolenStamina > 0) {
+      spendStamina(defender, stolenStamina, battle);
+      restoreStamina(attacker, stolenStamina, battle);
+    }
   }
 
   addLog(
@@ -2571,7 +2822,13 @@ function performFennecSpecial(attacker, defender, battle) {
       " damage."
   );
 
-  if (oasisActive) {
+  if (drainBlocked) {
+    addLog(
+      battle,
+      attacker.name +
+        "'s Anubis' Staff fails to drain HP or stamina."
+    );
+  } else if (oasisActive) {
     addLog(
       battle,
       "Oasis empowers Anubis' Staff: " +
@@ -2709,23 +2966,127 @@ function performEmeraldWaspSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
 
-  defender.nervousDisruptionActive = true;
-  defender.parasiticControlActive = false;
+  if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
+    addLog(
+      battle,
+      attacker.name + "'s Nervous Disruption fails to take control."
+    );
+
+    addLog(
+      battle,
+      attacker.name +
+        " uses Nervous Disruption, dealing " +
+        damage +
+        " damage."
+    );
+  } else {
+    defender.nervousDisruptionActive = true;
+    defender.parasiticControlActive = false;
+
+    addLog(
+      battle,
+      attacker.name +
+        " uses Nervous Disruption, dealing " +
+        damage +
+        " damage. On " +
+        defender.name +
+        "'s next turn, it hits itself and cannot use Concentration or Special Attack."
+    );
+  }
+
+  increaseParasiticControlHits(attacker, defender, battle);
+  consumeSpecialCharge(attacker);
+}
+
+function performDarwinsFrogSpecial(attacker, defender, battle) {
+  attacker.concentratedLastTurn = false;
+  attacker.overinflationUsedThisTurn = false;
+
+  const larvaeBefore = attacker.darwinsLarvae || 0;
+  const maxLarvae = attacker.darwinsMaxLarvae || 5;
+
+  const larvaeReleased = Math.floor(Math.random() * 3) + 1;
+  const availableSpace = Math.max(0, maxLarvae - larvaeBefore);
+  const larvaeStored = Math.min(larvaeReleased, availableSpace);
+  const overflowLarvae = larvaeReleased - larvaeStored;
 
   addLog(
     battle,
     attacker.name +
-      " uses Nervous Disruption, dealing " +
-      damage +
-      " damage. On " +
-      defender.name +
-      "'s next turn, it hits itself and cannot use Concentration or Special Attack."
+      " uses Darwinian Expulsion, violently swelling its vocal sac and releasing " +
+      larvaeReleased +
+      " larva" +
+      (larvaeReleased === 1 ? "" : "e") +
+      " into the battlefield."
   );
 
-  increaseParasiticControlHits(attacker, defender, battle);
+  if (larvaeStored > 0) {
+    addDarwinsLarvae(attacker, larvaeStored, battle, "Darwinian Expulsion");
+  } else {
+    addLog(
+      battle,
+      attacker.name +
+        " already has maximum larvae (" +
+        larvaeBefore +
+        "/" +
+        maxLarvae +
+        ")."
+    );
+  }
+
+  const healAmount = larvaeReleased * 20;
+  const staminaAmount = larvaeReleased * 20;
+
+  const hpBefore = attacker.hp;
+  const staminaBefore = attacker.stamina;
+
+  restoreHp(attacker, healAmount);
+  restoreStamina(attacker, staminaAmount, battle);
+
+  const actualHealed = attacker.hp - hpBefore;
+  const actualRestoredStamina = attacker.stamina - staminaBefore;
+
+  addLog(
+    battle,
+    attacker.name +
+      "'s Darwinian Expulsion restores " +
+      actualHealed +
+      " HP and " +
+      actualRestoredStamina +
+      " stamina."
+  );
+
+  if (overflowLarvae > 0 && defender && defender.alive) {
+    const damagePerLarva = Math.max(1, Math.round(attacker.stats.attack * 0.5));
+    let overflowDamage = damagePerLarva * overflowLarvae;
+
+    overflowDamage = applyIllusoryDanceDefense(defender, overflowDamage, battle);
+    overflowDamage = applyAncestralRetreatDefense(defender, attacker, overflowDamage, battle);
+    overflowDamage = applyDarwinsLarvalDefense(defender, attacker, overflowDamage, battle);
+
+    applyDamage(defender, overflowDamage);
+
+    addLog(
+      battle,
+      overflowLarvae +
+        " overflowing larva" +
+        (overflowLarvae === 1 ? "" : "e") +
+        " from " +
+        attacker.name +
+        "'s Darwinian Expulsion strike " +
+        defender.name +
+        " for " +
+        overflowDamage +
+        " guaranteed damage."
+    );
+
+    finishBattleIfNeeded(battle);
+  }
+
   consumeSpecialCharge(attacker);
 }
 
@@ -2773,22 +3134,40 @@ function performFalconSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
 
-  addEffect(defender, createFalconDebuffEffect(2, 25), battle);
+  if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
+    addLog(
+      battle,
+      attacker.name + "'s Deadly Dive fails to reduce Technique and Agility."
+    );
 
-  addLog(
-    battle,
-    attacker.name +
-      " uses Deadly Dive (" +
-      multiplier +
-      "x), dealing " +
-      damage +
-      " damage and reducing " +
-      defender.name +
-      "'s Technique and Agility by 25% for 2 turns."
-  );
+    addLog(
+      battle,
+      attacker.name +
+        " uses Deadly Dive (" +
+        multiplier +
+        "x), dealing " +
+        damage +
+        " damage."
+    );
+  } else {
+    addEffect(defender, createFalconDebuffEffect(2, 25), battle);
+
+    addLog(
+      battle,
+      attacker.name +
+        " uses Deadly Dive (" +
+        multiplier +
+        "x), dealing " +
+        damage +
+        " damage and reducing " +
+        defender.name +
+        "'s Technique and Agility by 25% for 2 turns."
+    );
+  }
 
   attacker.falconStacks = 0;
   consumeSpecialCharge(attacker);
@@ -2812,7 +3191,7 @@ function performMacaqueSpecial(attacker, defender, battle) {
   attacker.overinflationUsedThisTurn = false;
 
   const loot = attacker.macaqueLoot;
-  const damage = Math.max(0, Math.round(loot * 1.5));
+  let damage = Math.max(0, Math.round(loot * 1.5));
 
   if (damage <= 0) {
     addLog(
@@ -2825,6 +3204,8 @@ function performMacaqueSpecial(attacker, defender, battle) {
     consumeSpecialCharge(attacker);
     return;
   }
+
+  damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
 
@@ -2860,33 +3241,51 @@ function performIguanaSpecial(attacker, defender, battle) {
   const actualHealed = attacker.hp - hpBefore;
   const actualRestoredStamina = attacker.stamina - staminaBefore;
 
-  addEffect(
-    defender,
-    {
-      id: "refresh-debuff",
-      name: "Refresh Debuff",
-      duration: 1,
-      stackable: false,
-      allowsConcentration: true,
-      modifiers: {
-        techniquePct: -20,
-        agilityPct: -20
-      }
-    },
-    battle
-  );
+  if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
+    addLog(
+      battle,
+      attacker.name +
+        "'s Refresh fails to reduce Technique and Agility."
+    );
 
-  addLog(
-    battle,
-    attacker.name +
-      " uses Refresh, restoring " +
-      actualHealed +
-      " HP and " +
-      actualRestoredStamina +
-      " Stamina, and reducing " +
-      defender.name +
-      "'s Technique and Agility by 20% for 1 turn."
-  );
+    addLog(
+      battle,
+      attacker.name +
+        " uses Refresh, restoring " +
+        actualHealed +
+        " HP and " +
+        actualRestoredStamina +
+        " Stamina."
+    );
+  } else {
+    addEffect(
+      defender,
+      {
+        id: "refresh-debuff",
+        name: "Refresh Debuff",
+        duration: 1,
+        stackable: false,
+        allowsConcentration: true,
+        modifiers: {
+          techniquePct: -20,
+          agilityPct: -20
+        }
+      },
+      battle
+    );
+
+    addLog(
+      battle,
+      attacker.name +
+        " uses Refresh, restoring " +
+        actualHealed +
+        " HP and " +
+        actualRestoredStamina +
+        " Stamina, and reducing " +
+        defender.name +
+        "'s Technique and Agility by 20% for 1 turn."
+    );
+  }
 
   consumeSpecialCharge(attacker);
 }
@@ -2933,64 +3332,81 @@ function performFireSalamanderSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
 
-  addEffect(
-    defender,
-    {
-      id: "neurotoxic-injection-debuff",
-      name: "Neurotoxic Injection (Tetrodotoxin)",
-      duration: 2,
-      stackable: false,
-      allowsConcentration: true,
-      modifiers: {
-        agilityPct: -25,
-        techniquePct: -25,
-        speedPct: -25
-      }
-    },
-    battle
-  );
+  if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
+    addLog(
+      battle,
+      attacker.name +
+        "'s Neurotoxic Injection fails to apply Tetrodotoxin effects."
+    );
 
-  addEffect(
-    defender,
-    {
-      id: "neurotoxic-injection-damage",
-      name: "Neurotoxic Injection (Tetrodotoxin)",
-      duration: 2,
-      stackable: false,
-      allowsConcentration: true,
-      modifiers: {},
-      onTurnEnd(target, battle) {
-        const toxinDamage = 15;
-        target.hp = Math.max(0, target.hp - toxinDamage);
-        target.damageTakenThisTurn += toxinDamage;
-
-        battle.log.push(
-          target.name +
-            " suffers " +
-            toxinDamage +
-            " damage from Neurotoxic Injection (Tetrodotoxin)."
-        );
-
-        if (target.hp <= 0) {
-          target.alive = false;
+    addLog(
+      battle,
+      attacker.name +
+        " uses Neurotoxic Injection (Tetrodotoxin), dealing " +
+        damage +
+        " damage."
+    );
+  } else {
+    addEffect(
+      defender,
+      {
+        id: "neurotoxic-injection-debuff",
+        name: "Neurotoxic Injection (Tetrodotoxin)",
+        duration: 2,
+        stackable: false,
+        allowsConcentration: true,
+        modifiers: {
+          agilityPct: -25,
+          techniquePct: -25,
+          speedPct: -25
         }
-      }
-    },
-    battle
-  );
+      },
+      battle
+    );
 
-  addLog(
-    battle,
-    attacker.name +
-      " uses Neurotoxic Injection (Tetrodotoxin), dealing " +
-      damage +
-      " damage, reducing " +
-      defender.name +
-      "'s Agility, Technique and Speed by 25% for 2 turns, and applying 30 fixed damage over time."
-  );
+    addEffect(
+      defender,
+      {
+        id: "neurotoxic-injection-damage",
+        name: "Neurotoxic Injection (Tetrodotoxin)",
+        duration: 2,
+        stackable: false,
+        allowsConcentration: true,
+        modifiers: {},
+        onTurnEnd(target, battle) {
+          const toxinDamage = 15;
+          target.hp = Math.max(0, target.hp - toxinDamage);
+          target.damageTakenThisTurn += toxinDamage;
+
+          battle.log.push(
+            target.name +
+              " suffers " +
+              toxinDamage +
+              " damage from Neurotoxic Injection (Tetrodotoxin)."
+          );
+
+          if (target.hp <= 0) {
+            target.alive = false;
+          }
+        }
+      },
+      battle
+    );
+
+    addLog(
+      battle,
+      attacker.name +
+        " uses Neurotoxic Injection (Tetrodotoxin), dealing " +
+        damage +
+        " damage, reducing " +
+        defender.name +
+        "'s Agility, Technique and Speed by 25% for 2 turns, and applying 30 fixed damage over time."
+    );
+  }
 
   consumeSpecialCharge(attacker);
 }
@@ -3015,19 +3431,37 @@ function performEurasianEagleOwlSpecial(attacker, defender, battle) {
     "special"
   );
 
-  const damage = damageInfo.damage;
+  let damage = damageInfo.damage;
+
+  damage = applyIllusoryDanceDefense(defender, damage, battle);
+  damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
-  restoreHp(attacker, damage);
+
+  if (damage > 0) {
+    restoreHp(attacker, damage);
+  }
 
   addLog(
     battle,
-    attacker.name + " uses Nocturnal Hunt, dealing " + damage + " unavoidable damage and healing " + damage + " HP."
+    attacker.name +
+      " uses Nocturnal Hunt, dealing " +
+      damage +
+      " unavoidable damage and healing " +
+      damage +
+      " HP."
   );
 
   addLog(
     battle,
-    "Nocturnal Hunt calc → Attack: " + damageInfo.attackValue + " | Defense: " + damageInfo.defenseValue + " | Multiplier: " + damageInfo.multiplier + "%."
+    "Nocturnal Hunt calc → Attack: " +
+      damageInfo.attackValue +
+      " | Defense: " +
+      damageInfo.defenseValue +
+      " | Multiplier: " +
+      damageInfo.multiplier +
+      "%."
   );
 
   consumeSpecialCharge(attacker);
@@ -3048,7 +3482,16 @@ function performPufferfishSpecial(attacker, defender, battle) {
   attacker.overinflationUses -= 1;
 
   if (attacker.overinflationUsedLastTurn) {
-    applyDamage(defender, 200);
+    let explosionDamage = 200;
+
+    explosionDamage = applyDarwinsLarvalDefense(
+      defender,
+      attacker,
+      explosionDamage,
+      battle
+    );
+
+    applyDamage(defender, explosionDamage);
 
     attacker.hp = 1;
     attacker.alive = true;
@@ -3057,22 +3500,168 @@ function performPufferfishSpecial(attacker, defender, battle) {
 
     addLog(
       battle,
-      `${attacker.name} uses Overinflation twice in a row and explodes: ${defender.name} takes 200 damage, and ${attacker.name} is left at 1 HP. Uses left: ${attacker.overinflationUses}.`
+      `${attacker.name} uses Overinflation twice in a row and explodes: ${defender.name} takes ${explosionDamage} damage, and ${attacker.name} is left at 1 HP. Uses left: ${attacker.overinflationUses}.`
     );
 
     return;
   }
 
- attacker.overinflationActive = true;
-attacker.overinflationUsedLastTurn = true;
+  attacker.overinflationActive = true;
+  attacker.overinflationUsedLastTurn = true;
 
-const chipDamage = 25;
-applyDamage(defender, chipDamage);
+  let chipDamage = 25;
 
-addLog(
-  battle,
-  `${attacker.name} uses Overinflation and becomes immune to damage this turn. Uses left: ${attacker.overinflationUses}.`
-);
+  chipDamage = applyDarwinsLarvalDefense(
+    defender,
+    attacker,
+    chipDamage,
+    battle
+  );
+
+  applyDamage(defender, chipDamage);
+
+  addLog(
+    battle,
+    `${attacker.name} uses Overinflation and becomes immune to damage this turn. ${defender.name} takes ${chipDamage} damage. Uses left: ${attacker.overinflationUses}.`
+  );
+}
+
+function performDarwinsLarvalCommand(attacker, defender, battle) {
+  attacker.concentratedLastTurn = false;
+  attacker.overinflationUsedThisTurn = false;
+
+  const command = normalizeDarwinsLarvalCommand(attacker.darwinsLarvalCommand);
+  const larvaeAvailable = attacker.darwinsLarvae || 0;
+  const larvaeCost = getDarwinsLarvalCommandCost(command);
+
+  if (!isDarwinsFrog(attacker)) {
+    addLog(
+      battle,
+      attacker.name + " cannot command larvae."
+    );
+
+    attacker.darwinsLarvalCommand = null;
+    return;
+  }
+
+  if (larvaeCost <= 0) {
+    addLog(
+      battle,
+      attacker.name + " conserves its larvae."
+    );
+
+    attacker.darwinsLarvalCommand = null;
+    return;
+  }
+
+  if (larvaeCost > larvaeAvailable) {
+    addLog(
+      battle,
+      attacker.name +
+        " cannot command " +
+        larvaeCost +
+        " larvae because only " +
+        larvaeAvailable +
+        " are available."
+    );
+
+    attacker.darwinsLarvalCommand = null;
+    return;
+  }
+
+  attacker.darwinsLarvae = larvaeAvailable - larvaeCost;
+
+  addLog(
+    battle,
+    attacker.name +
+      " commands its larvae: " +
+      command.attack +
+      " attack, " +
+      command.defense +
+      " defend, " +
+      command.sacrifice +
+      " sacrifice."
+  );
+
+  if (command.sacrifice > 0) {
+    const hpBefore = attacker.hp;
+    const staminaBefore = attacker.stamina;
+
+    const healAmount = command.sacrifice * 50;
+    const staminaAmount = command.sacrifice * 50;
+
+    restoreHp(attacker, healAmount);
+    restoreStamina(attacker, staminaAmount, battle);
+
+    const actualHealed = attacker.hp - hpBefore;
+    const actualRestoredStamina = attacker.stamina - staminaBefore;
+
+    addLog(
+      battle,
+      attacker.name +
+        "'s Larval Sacrifice consumes " +
+        command.sacrifice +
+        " larva" +
+        (command.sacrifice === 1 ? "" : "e") +
+        ", restoring " +
+        actualHealed +
+        " HP and " +
+        actualRestoredStamina +
+        " stamina."
+    );
+  }
+
+  if (command.defense > 0) {
+    attacker.darwinsLarvalDefense = command.defense;
+    attacker.darwinsLarvalBlocksEffects = command.defense >= 2;
+
+    addLog(
+      battle,
+      attacker.name +
+        "'s Larval Defense prepares " +
+        command.defense +
+        " larva" +
+        (command.defense === 1 ? "" : "e") +
+        " to protect it this turn."
+    );
+  }
+
+  if (command.attack > 0 && defender.alive) {
+    const damagePerLarva = Math.max(1, Math.round(attacker.stats.attack * 0.5));
+    const totalDamage = damagePerLarva * command.attack;
+
+    applyDamage(defender, totalDamage);
+
+    addLog(
+      battle,
+      attacker.name +
+        "'s Larval Attack sends " +
+        command.attack +
+        " larva" +
+        (command.attack === 1 ? "" : "e") +
+        " into " +
+        defender.name +
+        ", dealing " +
+        totalDamage +
+        " guaranteed damage."
+    );
+
+    finishBattleIfNeeded(battle);
+  }
+
+  const conservedLarvae = attacker.darwinsLarvae || 0;
+
+  addLog(
+    battle,
+    attacker.name +
+      " conserves " +
+      conservedLarvae +
+      " larva" +
+      (conservedLarvae === 1 ? "" : "e") +
+      " for future turns."
+  );
+
+  attacker.darwinsLarvalCommand = null;
 }
 
 function performSpecialAction(attacker, defender, battle) {
@@ -3136,6 +3725,9 @@ function performSpecialAction(attacker, defender, battle) {
     case "raptorial-chain":
        performGiantAsianMantisSpecial(attacker, defender, battle);
       break;
+    case "darwinian-expulsion":
+       performDarwinsFrogSpecial(attacker, defender, battle);
+      break;
 
     default:
       addLog(battle, `${attacker.name} has no implemented special logic yet.`);
@@ -3164,6 +3756,8 @@ function processEndTurnPassives(fighter, opponent, battle) {
       `${fighter.name}'s Suffocating Humidity restores 20 HP.`
     );
   }
+
+    handleDarwinsLarvalGestation(fighter, battle);
 }
 
 function advanceTurnDamageMemory(fighter) {
@@ -3184,6 +3778,9 @@ function clearEndTurnTemporaryStates(fighter) {
   }
 
   fighter.overinflationUsedThisTurn = false;
+
+  fighter.darwinsLarvalDefense = 0;
+  fighter.darwinsLarvalBlocksEffects = false;
 }
 
 export function performAction(attacker, defender, actionType, battle) {
@@ -3224,6 +3821,12 @@ export function performAction(attacker, defender, actionType, battle) {
 
   if (actionType === "special") {
     performSpecialAction(attacker, defender, battle);
+    consumeOneTurnControlState(attacker, battle);
+    return;
+  }
+
+  if (actionType === "larval-command") {
+    performDarwinsLarvalCommand(attacker, defender, battle);
     consumeOneTurnControlState(attacker, battle);
     return;
   }
@@ -3337,6 +3940,20 @@ export function resolveTurn(battle, actionA, actionB) {
     applyRandomBiomeModifier(battle, "changed");
   }
 
+  addLog(battle, `--- Turn ${battle.turn} ---`);
+
+  if (battle.fighterA.darwinsLarvalCommand) {
+    performDarwinsLarvalCommand(battle.fighterA, battle.fighterB, battle);
+    finishBattleIfNeeded(battle);
+    if (battle.finished) return;
+  }
+
+  if (battle.fighterB.darwinsLarvalCommand) {
+    performDarwinsLarvalCommand(battle.fighterB, battle.fighterA, battle);
+    finishBattleIfNeeded(battle);
+    if (battle.finished) return;
+  }
+
   const speedA = getEffectiveStat(
     battle.fighterA,
     "speed",
@@ -3344,6 +3961,7 @@ export function resolveTurn(battle, actionA, actionB) {
     battle.fighterB,
     actionA
   );
+
   const speedB = getEffectiveStat(
     battle.fighterB,
     "speed",
@@ -3368,8 +3986,6 @@ export function resolveTurn(battle, actionA, actionB) {
     first.actor.id === battle.fighterA.id
       ? { actor: battle.fighterB, target: battle.fighterA, action: actionB }
       : { actor: battle.fighterA, target: battle.fighterB, action: actionA };
-
-  addLog(battle, `--- Turn ${battle.turn} ---`);
 
   performAction(first.actor, first.target, first.action, battle);
   finishBattleIfNeeded(battle);

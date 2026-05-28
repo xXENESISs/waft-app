@@ -610,6 +610,120 @@
       background: rgba(255,255,255,0.26);
       background-clip: padding-box;
     }
+
+    .larval-command-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(4px);
+    }
+
+    .larval-command-box {
+      width: min(760px, calc(100vw - 32px));
+      background: rgba(18, 18, 24, 0.98);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+    }
+
+    .larval-command-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .larval-command-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .larval-command-subtitle {
+      margin-top: 4px;
+      opacity: 0.78;
+      font-size: 13px;
+    }
+
+    .larval-command-table {
+      display: grid;
+      gap: 8px;
+    }
+
+    .larval-row {
+      display: grid;
+      grid-template-columns: 150px 1fr 130px;
+      gap: 12px;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.06);
+      font-size: 13px;
+    }
+
+    .larval-head {
+      font-weight: 800;
+      opacity: 0.8;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .larval-counter {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+    }
+
+    .larval-small-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      background: rgba(255, 255, 255, 0.09);
+      color: white;
+      cursor: pointer;
+      font-weight: 900;
+      padding: 0;
+    }
+
+    .larval-small-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .larval-command-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .larval-primary-btn,
+    .larval-secondary-btn {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 800;
+      width: auto;
+    }
+
+    .larval-primary-btn {
+      background: white;
+      color: black;
+    }
+
+    .larval-secondary-btn {
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+    }
+
   </style>
 </head>
 <body>
@@ -655,6 +769,7 @@
             <option value="matamata">Matamata</option>
             <option value="fennec">Fennec</option>
             <option value="giant-asian-mantis">Giant Asian Mantis</option>
+            <option value="darwins-frog">Darwin's Frog</option>
           </select>
         </div>
 
@@ -680,6 +795,7 @@
             <option value="matamata">Matamata</option>
             <option value="fennec">Fennec</option>
             <option value="giant-asian-mantis">Giant Asian Mantis</option>
+            <option value="darwins-frog">Darwin's Frog</option>
           </select>
         </div>
 
@@ -816,6 +932,13 @@
               <div class="action-btn-title" id="btn-special-title">Special Attack</div>
               <div class="action-btn-desc" id="btn-special-desc">Your fighter’s signature ability.</div>
             </button>
+
+            <button class="action-btn" data-action="larval-command" id="larvalCommandBtn" style="display:none;">
+              <div class="action-btn-subtitle">Larvae</div>
+              <div class="action-btn-title" id="btn-larval-title">Larval Command</div>
+              <div class="action-btn-desc" id="btn-larval-desc">Assign larvae to attack, defend or sacrifice.</div>
+            </button>
+
           </div>
         </div>
 
@@ -872,6 +995,71 @@
       <div class="log-title">Combat Log</div>
       <div class="log-box" id="battleLog"></div>
     </div>
+
+
+    <div id="larvalCommandModal" class="larval-command-modal" style="display:none;">
+      <div class="larval-command-box">
+        <div class="larval-command-header">
+          <div>
+            <div class="larval-command-title">Larval Command</div>
+            <div class="larval-command-subtitle" id="larvalAvailableText">Larvae available: 0/5</div>
+          </div>
+          <button id="larvalCommandCloseBtn" class="larval-small-btn">×</button>
+        </div>
+
+        <div class="larval-command-table">
+          <div class="larval-row larval-head">
+            <div>Function</div>
+            <div>Effect</div>
+            <div>Amount</div>
+          </div>
+
+          <div class="larval-row">
+            <div>Larval Attack</div>
+            <div>50% base Attack per larva. Guaranteed damage.</div>
+            <div class="larval-counter">
+              <button id="larvalAttackMinus" class="larval-small-btn">−</button>
+              <span id="larvalAttackValue">0</span>
+              <button id="larvalAttackPlus" class="larval-small-btn">+</button>
+            </div>
+          </div>
+
+          <div class="larval-row">
+            <div>Larval Defense</div>
+            <div>1 = 50% damage block. 2 = full block + status block.</div>
+            <div class="larval-counter">
+              <button id="larvalDefenseMinus" class="larval-small-btn">−</button>
+              <span id="larvalDefenseValue">0</span>
+              <button id="larvalDefensePlus" class="larval-small-btn">+</button>
+            </div>
+          </div>
+
+          <div class="larval-row">
+            <div>Larval Sacrifice</div>
+            <div>+50 HP and +50 Stamina per larva.</div>
+            <div class="larval-counter">
+              <button id="larvalSacrificeMinus" class="larval-small-btn">−</button>
+              <span id="larvalSacrificeValue">0</span>
+              <button id="larvalSacrificePlus" class="larval-small-btn">+</button>
+            </div>
+          </div>
+
+          <div class="larval-row">
+            <div>Conserve</div>
+            <div>Unused larvae remain available for future turns.</div>
+            <div class="larval-counter">
+              <span id="larvalConserveValue">0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="larval-command-footer">
+          <button id="larvalClearBtn" class="larval-secondary-btn">Clear</button>
+          <button id="larvalConfirmBtn" class="larval-primary-btn">Confirm Command</button>
+        </div>
+      </div>
+    </div>
+
 
     <div id="turnOutcomeValue" class="hidden-support"></div>
   </div>

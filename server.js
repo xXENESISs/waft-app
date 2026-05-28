@@ -16,6 +16,25 @@ function generateRoomCode() {
   return "WAFT-" + Math.floor(1000 + Math.random() * 9000);
 }
 
+function normalizeLarvalCommand(command) {
+  if (!command) return null;
+
+  const normalized = {
+    attack: Math.max(0, Math.floor(Number(command.attack) || 0)),
+    defense: Math.max(0, Math.min(2, Math.floor(Number(command.defense) || 0))),
+    sacrifice: Math.max(0, Math.floor(Number(command.sacrifice) || 0))
+  };
+
+  const total =
+    normalized.attack +
+    normalized.defense +
+    normalized.sacrifice;
+
+  if (total <= 0) return null;
+
+  return normalized;
+}
+
 io.on("connection", (socket) => {
   console.log("Jugador conectado:", socket.id);
 
@@ -90,19 +109,31 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("playerAction", ({ roomCode, action }) => {
+  socket.on("playerAction", ({ roomCode, action, larvalCommand = null }) => {
     const room = rooms[roomCode];
     if (!room || !room.battle) return;
 
-    room.actions[socket.id] = action;
+    room.actions[socket.id] = {
+      action,
+      larvalCommand: normalizeLarvalCommand(larvalCommand)
+    };
 
     socket.emit("waitingForOpponentAction");
 
     if (Object.keys(room.actions).length === 2) {
       const [p1, p2] = room.players;
 
-      const action1 = room.actions[p1];
-      const action2 = room.actions[p2];
+      const player1ActionData = room.actions[p1];
+      const player2ActionData = room.actions[p2];
+
+      const action1 = player1ActionData.action;
+      const action2 = player2ActionData.action;
+
+      const larvalCommand1 = player1ActionData.larvalCommand;
+      const larvalCommand2 = player2ActionData.larvalCommand;
+
+      room.battle.fighterA.darwinsLarvalCommand = larvalCommand1;
+      room.battle.fighterB.darwinsLarvalCommand = larvalCommand2;
 
       const oldLogLength = room.battle.log.length;
 
@@ -115,6 +146,8 @@ io.on("connection", (socket) => {
         newLines,
         action1,
         action2,
+        larvalCommand1,
+        larvalCommand2,
         player1: p1,
         player2: p2
       });

@@ -738,4 +738,44 @@ export const animals = {
   }
 },
 
+"darwins-frog": {
+  id: "darwins-frog",
+  name: "Darwin's Frog",
+  scientificName: "Rhinoderma darwinii",
+  category: "amphibians",
+
+  stats: {
+    life: 71,
+    attack: 70,
+    defense: 72,
+    resistance: 79,
+    technique: 84,
+    speed: 75,
+    agility: 86,
+    explosiveness: 63
+  },
+
+  biomes: {
+    favorable: ["forest", "jungle"],
+    neutral: ["marine", "mountain"],
+    unfavorable: ["desert", "arctic"]
+  },
+
+  passive: {
+    id: "larval-gestation",
+    name: "Larval Gestation",
+    description:
+      "At the end of each turn, Darwin's Frog has a 25% chance to generate 1 larva, up to a maximum of 5 active larvae. Larvae can be used for guaranteed damage, defense, healing, or preserved for future turns."
+  },
+
+  special: {
+    id: "darwinian-expulsion",
+    name: "Darwinian Expulsion",
+    description:
+      "Generates 1, 2 or 3 larvae instantly. The number of active larvae cannot exceed 5.",
+    chargeType: "defensive",
+    chargeHits: 4
+  }
+},
+
 }
