@@ -1,4 +1,5 @@
 import { animals } from "./animals.js";
+import { setupLinkedFighterSelectors } from "./fighter-selector.js";
 import {
   createBattle,
   resolveTurn,
@@ -1809,11 +1810,27 @@ function init() {
 
   initFlipButtons();
   updateStaticActionButtons();
+
+  setupLinkedFighterSelectors([
+    {
+      selectId: "playerFighter",
+      categoryId: "playerFighterCategory",
+      sortId: "playerFighterSort",
+      favoriteToggleId: "playerFighterFavoriteToggle",
+      defaultValue: "sumatran-tiger",
+      onChange: renderSelectionPreview
+    },
+    {
+      selectId: "enemyFighter",
+      categoryId: "enemyFighterCategory",
+      sortId: "enemyFighterSort",
+      favoriteToggleId: "enemyFighterFavoriteToggle",
+      defaultValue: "walrus",
+      onChange: renderSelectionPreview
+    }
+  ]);
+
+  renderSelectionPreview();
 }
-
-document.getElementById("playerFighter").addEventListener("change", renderSelectionPreview);
-document.getElementById("enemyFighter").addEventListener("change", renderSelectionPreview);
-
-renderSelectionPreview();
 
 init();

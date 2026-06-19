@@ -1,4 +1,5 @@
 import { animals } from "./animals.js";
+import { setupFighterSelector } from "./fighter-selector.js";
 import {
   createBattle,
   resolveTurn,
@@ -1673,7 +1674,18 @@ function resetTournament() {
 }
 
 function init() {
-  populateFighterSelect();
+  setupFighterSelector({
+    selectId: "playerFighter",
+    categoryId: "playerFighterCategory",
+    sortId: "playerFighterSort",
+    favoriteToggleId: "playerFighterFavoriteToggle",
+    defaultValue: "sumatran-tiger",
+    onChange: () => {
+      if (!currentTournament) {
+        renderTournament();
+      }
+    }
+  });
 
   document.getElementById("startTournamentBtn").addEventListener("click", startTournament);
   document.getElementById("resetTournamentBtn").addEventListener("click", resetTournament);

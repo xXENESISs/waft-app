@@ -122,6 +122,50 @@
       text-transform: uppercase;
     }
 
+    .fighter-selector-controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .fighter-select-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .favorite-toggle {
+      min-height: 42px;
+      padding: 9px 11px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: #22242a;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .favorite-toggle input {
+      width: auto;
+      margin: 0;
+      accent-color: var(--special);
+    }
+
+    .favorite-toggle.active {
+      border-color: rgba(245,158,11,0.62);
+      box-shadow: 0 0 14px rgba(245,158,11,0.28);
+      color: #ffd998;
+    }
+
     select,
     button {
       width: 100%;
@@ -821,54 +865,38 @@
       <div class="setup-grid">
         <div class="field">
           <label for="playerFighter">Your fighter</label>
-          <select id="playerFighter">
-            <option value="sumatran-tiger">Sumatran Tiger</option>
-            <option value="walrus">Walrus</option>
-            <option value="shima-enaga">Shima Enaga</option>
-            <option value="mantis-shrimp">Mantis Shrimp</option>
-            <option value="dung-beetle">Dung Beetle</option>
-            <option value="caiman">Caiman</option>
-            <option value="axolotl">Axolotl</option>
-            <option value="emerald-wasp">Emerald Wasp</option>
-            <option value="peregrine-falcon">Peregrine Falcon</option>
-            <option value="sailfish">Sailfish</option>
-            <option value="tibetan-macaque">Tibetan Macaque</option>
-            <option value="iguana">Iguana</option>
-            <option value="japanese-fire-bellied-newt">Japanese Fire-Bellied Newt</option>
-            <option value="honey-badger">Honey Badger</option>
-            <option value="pufferfish">Pufferfish</option>
-            <option value="eurasian-eagle-owl">Eurasian Eagle Owl</option>
-            <option value="matamata">Matamata</option>
-            <option value="fennec">Fennec</option>
-            <option value="giant-asian-mantis">Giant Asian Mantis</option>
-            <option value="darwins-frog">Darwin's Frog</option>
-          </select>
+
+          <div class="fighter-selector-controls">
+            <select id="playerFighterCategory" aria-label="Your fighter category"></select>
+            <select id="playerFighterSort" aria-label="Your fighter sorting"></select>
+          </div>
+
+          <div class="fighter-select-row">
+            <select id="playerFighter"></select>
+
+            <label class="favorite-toggle" for="playerFighterFavoriteToggle">
+              <input type="checkbox" id="playerFighterFavoriteToggle">
+              <span>👑 Favorite</span>
+            </label>
+          </div>
         </div>
 
         <div class="field">
           <label for="enemyFighter">Enemy fighter</label>
-          <select id="enemyFighter">
-            <option value="walrus">Walrus</option>
-            <option value="sumatran-tiger">Sumatran Tiger</option>
-            <option value="shima-enaga">Shima Enaga</option>
-            <option value="mantis-shrimp">Mantis Shrimp</option>
-            <option value="dung-beetle">Dung Beetle</option>
-            <option value="caiman">Caiman</option>
-            <option value="axolotl">Axolotl</option>
-            <option value="emerald-wasp">Emerald Wasp</option>
-            <option value="peregrine-falcon">Peregrine Falcon</option>
-            <option value="sailfish">Sailfish</option>
-            <option value="tibetan-macaque">Tibetan Macaque</option>
-            <option value="iguana">Iguana</option>
-            <option value="japanese-fire-bellied-newt">Japanese Fire-Bellied Newt</option>
-            <option value="honey-badger">Honey Badger</option>
-            <option value="pufferfish">Pufferfish</option>
-            <option value="eurasian-eagle-owl">Eurasian Eagle Owl</option>
-            <option value="matamata">Matamata</option>
-            <option value="fennec">Fennec</option>
-            <option value="giant-asian-mantis">Giant Asian Mantis</option>
-            <option value="darwins-frog">Darwin's Frog</option>
-          </select>
+
+          <div class="fighter-selector-controls">
+            <select id="enemyFighterCategory" aria-label="Enemy fighter category"></select>
+            <select id="enemyFighterSort" aria-label="Enemy fighter sorting"></select>
+          </div>
+
+          <div class="fighter-select-row">
+            <select id="enemyFighter"></select>
+
+            <label class="favorite-toggle" for="enemyFighterFavoriteToggle">
+              <input type="checkbox" id="enemyFighterFavoriteToggle">
+              <span>👑 Favorite</span>
+            </label>
+          </div>
         </div>
 
         <div class="field">
