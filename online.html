@@ -39,6 +39,55 @@
       padding: 10px;
     }
 
+    .mode-top-bar {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.24);
+      margin-bottom: 12px;
+      padding: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .mode-title {
+      font-size: 22px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .mode-subtitle {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .nav-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .nav-link {
+      text-decoration: none;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: #22242a;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .nav-link:hover {
+      filter: brightness(1.08);
+    }
+
     .setup-panel,
     .combat-shell,
     .log-panel {
@@ -576,6 +625,15 @@
     }
 
     @media (max-width: 820px) {
+      .mode-top-bar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .nav-actions {
+        justify-content: flex-start;
+      }
+
       .turn-vs-row {
         grid-template-columns: 1fr;
       }
@@ -728,6 +786,20 @@
 </head>
 <body>
   <div class="arena-page">
+    <header class="mode-top-bar">
+      <div>
+        <div class="mode-title">Online Battle</div>
+        <div class="mode-subtitle">Multiplayer arena mode</div>
+      </div>
+
+      <div class="nav-actions">
+        <a class="nav-link" href="./index.html">Home</a>
+        <a class="nav-link" href="./test.html">Single Battle</a>
+        <a class="nav-link" href="./tournament.html">Single Tournament</a>
+        <a class="nav-link" href="./online-tournament.html">Online Tournament</a>
+      </div>
+    </header>
+
     <div class="setup-panel">
 
         <div class="field" style="margin-bottom: 12px;">
