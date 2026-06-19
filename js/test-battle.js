@@ -728,13 +728,13 @@ function renderBattle() {
   renderLog();
 
   updateStaticActionButtons();
-updateSpecialButton(player);
+  updateSpecialButton(player);
 
-if (typeof updateLarvalCommandButton === "function") {
-  updateLarvalCommandButton(player);
-}
+  if (typeof updateLarvalCommandButton === "function") {
+    updateLarvalCommandButton(player);
+  }
 
-updateActionButtons();
+  updateActionButtons();
 
   document.getElementById("playerTooltip").innerHTML = formatTooltip(player);
   document.getElementById("enemyTooltip").innerHTML = formatTooltip(enemy);
@@ -1722,7 +1722,7 @@ function init() {
 
   document.getElementById("startBattleBtn").addEventListener("click", startBattle);
 
-    document.querySelectorAll(".action-btn").forEach((btn) => {
+  document.querySelectorAll(".action-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const action = btn.dataset.action;
 
@@ -1737,7 +1737,7 @@ function init() {
     btn.disabled = true;
   });
 
-    document.getElementById("larvalCommandCloseBtn").addEventListener("click", closeLarvalCommandModal);
+  document.getElementById("larvalCommandCloseBtn").addEventListener("click", closeLarvalCommandModal);
 
   document.getElementById("larvalAttackMinus").addEventListener("click", () => adjustLarvalDraft("attack", -1));
   document.getElementById("larvalAttackPlus").addEventListener("click", () => adjustLarvalDraft("attack", 1));
