@@ -11,6 +11,12 @@ let viewedMatchId = null;
 const flipStates = {};
 const larvalCommandsByMatchId = {};
 const lastTurnLinesByMatchId = {};
+const pendingAnimationByMatchId = {};
+const pendingSummaryByMatchId = {};
+const summaryAnimationTokens = {};
+
+const TYPEWRITER_CHAR_DELAY = 8;
+const TYPEWRITER_LINE_PAUSE = 180;
 
 const MAX_TOURNAMENT_PLAYERS = 16;
 const MIN_TOURNAMENT_PLAYERS = 2;
@@ -22,6 +28,94 @@ function getEl(id) {
 function setText(id, value) {
   const el = getEl(id);
   if (el) el.textContent = value;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function buildTurnSummary(newLines) {
+  const summary = [];
+
+  for (const line of newLines || []) {
+    if (!line) continue;
+    if (line.includes("calc →")) continue;
+    if (line.startsWith("Damage calc")) continue;
+    if (line.startsWith("Critical calc")) continue;
+    if (line.includes("→ HP:")) continue;
+    if (line.startsWith("--- Turn")) continue;
+    if (line.includes("gains effect: Neurotoxic Injection")) continue;
+
+    if (
+      line.includes("Honey Badger has fallen below") &&
+      line.includes("fatigue")
+    ) {
+      summary.push(
+        "Honey Badger's Savage Endurance ignores fatigue: no stat reduction is applied."
+      );
+      continue;
+    }
+
+    if (
+      line.includes("enters Savage Endurance") &&
+      line.includes("below 25% HP")
+    ) {
+      summary.push(
+        "Honey Badger enters Savage Endurance: below 25% HP, it becomes immune to critical hits and gains +20% Attack and +20% Explosiveness."
+      );
+      continue;
+    }
+
+    summary.push(line);
+  }
+
+  return summary.length > 0 ? summary : ["No major events this turn."];
+}
+
+function formatBattleLogLine(line) {
+  if (
+    line.includes("Honey Badger has fallen below") &&
+    line.includes("fatigue")
+  ) {
+    return "Honey Badger's Savage Endurance ignores fatigue: no stat reduction is applied.";
+  }
+
+  return line;
+}
+
+async function typeTurnSummaryForMatch(matchId, lines) {
+  const token = (summaryAnimationTokens[matchId] || 0) + 1;
+  summaryAnimationTokens[matchId] = token;
+
+  const box = document.querySelector(`[data-turn-summary-match-id="${CSS.escape(matchId)}"]`);
+
+  if (!box) {
+    lastTurnLinesByMatchId[matchId] = [...lines];
+    return;
+  }
+
+  box.textContent = "";
+
+  for (let i = 0; i < lines.length; i++) {
+    if (summaryAnimationTokens[matchId] !== token) return;
+
+    if (box.textContent.length > 0) {
+      box.textContent += "\n";
+    }
+
+    const line = lines[i];
+
+    for (let j = 0; j < line.length; j++) {
+      if (summaryAnimationTokens[matchId] !== token) return;
+
+      box.textContent += line[j];
+      await delay(TYPEWRITER_CHAR_DELAY);
+    }
+
+    await delay(TYPEWRITER_LINE_PAUSE);
+  }
+
+  lastTurnLinesByMatchId[matchId] = [...lines];
 }
 
 function getAnimalName(fighterId) {
@@ -495,10 +589,11 @@ function renderOnlineBattleFighterCard(participant, fighter, sideLabel, battle =
   const key = getParticipantKey(participant) || participant.slotId || participant.fighterId;
   const extraResourceText = fighter ? getExtraResourceText(fighter) : "";
   const tooltip = formatCombatTooltip(participant, fighter, battle);
+  const sideKey = sideLabel.includes("A") ? "A" : "B";
 
   return `
     <div class="online-battle-fighter-card">
-      <div class="online-battle-fighter-image">
+      <div class="online-battle-fighter-image" data-combat-side="${sideKey}">
         <div class="online-battle-tooltip">${tooltip}</div>
         <button class="online-flip-btn" data-flip-key="${escapeHtml(key)}">↔</button>
         <img data-fighter-id="${participant.fighterId}" data-flip-image-key="${escapeHtml(key)}" alt="${escapeHtml(participant.name)}">
@@ -656,6 +751,163 @@ function bindFlipButtonsInside(container) {
   });
 }
 
+
+function clearOnlineAnimationClasses(matchId = null) {
+  const area = getEl("activeCombatArea");
+  if (!area) return;
+
+  const classes = [
+    "move-attacker-left",
+    "move-attacker-right",
+    "hit-defender-left",
+    "hit-defender-right",
+    "hit-defender-left-crit",
+    "hit-defender-right-crit"
+  ];
+
+  area.querySelectorAll(".online-battle-fighter-image").forEach((wrap) => {
+    wrap.classList.remove(...classes);
+  });
+}
+
+function pushOnlineAnimationEvent(events, actorName, targetName, fighterA, fighterB, hit, critical = false) {
+  if (!fighterA || !fighterB) return;
+
+  const validActor = actorName === fighterA.name || actorName === fighterB.name;
+  const validTarget = targetName === fighterA.name || targetName === fighterB.name;
+
+  if (!validActor || !validTarget || actorName === targetName) return;
+
+  events.push({ actor: actorName, target: targetName, hit, critical });
+}
+
+function getOnlineAnimationEvents(newLines, battle) {
+  const fighterA = battle?.fighterA;
+  const fighterB = battle?.fighterB;
+  const events = [];
+
+  if (!Array.isArray(newLines) || !fighterA || !fighterB) {
+    return events;
+  }
+
+  for (const line of newLines) {
+    let match;
+
+    match = line.match(/^(.+?) hits (.+?) with (.+?) for (\d+) damage( \(CRITICAL\))?\.$/);
+    if (match) {
+      pushOnlineAnimationEvent(events, match[1], match[2], fighterA, fighterB, true, Boolean(match[5]));
+      continue;
+    }
+
+    match = line.match(/^(.+?) uses (.+?) but misses (.+?)\.$/);
+    if (match) {
+      pushOnlineAnimationEvent(events, match[1], match[3], fighterA, fighterB, false, false);
+      continue;
+    }
+
+    match = line.match(/^(.+?) uses Ballistic Strike and deals (\d+) damage( \(CRITICAL\))?\.$/);
+    if (match) {
+      const targetName = match[1] === fighterA.name ? fighterB.name : fighterA.name;
+      pushOnlineAnimationEvent(events, match[1], targetName, fighterA, fighterB, true, Boolean(match[3]));
+      continue;
+    }
+
+    match = line.match(/^(.+?) uses (.+?), dealing (\d+) damage/);
+    if (match) {
+      const targetName = match[1] === fighterA.name ? fighterB.name : fighterA.name;
+      pushOnlineAnimationEvent(events, match[1], targetName, fighterA, fighterB, true, false);
+      continue;
+    }
+
+    match = line.match(/^(.+?) uses (.+?) and deals (\d+) damage/);
+    if (match) {
+      const targetName = match[1] === fighterA.name ? fighterB.name : fighterA.name;
+      pushOnlineAnimationEvent(events, match[1], targetName, fighterA, fighterB, true, false);
+      continue;
+    }
+
+    match = line.match(/^(.+?) strikes from Phantom Current for (\d+) damage\.$/);
+    if (match) {
+      const targetName = match[1] === fighterA.name ? fighterB.name : fighterA.name;
+      pushOnlineAnimationEvent(events, match[1], targetName, fighterA, fighterB, true, false);
+      continue;
+    }
+
+    match = line.match(/^(.+?)'s Raptorial Chain strike (\d+) hits (.+?) for (\d+) damage\.$/);
+    if (match) {
+      pushOnlineAnimationEvent(events, match[1], match[3], fighterA, fighterB, true, false);
+      continue;
+    }
+
+    match = line.match(/^(.+?)'s Marine Echo triggers: second hit deals (\d+) damage\.$/);
+    if (match) {
+      const targetName = match[1] === fighterA.name ? fighterB.name : fighterA.name;
+      pushOnlineAnimationEvent(events, match[1], targetName, fighterA, fighterB, true, false);
+      continue;
+    }
+
+    match = line.match(/^(.+?)'s Larval Attack sends (\d+) larva(?:e)? into (.+?), dealing (\d+) guaranteed damage\.$/);
+    if (match) {
+      pushOnlineAnimationEvent(events, match[1], match[3], fighterA, fighterB, true, false);
+      continue;
+    }
+
+    match = line.match(/^(\d+) overflowing larva(?:e)? from (.+?)'s Darwinian Expulsion strike (.+?) for (\d+) guaranteed damage\.$/);
+    if (match) {
+      pushOnlineAnimationEvent(events, match[2], match[3], fighterA, fighterB, true, false);
+      continue;
+    }
+  }
+
+  return events;
+}
+
+async function runOnlineShakeSequence(matchId, newLines, activeMatchOverride = null) {
+  const activeMatch = activeMatchOverride || getActiveMatchById(matchId);
+  if (!activeMatch || viewedMatchId !== matchId) return;
+
+  const area = getEl("activeCombatArea");
+  if (!area) return;
+
+  const wrapA = area.querySelector('[data-combat-side="A"]');
+  const wrapB = area.querySelector('[data-combat-side="B"]');
+
+  if (!wrapA || !wrapB) return;
+
+  clearOnlineAnimationClasses(matchId);
+
+  const events = getOnlineAnimationEvents(newLines, activeMatch.battle);
+
+  for (const event of events) {
+    if (viewedMatchId !== matchId) return;
+
+    const actorIsA = event.actor === activeMatch.battle?.fighterA?.name;
+    const attackerWrap = actorIsA ? wrapA : wrapB;
+    const defenderWrap = actorIsA ? wrapB : wrapA;
+
+    attackerWrap.classList.add(actorIsA ? "move-attacker-left" : "move-attacker-right");
+    await delay(220);
+    attackerWrap.classList.remove(actorIsA ? "move-attacker-left" : "move-attacker-right");
+
+    if (event.hit) {
+      const hitClass = actorIsA
+        ? event.critical
+          ? "hit-defender-right-crit"
+          : "hit-defender-right"
+        : event.critical
+        ? "hit-defender-left-crit"
+        : "hit-defender-left";
+
+      defenderWrap.classList.add(hitClass);
+      await delay(event.critical ? 260 : 220);
+      defenderWrap.classList.remove(hitClass);
+    }
+
+    await delay(60);
+  }
+}
+
+
 function renderResolvedMatch(found) {
   const panel = getEl("combatPanel");
   const area = getEl("activeCombatArea");
@@ -673,8 +925,13 @@ function renderResolvedMatch(found) {
   if (pill) pill.textContent = round.name + " · Match " + (matchIndex + 1);
 
   const winnerText = match.winner ? "Winner: " + match.winner.name : "Awaiting fighters";
+  const summaryText = lastTurnLinesByMatchId[match.id]?.length
+    ? lastTurnLinesByMatchId[match.id].join("\n")
+    : match.resolved
+    ? "Combat finished."
+    : "No turn summary available.";
   const logText = match.battleLog?.length
-    ? match.battleLog.map((line, index) => `${index + 1}. ${line}`).join("\n")
+    ? match.battleLog.map((line, index) => `${index + 1}. ${formatBattleLogLine(line)}`).join("\n")
     : "No combat log available yet.";
 
   area.innerHTML = `
@@ -695,6 +952,11 @@ function renderResolvedMatch(found) {
         </div>
 
         <div class="online-summary-panel">
+          <div class="online-summary-title">Turn Summary</div>
+          <div class="online-summary-box" data-turn-summary-match-id="${escapeHtml(match.id)}">${escapeHtml(summaryText)}</div>
+        </div>
+
+        <div class="online-summary-panel">
           <div class="online-summary-title">Combat Log</div>
           <div class="online-summary-box">${escapeHtml(logText)}</div>
         </div>
@@ -705,6 +967,7 @@ function renderResolvedMatch(found) {
   `;
 
   getEl("returnToYourMatchBtn")?.addEventListener("click", () => {
+    if (!localActive) return;
     viewedMatchId = localActive.matchId;
     renderState();
   });
@@ -739,9 +1002,11 @@ function renderActiveCombatMatch(activeMatch) {
 
   const summaryText = lastTurnLinesByMatchId[activeMatch.matchId]?.length
     ? lastTurnLinesByMatchId[activeMatch.matchId].join("\n")
-    : battle.log?.length
-    ? battle.log.slice(-8).join("\n")
     : "Combat generated. Waiting for actions.";
+
+  const combatLogText = battle.log?.length
+    ? battle.log.map((line, index) => `${index + 1}. ${formatBattleLogLine(line)}`).join("\n")
+    : "No combat log yet.";
 
   area.innerHTML = `
     <div class="online-battle-panel">
@@ -769,11 +1034,16 @@ function renderActiveCombatMatch(activeMatch) {
 
         <div class="online-summary-panel">
           <div class="online-summary-title">Turn Summary</div>
-          <div class="online-summary-box">${escapeHtml(summaryText)}</div>
+          <div class="online-summary-box" data-turn-summary-match-id="${escapeHtml(activeMatch.matchId)}">${escapeHtml(summaryText)}</div>
         </div>
       </div>
 
       ${renderOnlineBattleFighterCard(activeMatch.fighterB, battle.fighterB, "Fighter B", battle)}
+    </div>
+
+    <div class="online-combat-log-panel">
+      <div class="online-combat-log-title">Combat Log</div>
+      <div class="online-combat-log-box">${escapeHtml(combatLogText)}</div>
     </div>
   `;
 
@@ -806,11 +1076,15 @@ function renderActiveCombatMatch(activeMatch) {
   });
 
   getEl("returnToYourMatchBtn")?.addEventListener("click", () => {
+    if (!localActive) return;
     viewedMatchId = localActive.matchId;
     renderState();
   });
 
-  const combatLog = area.querySelector(".online-summary-box");
+  const summaryBox = area.querySelector(".online-summary-box");
+  if (summaryBox) summaryBox.scrollTop = summaryBox.scrollHeight;
+
+  const combatLog = area.querySelector(".online-combat-log-box");
   if (combatLog) combatLog.scrollTop = combatLog.scrollHeight;
 
   loadImagesInside(area);
@@ -1346,12 +1620,29 @@ function initSocket() {
   });
 
   socket.on("onlineTournamentTurnResolved", ({ result, state }) => {
+    const previousViewedMatchId = viewedMatchId;
+    const animationSnapshot = result?.matchId
+      ? (() => {
+          const existing = getActiveMatchById(result.matchId);
+          return existing
+            ? {
+                ...existing,
+                battle: result.battle || existing.battle
+              }
+            : null;
+        })()
+      : null;
+
     currentState = state;
 
-    if (result?.matchId) viewedMatchId = result.matchId;
+    if (result?.matchId && result?.newLines?.length) {
+      const summaryLines = buildTurnSummary(result.newLines);
 
-    if (result?.newLines?.length) {
-      addLog("Turn resolved for " + result.matchId + ":\n" + result.newLines.join("\n"));
+      lastTurnLinesByMatchId[result.matchId] = [""];
+      pendingAnimationByMatchId[result.matchId] = result.newLines;
+      pendingSummaryByMatchId[result.matchId] = summaryLines;
+
+      addLog("Turn resolved for " + result.matchId + ".");
     }
 
     if (result?.finished && result?.winnerParticipant) {
@@ -1359,9 +1650,28 @@ function initSocket() {
     }
 
     const localActive = getLocalActiveMatch();
-    if (localActive) viewedMatchId = localActive.matchId;
+
+    if (previousViewedMatchId) {
+      viewedMatchId = previousViewedMatchId;
+    } else if (localActive) {
+      viewedMatchId = localActive.matchId;
+    } else if (result?.matchId) {
+      viewedMatchId = result.matchId;
+    }
 
     renderState();
+
+    if (result?.matchId && pendingAnimationByMatchId[result.matchId]) {
+      const linesToAnimate = pendingAnimationByMatchId[result.matchId];
+      const summaryToType = pendingSummaryByMatchId[result.matchId] || buildTurnSummary(linesToAnimate);
+      delete pendingAnimationByMatchId[result.matchId];
+      delete pendingSummaryByMatchId[result.matchId];
+
+      setTimeout(async () => {
+        await runOnlineShakeSequence(result.matchId, linesToAnimate, animationSnapshot);
+        await typeTurnSummaryForMatch(result.matchId, summaryToType);
+      }, 30);
+    }
   });
 
   socket.on("onlineTournamentWaitingForOpponentAction", ({ matchId }) => {
