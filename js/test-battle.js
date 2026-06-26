@@ -52,6 +52,369 @@ const OCTOPUS_SPECIAL_CHOICE_LABELS = {
   "ink-sea": "Ink Sea"
 };
 
+const SLOTH_COLONIES = [
+  {
+    id: "algae",
+    emoji: "🟢",
+    label: "Algae",
+    fullName: "Algae Colony",
+    className: "sloth-colony-algae",
+    shortEffect: "50% end turn: +30 HP / +15 Stamina.",
+    detail: "At the end of each turn, rolls 50%. On success, restores 30 HP and 15 Stamina.",
+    amplified: "With Lichens: rolls twice independently."
+  },
+  {
+    id: "fungi",
+    emoji: "🍄",
+    label: "Fungi",
+    fullName: "Fungal Colony",
+    className: "sloth-colony-fungi",
+    shortEffect: "50% to invert stat reductions.",
+    detail: "When the sloth receives a numeric stat debuff, rolls 50%. On success, turns the stat loss into the same stat gain.",
+    amplified: "With Lichens: gets two independent inversion chances."
+  },
+  {
+    id: "bacteria",
+    emoji: "🦠",
+    label: "Bacteria",
+    fullName: "Bacterial Colony",
+    className: "sloth-colony-bacteria",
+    shortEffect: "Consecutive hits scale damage, then discharge.",
+    detail: "Successful attacks build a 5-step chain. Softer damage curve: 1st hit +0%, 2nd +25%, 3rd +50%, 4th +75%, 5th +100%. After the peak hit, the chain resets to 0/5.",
+    amplified: "With Lichens: each hit advances the chain by 2 steps, but the damage bonus is not doubled."
+  },
+  {
+    id: "mites",
+    emoji: "🕷️",
+    label: "Mites",
+    fullName: "Mite Colony",
+    className: "sloth-colony-mites",
+    shortEffect: "Attacks cost -5 Stamina.",
+    detail: "Normal, Quick, Precise and Explosive attacks cost 5 less Stamina. Costs cannot go below 0.",
+    amplified: "With Lichens: attacks cost 10 less Stamina."
+  },
+  {
+    id: "lichens",
+    emoji: "🪨",
+    label: "Lichens",
+    fullName: "Lichen Colony",
+    className: "sloth-colony-lichens",
+    shortEffect: "Amplifies the other active colony.",
+    detail: "While active, it doubles the effect of the other active colony.",
+    amplified: "During Microecosystem Ancestral, it empowers all four other colonies at once."
+  }
+];
+
+const SLOTH_COLONY_BY_ID = Object.fromEntries(
+  SLOTH_COLONIES.map((colony) => [colony.id, colony])
+);
+
+function isThreeToedSlothFighter(fighter) {
+  return fighter && fighter.id === "three-toed-sloth";
+}
+
+function getSlothActiveColonies(fighter) {
+  if (!isThreeToedSlothFighter(fighter)) return [];
+
+  return Array.isArray(fighter.slothActiveColonies)
+    ? fighter.slothActiveColonies
+    : [];
+}
+
+function isSlothDormantInCurrentBiome(fighter) {
+  if (!isThreeToedSlothFighter(fighter)) return false;
+  if (fighter.slothMicroecosystemActive) return false;
+
+  return currentBattle && (currentBattle.biome === "arctic" || currentBattle.biome === "desert");
+}
+
+function slothHasColony(fighter, colonyId) {
+  return getSlothActiveColonies(fighter).includes(colonyId);
+}
+
+function getSlothBacterialBonusForHitLevel(hitLevel) {
+  const level = Math.max(1, Math.min(5, hitLevel || 1));
+
+  switch (level) {
+    case 2:
+      return 25;
+    case 3:
+      return 50;
+    case 4:
+      return 75;
+    case 5:
+      return 100;
+    default:
+      return 0;
+  }
+}
+
+function getSlothBacterialNextHitBonus(fighter) {
+  const chain = Math.max(0, Math.min(5, fighter.slothBacterialChain || 0));
+  return getSlothBacterialBonusForHitLevel(Math.min(5, chain + 1));
+}
+
+function getSlothBacterialFollowingHitBonus(fighter) {
+  const current = Math.max(0, Math.min(5, fighter.slothBacterialChain || 0));
+  const progressGain = slothHasColony(fighter, "lichens") ? 2 : 1;
+  const afterNextHit = Math.min(5, current + progressGain);
+
+  if (Math.min(5, current + 1) >= 5) return 0;
+
+  return getSlothBacterialBonusForHitLevel(Math.min(5, afterNextHit + 1));
+}
+
+function getSlothBacterialProgressText(fighter) {
+  const chain = Math.max(0, Math.min(5, fighter.slothBacterialChain || 0));
+  const nextHitBonus = getSlothBacterialNextHitBonus(fighter);
+  const followingBonus = getSlothBacterialFollowingHitBonus(fighter);
+
+  return (
+    "Chain: " +
+    chain +
+    "/5 · Next hit +" +
+    nextHitBonus +
+    "% · Following +" +
+    followingBonus +
+    "% · peak resets"
+  );
+}
+
+function getThreeToedSlothStatusText(fighter) {
+  if (!isThreeToedSlothFighter(fighter)) return "";
+
+  const colonies = getSlothActiveColonies(fighter);
+  const colonyText = colonies.length > 0
+    ? colonies.map((colonyId) => SLOTH_COLONY_BY_ID[colonyId]?.label || colonyId).join(", ")
+    : "None";
+
+  const lines = [
+    "Living Ecosystem: " +
+      (fighter.slothMicroecosystemActive
+        ? "MICROECOSYSTEM"
+        : isSlothDormantInCurrentBiome(fighter)
+          ? "DORMANT"
+          : "ACTIVE"),
+    "Active colonies: " + colonyText,
+    getSlothBacterialProgressText(fighter)
+  ];
+
+  if (slothHasColony(fighter, "lichens")) {
+    lines.push(
+      fighter.slothMicroecosystemActive
+        ? "Lichens: empowering all colonies."
+        : "Lichens: advancing the other colony faster."
+    );
+  }
+
+  if (fighter.slothMicroecosystemActive) {
+    lines.push(
+      "Microecosystem Ancestral: " +
+        (fighter.slothMicroecosystemTurns || 0) +
+        " turn(s) left"
+    );
+  }
+
+  if (isSlothDormantInCurrentBiome(fighter)) {
+    lines.push("Arctic/Desert dormancy: no colonies and no Microecosystem.");
+  }
+
+  return lines.join("\n");
+}
+
+function getSlothColonyCurrentEffectText(fighter, colony) {
+  const active = slothHasColony(fighter, colony.id);
+  const lichensActive = slothHasColony(fighter, "lichens");
+  const micro = Boolean(fighter.slothMicroecosystemActive);
+
+  if (colony.id === "bacteria") {
+    return getSlothBacterialProgressText(fighter);
+  }
+
+  if (colony.id === "lichens") {
+    if (!active) return colony.shortEffect;
+    return micro
+      ? "Empowering Algae, Fungi, Bacteria and Mites."
+      : "Doubling the other active colony.";
+  }
+
+  if (active && lichensActive) {
+    return colony.amplified;
+  }
+
+  return colony.shortEffect;
+}
+
+function renderSlothColonyChip(fighter, colony, compact = false) {
+  const active = slothHasColony(fighter, colony.id);
+  const dormant = isSlothDormantInCurrentBiome(fighter);
+  const lichensActive = slothHasColony(fighter, "lichens");
+  const boosted = active && lichensActive && colony.id !== "lichens";
+  const state = active ? "active" : "inactive";
+
+  return `
+    <div class="sloth-colony-chip ${colony.className} ${state}${dormant ? " dormant" : ""}${boosted ? " boosted" : ""}">
+      <div class="sloth-colony-chip-top">
+        <span class="sloth-colony-emoji">${colony.emoji}</span>
+        <span class="sloth-colony-name">${compact ? colony.label : colony.fullName}</span>
+      </div>
+      <div class="sloth-colony-state">${active ? (boosted ? "AMPLIFIED" : "ACTIVE") : dormant ? "LETARGO" : "DORMANT"}</div>
+    </div>
+  `;
+}
+
+function renderSlothEcosystemMiniPanel(fighter) {
+  const dormant = isSlothDormantInCurrentBiome(fighter);
+  const micro = Boolean(fighter.slothMicroecosystemActive);
+  const activeCount = getSlothActiveColonies(fighter).length;
+  const biome = currentBattle?.biome ? currentBattle.biome.toUpperCase() : "-";
+  const stateText = micro
+    ? "MICROECOSYSTEM"
+    : dormant
+      ? "LETARGO"
+      : activeCount + "/5 ACTIVE";
+  const stateSubtext = micro
+    ? "All colonies awakened · " + (fighter.slothMicroecosystemTurns || 0) + " turn(s)"
+    : dormant
+      ? "Arctic/Desert blocks the ecosystem"
+      : "Biome " + biome + " · colonies rotate with biome shifts";
+
+  return `
+    <div class="sloth-ecosystem-card${micro ? " ancestral" : ""}${dormant ? " dormant" : ""}">
+      <div class="sloth-ecosystem-header">
+        <div>
+          <div class="sloth-ecosystem-title">🌿 Living Ecosystem</div>
+          <div class="sloth-ecosystem-subtitle">${stateSubtext}</div>
+        </div>
+        <div class="sloth-ecosystem-badge">${stateText}</div>
+      </div>
+      <div class="sloth-mini-colonies">
+        ${SLOTH_COLONIES.map((colony) => renderSlothColonyChip(fighter, colony, true)).join("")}
+      </div>
+      <div class="sloth-chain-strip">
+        <span>🦠 ${getSlothBacterialProgressText(fighter)}</span>
+        ${slothHasColony(fighter, "lichens") ? "<span>🪨 Lichens speed up colony growth</span>" : ""}
+      </div>
+    </div>
+  `;
+}
+
+function renderSlothColonyDetailCard(fighter, colony) {
+  const active = slothHasColony(fighter, colony.id);
+  const dormant = isSlothDormantInCurrentBiome(fighter);
+  const lichensActive = slothHasColony(fighter, "lichens");
+  const boosted = active && lichensActive && colony.id !== "lichens";
+
+  return `
+    <div class="sloth-modal-colony ${colony.className} ${active ? "active" : "inactive"}${dormant ? " dormant" : ""}${boosted ? " boosted" : ""}">
+      <div class="sloth-modal-colony-head">
+        <div class="sloth-modal-colony-title">
+          <span>${colony.emoji}</span>
+          <strong>${colony.fullName}</strong>
+        </div>
+        <div class="sloth-modal-status">${active ? (boosted ? "AMPLIFIED" : "ACTIVE") : dormant ? "LETARGO" : "DORMANT"}</div>
+      </div>
+      <div class="sloth-modal-colony-effect">${colony.detail}</div>
+      <div class="sloth-modal-colony-current">${getSlothColonyCurrentEffectText(fighter, colony)}</div>
+      <div class="sloth-modal-colony-boost">${colony.amplified}</div>
+    </div>
+  `;
+}
+
+function renderSlothEcosystemModal() {
+  if (!currentBattle) return;
+
+  const { player } = getBattleFighters();
+  const body = document.getElementById("slothEcosystemModalBody");
+  const subtitle = document.getElementById("slothEcosystemModalSubtitle");
+
+  if (!body || !subtitle || !isThreeToedSlothFighter(player)) return;
+
+  const dormant = isSlothDormantInCurrentBiome(player);
+  const micro = Boolean(player.slothMicroecosystemActive);
+  const activeCount = getSlothActiveColonies(player).length;
+  const biome = currentBattle?.biome ? currentBattle.biome.toUpperCase() : "-";
+
+  subtitle.textContent = micro
+    ? "Microecosystem Ancestral active: all colonies are awake for " + (player.slothMicroecosystemTurns || 0) + " turn(s)."
+    : dormant
+      ? "Biome " + biome + ": ecosystem in letargo. No colonies are active and Microecosystem is blocked."
+      : "Biome " + biome + ": " + activeCount + "/5 colonies active. Lichens accelerate colony growth when awake.";
+
+  body.innerHTML = `
+    <div class="sloth-modal-summary${micro ? " ancestral" : ""}${dormant ? " dormant" : ""}">
+      <div>
+        <div class="sloth-modal-summary-label">Current State</div>
+        <div class="sloth-modal-summary-value">${micro ? "MICROECOSYSTEM ANCESTRAL" : dormant ? "LETARGO" : "LIVING ECOSYSTEM ACTIVE"}</div>
+      </div>
+      <div>
+        <div class="sloth-modal-summary-label">Bacterial Chain</div>
+        <div class="sloth-modal-summary-value">${getSlothBacterialProgressText(player)}</div>
+      </div>
+      <div>
+        <div class="sloth-modal-summary-label">Lichens</div>
+        <div class="sloth-modal-summary-value">${
+          slothHasColony(player, "lichens")
+            ? micro
+              ? "Boosting all colonies"
+              : "Accelerating the other colony"
+            : "Inactive"
+        }</div>
+      </div>
+    </div>
+
+    <div class="sloth-modal-grid">
+      ${SLOTH_COLONIES.map((colony) => renderSlothColonyDetailCard(player, colony)).join("")}
+    </div>
+  `;
+}
+
+function updateSlothEcosystemButton(player) {
+  const btn = document.getElementById("slothEcosystemBtn");
+  const titleEl = document.getElementById("btn-sloth-title");
+  const descEl = document.getElementById("btn-sloth-desc");
+
+  if (!btn || !titleEl || !descEl) return;
+
+  if (!player || !isThreeToedSlothFighter(player)) {
+    btn.style.display = "none";
+    return;
+  }
+
+  const dormant = isSlothDormantInCurrentBiome(player);
+  const micro = Boolean(player.slothMicroecosystemActive);
+  const activeCount = getSlothActiveColonies(player).length;
+
+  btn.style.display = "block";
+  titleEl.textContent = "Living Ecosystem";
+  descEl.textContent = micro
+    ? "All colonies active. " + (player.slothMicroecosystemTurns || 0) + " turn(s) left."
+    : dormant
+      ? "Ecosystem in letargo. View blocked colonies."
+      : activeCount + "/5 colonies active. Open full colony panel.";
+}
+
+function openSlothEcosystemModal() {
+  if (!currentBattle || currentBattle.finished) return;
+
+  const { player } = getBattleFighters();
+
+  if (!isThreeToedSlothFighter(player)) {
+    alert("Only the Three-Toed Sloth has a Living Ecosystem.");
+    return;
+  }
+
+  renderSlothEcosystemModal();
+
+  const modal = document.getElementById("slothEcosystemModal");
+  if (modal) modal.style.display = "flex";
+}
+
+function closeSlothEcosystemModal() {
+  const modal = document.getElementById("slothEcosystemModal");
+  if (modal) modal.style.display = "none";
+}
+
 const ACTION_INFO = {
   normal: {
     title: "Normal Attack",
@@ -201,6 +564,7 @@ function getImageCandidates(id, animal) {
     "giant-asian-mantis": ["./images/animals/arthropods/asian-giant-mantis.png"],
     "darwins-frog": ["./images/animals/amphibians/darwins-frog.png"],
     "coconut-octopus": ["./images/animals/fish/coconut-octopus.png"],
+    "three-toed-sloth": ["./images/animals/mammals/three-toed-sloth.png"],
   };
 
   return [direct, ...(legacy[id] ?? [])];
@@ -455,6 +819,10 @@ function getExtraResourceText(fighter) {
     return getCoconutOctopusStatusText(fighter);
   }
 
+  if (isThreeToedSlothFighter(fighter)) {
+    return getThreeToedSlothStatusText(fighter);
+  }
+
   return "";
 }
 
@@ -551,6 +919,16 @@ function formatTooltip(fighter) {
   `
       : "";
 
+  const slothExtra =
+    isThreeToedSlothFighter(fighter)
+      ? `
+    <div class="tooltip-section">
+      <div class="tooltip-label">Living Ecosystem</div>
+      <div class="tooltip-text">${getThreeToedSlothStatusText(fighter)}</div>
+    </div>
+  `
+      : "";
+
   return `
     <h3>${animal.name}</h3>
 
@@ -589,6 +967,7 @@ ${formatStatArrowLine(fighter, "explosiveness", "Explosiveness")}</div>
     ${macaqueExtra}
     ${iguanaExtra}
     ${coconutExtra}
+    ${slothExtra}
   `;
 }
 
@@ -616,14 +995,19 @@ function renderFighter(prefix, fighter) {
 
   const extraResourceEl = document.getElementById(`${prefix}ExtraResource`);
   if (extraResourceEl) {
-    const extraResourceText = getExtraResourceText(fighter);
-
-    if (extraResourceText) {
-      extraResourceEl.textContent = extraResourceText;
+    if (isThreeToedSlothFighter(fighter)) {
+      extraResourceEl.innerHTML = renderSlothEcosystemMiniPanel(fighter);
       extraResourceEl.style.display = "block";
     } else {
-      extraResourceEl.textContent = "";
-      extraResourceEl.style.display = "none";
+      const extraResourceText = getExtraResourceText(fighter);
+
+      if (extraResourceText) {
+        extraResourceEl.textContent = extraResourceText;
+        extraResourceEl.style.display = "block";
+      } else {
+        extraResourceEl.textContent = "";
+        extraResourceEl.style.display = "none";
+      }
     }
   }
 
@@ -729,6 +1113,11 @@ function updateSpecialButton(player) {
     descEl.textContent = ready
       ? "READY. Press to choose Tentacle Storm, Coconut Fortress or Ink Sea."
       : "Choose Tentacle Storm, Coconut Fortress or Ink Sea when ready. Charge: " + player.specialCharge + "/" + needed;
+  } else if (isThreeToedSlothFighter(player)) {
+    const dormant = currentBattle && (currentBattle.biome === "arctic" || currentBattle.biome === "desert");
+    descEl.textContent = dormant
+      ? "Dormant in Arctic/Desert. Microecosystem Ancestral cannot be used here."
+      : `${player.special.description} ${ready ? "READY" : `Charge: ${player.specialCharge}/${needed}`}`;
   } else {
     descEl.textContent = `${player.special.description} ${ready ? "READY" : `Charge: ${player.specialCharge}/${needed}`}`;
   }
@@ -1011,6 +1400,11 @@ function updateActionButtons() {
     buttons.forEach((btn) => {
     const action = btn.dataset.action;
 
+    if (btn.id === "slothEcosystemBtn") {
+      btn.disabled = !isThreeToedSlothFighter(player);
+      return;
+    }
+
     if (action === "larval-command") {
       const larvae = player.darwinsLarvae || 0;
       btn.disabled = !(player.passive?.id === "larval-gestation" && larvae > 0);
@@ -1039,6 +1433,7 @@ function renderBattle() {
     updateLarvalCommandButton(player);
   }
 
+  updateSlothEcosystemButton(player);
   updateCoconutOctopusPanel(player);
 
   updateActionButtons();
@@ -1277,6 +1672,9 @@ function deriveTurnOutcome(summaryLines) {
   if (joined.includes("Ink Sea")) return "Special Triggered";
   if (joined.includes("Predatory Pressure")) return "Passive Triggered";
   if (joined.includes("Perfect Camouflage")) return "Passive Triggered";
+  if (joined.includes("Microecosystem Ancestral")) return "Special Triggered";
+  if (joined.includes("Ancestral Explosive Strike")) return "Special Triggered";
+  if (joined.includes("Colony")) return "Passive Triggered";
   if (joined.includes("Mutilation")) return "Special Triggered";
   if (joined.includes("Neurotoxic Injection (Tetrodotoxin)")) return "Special Triggered";
   if (joined.includes("Overinflation")) return "Special Triggered";
@@ -2049,6 +2447,11 @@ function init() {
     btn.addEventListener("click", async () => {
       const action = btn.dataset.action;
 
+      if (btn.id === "slothEcosystemBtn") {
+        openSlothEcosystemModal();
+        return;
+      }
+
       if (action === "larval-command") {
         await openLarvalCommandPrompt();
         return;
@@ -2090,6 +2493,7 @@ function init() {
   });
 
   document.getElementById("larvalCommandCloseBtn").addEventListener("click", closeLarvalCommandModal);
+  document.getElementById("slothEcosystemCloseBtn")?.addEventListener("click", closeSlothEcosystemModal);
 
   document.getElementById("larvalAttackMinus").addEventListener("click", () => adjustLarvalDraft("attack", -1));
   document.getElementById("larvalAttackPlus").addEventListener("click", () => adjustLarvalDraft("attack", 1));

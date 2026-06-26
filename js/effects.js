@@ -3,19 +3,86 @@
 // Compatible with current battle-engine.js
 // =============================
 
+
+const SLOTH_STAT_MODIFIER_KEYS = [
+  "attackPct",
+  "defensePct",
+  "speedPct",
+  "agilityPct",
+  "techniquePct",
+  "explosivenessPct",
+  "precisionPct",
+  "evasionPct"
+];
+
+function targetHasSlothColony(target, colonyId) {
+  if (!target || target.id !== "three-toed-sloth") return false;
+  return Array.isArray(target.slothActiveColonies) && target.slothActiveColonies.includes(colonyId);
+}
+
+function maybeInvertSlothFungalDebuff(target, effect, battle) {
+  if (!targetHasSlothColony(target, "fungi")) return effect;
+  if (!effect || !effect.modifiers) return effect;
+
+  const debuffKeys = Object.keys(effect.modifiers).filter((key) => {
+    return SLOTH_STAT_MODIFIER_KEYS.includes(key) && effect.modifiers[key] < 0;
+  });
+
+  if (debuffKeys.length === 0) return effect;
+
+  const attempts = targetHasSlothColony(target, "lichens") ? 2 : 1;
+  let inverted = false;
+
+  for (let i = 0; i < attempts; i += 1) {
+    if (Math.random() < 0.5) {
+      inverted = true;
+      break;
+    }
+  }
+
+  if (!inverted) {
+    if (battle) {
+      battle.log.push(
+        `${target.name}'s Fungal Colony fails to invert ${effect.name}.`
+      );
+    }
+
+    return effect;
+  }
+
+  const modifiers = { ...effect.modifiers };
+
+  debuffKeys.forEach((key) => {
+    modifiers[key] = Math.abs(modifiers[key]);
+  });
+
+  if (battle) {
+    battle.log.push(
+      `${target.name}'s Fungal Colony inverts the stat reduction from ${effect.name}.`
+    );
+  }
+
+  return {
+    ...effect,
+    name: "Inverted " + effect.name,
+    modifiers
+  };
+}
+
 export function addEffect(target, effect, battle) {
-  const existingIndex = target.effects.findIndex((e) => e.id === effect.id);
+  const finalEffect = maybeInvertSlothFungalDebuff(target, effect, battle);
+  const existingIndex = target.effects.findIndex((e) => e.id === finalEffect.id);
 
   const stampedEffect = {
-    ...effect,
+    ...finalEffect,
     appliedOnTurn: battle ? battle.turn : null
   };
 
-  if (existingIndex !== -1 && effect.stackable === false) {
+  if (existingIndex !== -1 && finalEffect.stackable === false) {
     target.effects[existingIndex] = stampedEffect;
 
     if (battle) {
-      battle.log.push(`${target.name}'s ${effect.name} was refreshed.`);
+      battle.log.push(`${target.name}'s ${finalEffect.name} was refreshed.`);
     }
     return;
   }
@@ -23,7 +90,7 @@ export function addEffect(target, effect, battle) {
   target.effects.push(stampedEffect);
 
   if (battle) {
-    battle.log.push(`${target.name} gains effect: ${effect.name}.`);
+    battle.log.push(`${target.name} gains effect: ${finalEffect.name}.`);
   }
 }
 

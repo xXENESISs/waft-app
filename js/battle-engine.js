@@ -165,6 +165,11 @@ export function createFighter(id) {
     octopusPredatoryPressureStacks: 0,
     octopusPerfectAdaptationChoice: "tentacle-storm",
     coconutFortressActive: false,
+
+    slothActiveColonies: animal.id === "three-toed-sloth" ? [] : null,
+    slothBacterialChain: 0,
+    slothMicroecosystemActive: false,
+    slothMicroecosystemTurns: 0,
   };
 }
 
@@ -200,9 +205,17 @@ function getBiomeModifierForFighter(fighter, biome) {
   return 1;
 }
 
+function randomChoiceExcluding(array, excludedValue) {
+  const candidates = array.filter((item) => item !== excludedValue);
+  return randomChoice(candidates.length > 0 ? candidates : array);
+}
+
 function applyRandomBiomeModifier(battle, reason = "selected") {
-  const biome = randomChoice(BIOMES);
-  const stat = randomChoice(BIOME_AFFECTABLE_STATS);
+  const previousBiome = battle.biome;
+  const previousStat = battle.biomeStat;
+
+  const biome = randomChoiceExcluding(BIOMES, previousBiome);
+  const stat = randomChoiceExcluding(BIOME_AFFECTABLE_STATS, previousStat);
 
   battle.biome = biome;
   battle.biomeStat = stat;
@@ -229,6 +242,8 @@ function applyRandomBiomeModifier(battle, reason = "selected") {
     battle,
     `${battle.fighterB.name}: ${relationB} biome → ${stat} ${modB > 1 ? "+10%" : modB < 1 ? "-10%" : "0%"}.`
   );
+
+  refreshThreeToedSlothColoniesForBattle(battle, reason);
 }
 
 function rotateBiomeIfNeeded(battle) {
@@ -340,6 +355,276 @@ function createOasisEffect(duration, sourceId) {
     duration: duration,
     sourceId: sourceId
   };
+}
+
+function isThreeToedSloth(fighter) {
+  return fighter && fighter.id === "three-toed-sloth";
+}
+
+const THREE_TOED_SLOTH_COLONIES = ["algae", "fungi", "bacteria", "mites", "lichens"];
+
+const THREE_TOED_SLOTH_COLONY_NAMES = {
+  algae: "Algae Colony",
+  fungi: "Fungal Colony",
+  bacteria: "Bacterial Colony",
+  mites: "Mite Colony",
+  lichens: "Lichen Colony"
+};
+
+function getThreeToedSlothColonyName(colonyId) {
+  return THREE_TOED_SLOTH_COLONY_NAMES[colonyId] || colonyId;
+}
+
+function isThreeToedSlothDormantBiome(biome) {
+  return biome === "arctic" || biome === "desert";
+}
+
+function hasThreeToedSlothColony(fighter, colonyId) {
+  return (
+    isThreeToedSloth(fighter) &&
+    Array.isArray(fighter.slothActiveColonies) &&
+    fighter.slothActiveColonies.includes(colonyId)
+  );
+}
+
+function hasThreeToedSlothLichens(fighter) {
+  return hasThreeToedSlothColony(fighter, "lichens");
+}
+
+function getRandomThreeToedSlothColonies(count = 2) {
+  const pool = [...THREE_TOED_SLOTH_COLONIES];
+  const selected = [];
+
+  while (selected.length < count && pool.length > 0) {
+    const index = Math.floor(Math.random() * pool.length);
+    selected.push(pool.splice(index, 1)[0]);
+  }
+
+  return selected;
+}
+
+function resetThreeToedSlothBacterialChain(fighter, battle = null, reason = "reset") {
+  if (!isThreeToedSloth(fighter)) return;
+  if ((fighter.slothBacterialChain || 0) <= 0) return;
+
+  fighter.slothBacterialChain = 0;
+
+  if (battle) {
+    addLog(
+      battle,
+      fighter.name + "'s Bacterial Colony chain resets" + (reason ? " (" + reason + ")" : "") + "."
+    );
+  }
+}
+
+function setThreeToedSlothColoniesForBiome(fighter, biome, battle = null, reason = "selected") {
+  if (!isThreeToedSloth(fighter)) return;
+
+  if (fighter.slothMicroecosystemActive) {
+    if (battle) {
+      addLog(
+        battle,
+        fighter.name + " keeps all colonies active through Microecosystem Ancestral despite the biome change."
+      );
+    }
+
+    return;
+  }
+
+  resetThreeToedSlothBacterialChain(fighter, battle, "ecosystem reset");
+
+  if (isThreeToedSlothDormantBiome(biome)) {
+    fighter.slothActiveColonies = [];
+
+    if (battle) {
+      addLog(
+        battle,
+        fighter.name + "'s Living Ecosystem enters dormancy in " + biome.toUpperCase() + ": no colonies are active."
+      );
+    }
+
+    return;
+  }
+
+  fighter.slothActiveColonies = getRandomThreeToedSlothColonies(2);
+
+  if (battle) {
+    addLog(
+      battle,
+      fighter.name + " awakens 2 symbiotic colonies" +
+        (reason === "changed" ? " after the biome shift" : "") +
+        ": " + fighter.slothActiveColonies.map(getThreeToedSlothColonyName).join(", ") + "."
+    );
+  }
+}
+
+function refreshThreeToedSlothColoniesForBattle(battle, reason = "selected") {
+  setThreeToedSlothColoniesForBiome(battle.fighterA, battle.biome, battle, reason);
+  setThreeToedSlothColoniesForBiome(battle.fighterB, battle.biome, battle, reason);
+}
+
+function getThreeToedSlothMiteStaminaDiscount(fighter, actionType) {
+  if (!hasThreeToedSlothColony(fighter, "mites")) return 0;
+  if (!["normal", "quick", "precise", "explosive"].includes(actionType)) return 0;
+
+  return hasThreeToedSlothLichens(fighter) ? 10 : 5;
+}
+
+function getFinalActionStaminaCost(fighter, actionType, opponent) {
+  if (!ACTIONS[actionType]) return 0;
+
+  const baseCost = ACTIONS[actionType].staminaCost;
+  const extraCost = getActionExtraStaminaCost(fighter, actionType, opponent);
+  const slothDiscount = getThreeToedSlothMiteStaminaDiscount(fighter, actionType);
+
+  return Math.max(0, baseCost + extraCost - slothDiscount);
+}
+
+function getThreeToedSlothBacterialBonusForHitLevel(hitLevel) {
+  const level = Math.max(1, Math.min(5, hitLevel || 1));
+
+  switch (level) {
+    case 2:
+      return 25;
+    case 3:
+      return 50;
+    case 4:
+      return 75;
+    case 5:
+      return 100;
+    default:
+      return 0;
+  }
+}
+
+function applyThreeToedSlothBacterialDamageBonus(attacker, damage, battle) {
+  if (!hasThreeToedSlothColony(attacker, "bacteria")) return damage;
+
+  const previousChain = Math.max(0, Math.min(5, attacker.slothBacterialChain || 0));
+  const hitLevel = Math.min(5, previousChain + 1);
+  const bonusPct = getThreeToedSlothBacterialBonusForHitLevel(hitLevel);
+  const progressGain = hasThreeToedSlothLichens(attacker) ? 2 : 1;
+  const developedChain = Math.min(5, previousChain + progressGain);
+
+  attacker.slothBacterialChain = developedChain;
+
+  addLog(
+    battle,
+    attacker.name +
+      "'s Bacterial Colony develops from " +
+      previousChain +
+      "/5 to " +
+      developedChain +
+      "/5" +
+      (hasThreeToedSlothLichens(attacker)
+        ? " through Lichen acceleration"
+        : "") +
+      "."
+  );
+
+  let finalDamage = damage;
+
+  if (bonusPct > 0) {
+    finalDamage = Math.max(1, Math.round(damage * (1 + bonusPct / 100)));
+
+    addLog(
+      battle,
+      attacker.name +
+        "'s Bacterial Colony increases this attack's damage by +" +
+        bonusPct +
+        "% (" +
+        damage +
+        " → " +
+        finalDamage +
+        ")."
+    );
+  } else {
+    addLog(
+      battle,
+      attacker.name +
+        "'s Bacterial Colony is still germinating: no damage bonus on this hit."
+    );
+  }
+
+  if (hitLevel >= 5) {
+    attacker.slothBacterialChain = 0;
+
+    addLog(
+      battle,
+      attacker.name +
+        "'s Bacterial Colony releases its peak charge and resets to 0/5."
+    );
+  }
+
+  return finalDamage;
+}
+
+function handleThreeToedSlothAlgaeEndTurn(fighter, battle) {
+  if (!hasThreeToedSlothColony(fighter, "algae")) return;
+
+  const attempts = hasThreeToedSlothLichens(fighter) ? 2 : 1;
+
+  for (let i = 0; i < attempts; i += 1) {
+    if (Math.random() >= 0.5) {
+      addLog(
+        battle,
+        fighter.name + "'s Algae Colony fails to restore on roll " + (i + 1) + "/" + attempts + "."
+      );
+      continue;
+    }
+
+    const hpBefore = fighter.hp;
+    const staminaBefore = fighter.stamina;
+
+    restoreHp(fighter, 30);
+    restoreStamina(fighter, 15, battle);
+
+    const healed = fighter.hp - hpBefore;
+    const staminaRestored = fighter.stamina - staminaBefore;
+
+    addLog(
+      battle,
+      fighter.name +
+        "'s Algae Colony restores " +
+        healed +
+        " HP and " +
+        staminaRestored +
+        " stamina" +
+        (attempts > 1 ? " on roll " + (i + 1) + "/" + attempts : "") +
+        "."
+    );
+  }
+}
+
+function activateThreeToedSlothMicroecosystem(attacker, battle) {
+  attacker.slothMicroecosystemActive = true;
+  attacker.slothMicroecosystemTurns = 3;
+  attacker.slothActiveColonies = [...THREE_TOED_SLOTH_COLONIES];
+
+  addLog(
+    battle,
+    attacker.name +
+      " activates Microecosystem Ancestral: all 5 colonies awaken for 3 turns."
+  );
+}
+
+function tickThreeToedSlothMicroecosystem(fighter, battle) {
+  if (!isThreeToedSloth(fighter)) return;
+  if (!fighter.slothMicroecosystemActive) return;
+
+  fighter.slothMicroecosystemTurns = Math.max(0, (fighter.slothMicroecosystemTurns || 0) - 1);
+
+  if (fighter.slothMicroecosystemTurns > 0) return;
+
+  fighter.slothMicroecosystemActive = false;
+  fighter.slothActiveColonies = [];
+
+  addLog(
+    battle,
+    fighter.name + "'s Microecosystem Ancestral ends. The ecosystem adapts to the current biome."
+  );
+
+  setThreeToedSlothColoniesForBiome(fighter, battle.biome, battle, "changed");
 }
 
 
@@ -1961,14 +2246,18 @@ export function canUseAction(fighter, actionType, battle = null) {
       return false;
     }
 
+    if (fighter.special.id === "ancestral-microecosystem") {
+      if (!battle) return false;
+      if (isThreeToedSlothDormantBiome(battle.biome)) return false;
+      if (fighter.slothMicroecosystemActive) return false;
+    }
+
     if (fighter.parasiticControlActive || fighter.nervousDisruptionActive) return false;
 
     return fighter.specialCharge >= fighter.special.chargeHits;
   }
 
-  const finalCost =
-    ACTIONS[actionType].staminaCost +
-    getActionExtraStaminaCost(fighter, actionType, opponent);
+  const finalCost = getFinalActionStaminaCost(fighter, actionType, opponent);
 
   return fighter.stamina >= finalCost;
 }
@@ -2093,6 +2382,7 @@ function handleReactiveChargeOnMiss(attacker, defender, battle) {
 
   handleInvertedInertia(attacker, defender, battle);
   handleCoconutOctopusMissPassive(defender, battle, attacker);
+  resetThreeToedSlothBacterialChain(attacker, battle, "miss");
 }
 
 function getNextAttackBuff(attacker) {
@@ -2224,8 +2514,20 @@ export function performAttack(attacker, defender, actionType, battle) {
     throw new Error("Unknown action type: " + actionType);
   }
 
-  const extraCost = getActionExtraStaminaCost(attacker, actionType, defender);
-  spendStamina(attacker, action.staminaCost + extraCost, battle);
+  const finalStaminaCost = getFinalActionStaminaCost(attacker, actionType, defender);
+  spendStamina(attacker, finalStaminaCost, battle);
+
+  if (getThreeToedSlothMiteStaminaDiscount(attacker, actionType) > 0) {
+    addLog(
+      battle,
+      attacker.name +
+        "'s Mite Colony reduces " +
+        action.name +
+        " stamina cost to " +
+        finalStaminaCost +
+        "."
+    );
+  }
   attacker.concentratedLastTurn = false;
   attacker.overinflationUsedThisTurn = false;
 
@@ -2257,6 +2559,7 @@ export function performAttack(attacker, defender, actionType, battle) {
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
     resetMacaqueChain(attacker, battle, "miss");
+    resetThreeToedSlothBacterialChain(attacker, battle, "miss");
 
     return {
       hit: false,
@@ -2462,6 +2765,7 @@ export function performAttack(attacker, defender, actionType, battle) {
     finalDamage = Math.round(baseDamage * 1.5);
   }
 
+  finalDamage = applyThreeToedSlothBacterialDamageBonus(attacker, finalDamage, battle);
   finalDamage = applyMatamataAmbushBonus(attacker, defender, finalDamage, battle);
   finalDamage = applyIllusoryDanceDefense(defender, finalDamage, battle);
   finalDamage = applyAncestralRetreatDefense(defender, attacker, finalDamage, battle);
@@ -4141,6 +4445,106 @@ function performDarwinsLarvalCommand(attacker, defender, battle) {
   attacker.darwinsLarvalCommand = null;
 }
 
+function performThreeToedSlothAncestralMicroecosystem(attacker, defender, battle) {
+  attacker.concentratedLastTurn = false;
+  attacker.overinflationUsedThisTurn = false;
+
+  if (isThreeToedSlothDormantBiome(battle.biome)) {
+    addLog(
+      battle,
+      attacker.name + " cannot use Microecosystem Ancestral in " + battle.biome.toUpperCase() + "."
+    );
+    return;
+  }
+
+  activateThreeToedSlothMicroecosystem(attacker, battle);
+
+  const precision = calculateExplosivePrecision(attacker, defender, battle);
+  const evasion = calculateEvasion(defender, battle);
+  let hitChance = calculateHitChanceFromValues(precision, evasion);
+
+  hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
+
+  const hit = rollHit(hitChance);
+
+  if (!hit) {
+    addLog(
+      battle,
+      attacker.name + "'s ancestral explosive strike misses " + defender.name + "."
+    );
+
+    resetMomentum(attacker, battle, "miss");
+    resetParasiticControlHits(attacker, battle, "miss");
+    resetFalconStacks(attacker, battle, "miss");
+    resetMacaqueChain(attacker, battle, "miss");
+    handleReactiveChargeOnMiss(attacker, defender, battle);
+    consumeSpecialCharge(attacker);
+    return;
+  }
+
+  const damageInfo = calculateDamageWithDefenseFactor(
+    attacker,
+    defender,
+    battle,
+    1,
+    "explosive"
+  );
+
+  let damage = Math.max(1, Math.round(damageInfo.damage * 1.2));
+  let critical = rollCritical(calculateCriticalChance(attacker, battle, "explosive"));
+
+  if (
+    defender.passive &&
+    defender.passive.id === "savage-endurance" &&
+    defender.hp < defender.maxHp * 0.25
+  ) {
+    critical = false;
+  }
+
+  if (critical) {
+    damage = Math.round(damage * 1.5);
+  }
+
+  damage = applyThreeToedSlothBacterialDamageBonus(attacker, damage, battle);
+  damage = applyIllusoryDanceDefense(defender, damage, battle);
+  damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyCoconutFortressDefense(defender, damage, battle);
+  damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
+
+  applyDamage(defender, damage);
+  applyDirectHitRecoil(attacker, defender, battle, damage);
+
+  addLog(
+    battle,
+    attacker.name +
+      " hits " +
+      defender.name +
+      " with Ancestral Explosive Strike for " +
+      damage +
+      " damage" +
+      (critical ? " (CRITICAL)" : "") +
+      "."
+  );
+
+  addLog(
+    battle,
+    "Microecosystem Ancestral calc -> Explosive precision: " +
+      Math.round(precision * 10) / 10 +
+      " | Evasion: " +
+      Math.round(evasion * 10) / 10 +
+      " | Hit chance: " +
+      Math.round(hitChance * 10) / 10 +
+      "%."
+  );
+
+  increaseMomentum(attacker, battle);
+  increaseParasiticControlHits(attacker, defender, battle);
+  increaseFalconStacks(attacker, battle);
+  increaseMacaqueChain(attacker, defender, battle);
+  handlePostHitPassive(attacker, defender, battle, critical, "explosive");
+  consumeSpecialCharge(attacker);
+}
+
 function performSpecialAction(attacker, defender, battle) {
   if (!attacker.special) return;
 
@@ -4205,6 +4609,9 @@ function performSpecialAction(attacker, defender, battle) {
     case "darwinian-expulsion":
        performDarwinsFrogSpecial(attacker, defender, battle);
       break;
+    case "ancestral-microecosystem":
+       performThreeToedSlothAncestralMicroecosystem(attacker, defender, battle);
+      break;
     case "perfect-adaptation":
     case "tentacle-storm":
     case "coconut-fortress":
@@ -4239,6 +4646,9 @@ function processEndTurnPassives(fighter, opponent, battle) {
       `${fighter.name}'s Suffocating Humidity restores 20 HP.`
     );
   }
+
+  handleThreeToedSlothAlgaeEndTurn(fighter, battle);
+  tickThreeToedSlothMicroecosystem(fighter, battle);
 
     handleDarwinsLarvalGestation(fighter, battle);
 }

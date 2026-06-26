@@ -779,6 +779,47 @@ export const animals = {
 },
 
 
+"three-toed-sloth": {
+  id: "three-toed-sloth",
+  name: "Three-Toed Sloth",
+  scientificName: "Bradypus tridactylus",
+  category: "mammals",
+
+  stats: {
+    life: 91,
+    attack: 79,
+    defense: 86,
+    resistance: 88,
+    technique: 83,
+    speed: 42,
+    agility: 47,
+    explosiveness: 89
+  },
+
+  biomes: {
+    favorable: ["jungle", "forest"],
+    neutral: ["marine", "mountain"],
+    unfavorable: ["arctic", "desert"]
+  },
+
+  passive: {
+    id: "living-ecosystem",
+    name: "Living Ecosystem",
+    description:
+      "The Three-Toed Sloth hosts five symbiotic colonies. At the start of combat, 2 random colonies awaken. Whenever the biome changes, active colonies and colony progress reset, then 2 new colonies awaken. In Arctic and Desert, the ecosystem becomes dormant: no colonies awaken and Microecosystem Ancestral cannot be used. Colonies: Algae can restore 30 HP and 15 Stamina at turn end; Fungi can invert stat debuffs; Bacteria scales consecutive attacks; Mites reduce attack stamina costs; Lichens double the other active colony, or all colonies during Microecosystem Ancestral."
+  },
+
+  special: {
+    id: "ancestral-microecosystem",
+    name: "Microecosystem Ancestral",
+    description:
+      "Can only be used in favorable or neutral biomes. Activates all 5 colonies for 3 turns, counting the activation turn, and immediately performs an explosive attack that can hit, miss or crit normally. During this state, colonies do not change even if the biome changes and colony progress is preserved. When it ends, the ecosystem follows the current biome again and colony progress resets.",
+    chargeType: "defensive",
+    chargeHits: 4
+  }
+},
+
+
 "coconut-octopus": {
   id: "coconut-octopus",
   name: "Coconut Octopus",
@@ -853,13 +894,13 @@ export const animals = {
       name: "Offensive Form",
       stats: {
         life: 70,
-        attack: 110,
+        attack: 120,
         defense: 40,
         resistance: 70,
-        technique: 95,
+        technique: 55,
         speed: 85,
         agility: 40,
-        explosiveness: 90
+        explosiveness: 120
       },
       passive: {
         id: "predatory-pressure",
