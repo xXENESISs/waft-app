@@ -9,6 +9,7 @@ let currentState = null;
 let fighterSelector = null;
 let viewedMatchId = null;
 const flipStates = {};
+const pendingOctopusFormPreviewByMatchId = {};
 const larvalCommandsByMatchId = {};
 const lastTurnLinesByMatchId = {};
 const pendingAnimationByMatchId = {};
@@ -17,6 +18,20 @@ const summaryAnimationTokens = {};
 
 const TYPEWRITER_CHAR_DELAY = 8;
 const TYPEWRITER_LINE_PAUSE = 180;
+
+const OCTOPUS_FORM_LABELS = {
+  base: "Base Form",
+  offensive: "Offensive Form",
+  defensive: "Defensive Form",
+  evasive: "Evasive Form"
+};
+
+const OCTOPUS_SPECIAL_CHOICE_LABELS = {
+  "tentacle-storm": "Tentacle Storm",
+  "coconut-fortress": "Coconut Fortress",
+  "ink-sea": "Ink Sea"
+};
+
 
 const MAX_TOURNAMENT_PLAYERS = 16;
 const MIN_TOURNAMENT_PLAYERS = 2;
@@ -118,6 +133,62 @@ async function typeTurnSummaryForMatch(matchId, lines) {
   lastTurnLinesByMatchId[matchId] = [...lines];
 }
 
+
+function isCoconutOctopusFighter(fighter) {
+  return fighter && fighter.id === "coconut-octopus";
+}
+
+function getCoconutOctopusFormText(fighter) {
+  if (!isCoconutOctopusFighter(fighter)) return "";
+  const form = fighter.octopusForm || "base";
+  return OCTOPUS_FORM_LABELS[form] || form;
+}
+
+function getCoconutOctopusStatusText(fighter) {
+  if (!isCoconutOctopusFighter(fighter)) return "";
+
+  const lines = [
+    "Form: " + getCoconutOctopusFormText(fighter),
+    "Adaptation charges: " + (fighter.octopusAdaptationCharges ?? 0) + "/8",
+    "First transformation: " + (fighter.octopusFreeTransformationAvailable ? "FREE" : "USED")
+  ];
+
+  if ((fighter.octopusForm || "base") === "base") {
+    lines.push("Perfect Adaptation: choose option when using Special");
+  }
+  if ((fighter.octopusForm || "base") === "offensive") {
+    lines.push("Predatory Pressure: " + ((fighter.octopusPredatoryPressureStacks || 0) * 5) + "% Attack reduction");
+  }
+  if ((fighter.octopusForm || "base") === "defensive") {
+    lines.push("Coconut Shell: 10 fixed damage on direct hit");
+    lines.push("Fortress active: " + (fighter.coconutFortressActive ? "YES" : "NO"));
+  }
+  if ((fighter.octopusForm || "base") === "evasive") {
+    lines.push("Perfect Camouflage: +15 HP / +15 Stamina when enemy misses");
+  }
+
+  return lines.join("\n");
+}
+
+function getCoconutOctopusFormDefinitionForPreview(formId) {
+  return animals["coconut-octopus"]?.octopusForms?.[formId] || null;
+}
+
+function getCoconutOctopusPreviewStatsHtml(form) {
+  if (!form?.stats) return "";
+  const rows = [
+    ["Life", form.stats.life],
+    ["Attack", form.stats.attack],
+    ["Defense", form.stats.defense],
+    ["Stamina", form.stats.resistance],
+    ["Speed", form.stats.speed],
+    ["Technique", form.stats.technique],
+    ["Agility", form.stats.agility],
+    ["Explosive", form.stats.explosiveness]
+  ];
+  return rows.map(([label, value]) => `<div class="octopus-preview-stat">${label}<strong>${value}</strong></div>`).join("");
+}
+
 function getAnimalName(fighterId) {
   return animals[fighterId]?.name || fighterId || "TBD";
 }
@@ -166,7 +237,8 @@ function getImageCandidates(id, animal) {
     matamata: ["./images/animals/reptiles/matamata.png"],
     fennec: ["./images/animals/mammals/fennec.png"],
     "giant-asian-mantis": ["./images/animals/arthropods/asian-giant-mantis.png"],
-    "darwins-frog": ["./images/animals/amphibians/darwins-frog.png"]
+    "darwins-frog": ["./images/animals/amphibians/darwins-frog.png"],
+    "coconut-octopus": ["./images/animals/fish/coconut-octopus.png"]
   };
 
   return [direct, ...(legacy[id] ?? [])];
@@ -424,6 +496,10 @@ function getExtraResourceText(fighter) {
       "\n" +
       oasisText
     );
+  }
+
+  if (isCoconutOctopusFighter(fighter)) {
+    return getCoconutOctopusStatusText(fighter);
   }
 
   return "";
@@ -966,6 +1042,8 @@ function renderResolvedMatch(found) {
     </div>
   `;
 
+  bindOnlineTournamentOctopusControls(area, activeMatch, canAct);
+
   getEl("returnToYourMatchBtn")?.addEventListener("click", () => {
     if (!localActive) return;
     viewedMatchId = localActive.matchId;
@@ -974,6 +1052,91 @@ function renderResolvedMatch(found) {
 
   loadImagesInside(area);
   bindFlipButtonsInside(area);
+}
+
+let pendingOctopusPerfectAdaptationMatchId = null;
+
+function getLocalCoconutOctopusInMatch(activeMatch) {
+  const { fighter } = getLocalFighterInActiveMatch(activeMatch);
+  return isCoconutOctopusFighter(fighter) ? fighter : null;
+}
+
+function renderOnlineTournamentOctopusPanel(activeMatch, canAct) {
+  const fighter = getLocalCoconutOctopusInMatch(activeMatch);
+  if (!fighter) return "";
+
+  const matchId = activeMatch.matchId;
+  const preview = pendingOctopusFormPreviewByMatchId[matchId] || null;
+  const currentForm = fighter.octopusForm || "base";
+  const charges = fighter.octopusAdaptationCharges ?? 0;
+  const freeText = fighter.octopusFreeTransformationAvailable ? " · first transformation free" : "";
+  const form = preview ? getCoconutOctopusFormDefinitionForPreview(preview) : null;
+
+  const previewHtml = form
+    ? `<div class="octopus-preview-panel" style="display:block;">
+        <div class="octopus-preview-title">${escapeHtml(form.name)}${preview === currentForm ? " — Current Form" : " — Preview"}</div>
+        <div class="octopus-preview-stats">${getCoconutOctopusPreviewStatsHtml(form)}</div>
+        <div class="octopus-preview-text">${escapeHtml("Passive — " + (form.passive?.name || "None") + "\n" + (form.passive?.description || "No passive.") + "\n\nSuper — " + (form.special?.name || "None") + "\n" + (form.special?.description || "No super."))}</div>
+        <div class="octopus-preview-actions">
+          <button type="button" class="octopus-confirm-btn" data-online-octopus-confirm="${escapeHtml(matchId)}" ${!canAct || preview === currentForm || (!fighter.octopusFreeTransformationAvailable && charges <= 0) ? "disabled" : ""}>${fighter.octopusFreeTransformationAvailable ? "Confirm Free Transformation" : "Confirm Form Change (-1 charge)"}</button>
+          <button type="button" class="octopus-cancel-btn" data-online-octopus-cancel="${escapeHtml(matchId)}">Cancel Preview</button>
+        </div>
+      </div>`
+    : "";
+
+  return `<div class="octopus-adaptation-panel" id="octopusAdaptationPanel">
+      <div class="octopus-adaptation-title">Coconut Octopus — Stand Phase</div>
+      <div class="octopus-adaptation-status">${escapeHtml(getCoconutOctopusFormText(fighter))} · charges ${charges}/8${escapeHtml(freeText)}</div>
+      <div class="octopus-adaptation-grid">
+        ${["offensive", "defensive", "evasive"].map((formId) => `<button type="button" class="octopus-mini-btn octopus-form-btn ${formId === currentForm ? "active" : ""} ${formId === preview && formId !== currentForm ? "preview" : ""}" data-online-octopus-preview="${escapeHtml(formId)}" data-match-id="${escapeHtml(matchId)}" ${!canAct ? "disabled" : ""}>${escapeHtml(formId[0].toUpperCase() + formId.slice(1))}</button>`).join("")}
+      </div>
+      ${previewHtml}
+    </div>`;
+}
+
+function bindOnlineTournamentOctopusControls(container, activeMatch, canAct) {
+  if (!container || !activeMatch) return;
+  container.querySelectorAll("[data-online-octopus-preview]").forEach((button) => {
+    button.addEventListener("click", () => {
+      pendingOctopusFormPreviewByMatchId[activeMatch.matchId] = button.getAttribute("data-online-octopus-preview");
+      renderState();
+    });
+  });
+  container.querySelectorAll("[data-online-octopus-cancel]").forEach((button) => {
+    button.addEventListener("click", () => {
+      delete pendingOctopusFormPreviewByMatchId[activeMatch.matchId];
+      renderState();
+    });
+  });
+  container.querySelectorAll("[data-online-octopus-confirm]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!canAct || !roomCode) return;
+      const formId = pendingOctopusFormPreviewByMatchId[activeMatch.matchId];
+      if (!formId) return;
+      socket.emit("transformCoconutOctopusOnlineTournament", { roomCode, matchId: activeMatch.matchId, formId });
+      delete pendingOctopusFormPreviewByMatchId[activeMatch.matchId];
+      addLog("Coconut Octopus adaptation sent for " + activeMatch.roundName + " Match " + (activeMatch.matchIndex + 1) + ".");
+    });
+  });
+}
+
+function localPlayerNeedsOnlineTournamentPerfectAdaptationChoice(activeMatch, action) {
+  if (action !== "special") return false;
+  const { fighter } = getLocalFighterInActiveMatch(activeMatch);
+  return isCoconutOctopusFighter(fighter) && (fighter.octopusForm || "base") === "base";
+}
+
+function openOnlineTournamentOctopusPerfectAdaptationModal(activeMatch) {
+  if (!activeMatch) return;
+  pendingOctopusPerfectAdaptationMatchId = activeMatch.matchId;
+  const modal = document.getElementById("octopusPerfectAdaptationModal");
+  if (modal) modal.style.display = "flex";
+}
+
+function closeOnlineTournamentOctopusPerfectAdaptationModal() {
+  pendingOctopusPerfectAdaptationMatchId = null;
+  const modal = document.getElementById("octopusPerfectAdaptationModal");
+  if (modal) modal.style.display = "none";
 }
 
 function renderActiveCombatMatch(activeMatch) {
@@ -1026,6 +1189,8 @@ function renderActiveCombatMatch(activeMatch) {
           </div>
         </div>
 
+        ${renderOnlineTournamentOctopusPanel(activeMatch, canAct)}
+
         <div class="online-actions-panel">
           <div class="online-actions-grid">
             ${renderActionButtons(activeMatch, canAct)}
@@ -1053,6 +1218,11 @@ function renderActiveCombatMatch(activeMatch) {
 
       const action = button.getAttribute("data-online-action");
 
+      if (localPlayerNeedsOnlineTournamentPerfectAdaptationChoice(activeMatch, action)) {
+        openOnlineTournamentOctopusPerfectAdaptationModal(activeMatch);
+        return;
+      }
+
       if (action === "larval-command") {
         openLarvalCommandModal(activeMatch);
         return;
@@ -1064,7 +1234,8 @@ function renderActiveCombatMatch(activeMatch) {
         roomCode,
         matchId: activeMatch.matchId,
         action,
-        larvalCommand
+        larvalCommand,
+        coconutPerfectAdaptationChoice: null
       });
 
       if (larvalCommand) {
@@ -1074,6 +1245,8 @@ function renderActiveCombatMatch(activeMatch) {
       addLog("Action sent for " + activeMatch.roundName + " Match " + (activeMatch.matchIndex + 1) + ": " + action);
     });
   });
+
+  bindOnlineTournamentOctopusControls(area, activeMatch, canAct);
 
   getEl("returnToYourMatchBtn")?.addEventListener("click", () => {
     if (!localActive) return;
@@ -1291,6 +1464,29 @@ function confirmLarvalCommandModal() {
 
   closeLarvalCommandModal();
   renderState();
+}
+
+function bindOnlineTournamentOctopusModalListeners() {
+  document.getElementById("octopusPerfectAdaptationCloseBtn")?.addEventListener("click", closeOnlineTournamentOctopusPerfectAdaptationModal);
+  document.querySelectorAll("[data-octopus-perfect-choice]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!pendingOctopusPerfectAdaptationMatchId || !roomCode) return;
+      const activeMatch = getActiveMatchById(pendingOctopusPerfectAdaptationMatchId);
+      if (!activeMatch) return;
+      const choice = button.getAttribute("data-octopus-perfect-choice");
+      const larvalCommand = getPreparedLarvalCommand(activeMatch.matchId);
+      socket.emit("onlineTournamentPlayerAction", {
+        roomCode,
+        matchId: activeMatch.matchId,
+        action: "special",
+        larvalCommand,
+        coconutPerfectAdaptationChoice: choice
+      });
+      if (larvalCommand) delete larvalCommandsByMatchId[activeMatch.matchId];
+      closeOnlineTournamentOctopusPerfectAdaptationModal();
+      addLog("Perfect Adaptation sent: " + (OCTOPUS_SPECIAL_CHOICE_LABELS[choice] || choice));
+    });
+  });
 }
 
 function bindLarvalCommandModalListeners() {
@@ -1749,5 +1945,6 @@ document.addEventListener("DOMContentLoaded", () => {
   initSocket();
   initDomEvents();
   bindLarvalCommandModalListeners();
+  bindOnlineTournamentOctopusModalListeners();
   renderState();
 });

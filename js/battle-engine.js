@@ -10,6 +10,8 @@ import {
   addBattleEffect,
   createHailEffect,
   createHumidityEffect,
+  createPredatoryPressureEffect,
+  createInkSeaEffect,
   processFighterTurnEndEffects,
   tickFighterEffects,
   processBattleEffectsTurnEnd,
@@ -156,6 +158,13 @@ export function createFighter(id) {
     darwinsLarvalDefense: 0,
     darwinsLarvalBlocksEffects: false,
     darwinsLarvalCommand: null,
+
+    octopusForm: animal.id === "coconut-octopus" ? "base" : null,
+    octopusAdaptationCharges: animal.id === "coconut-octopus" ? 8 : 0,
+    octopusFreeTransformationAvailable: animal.id === "coconut-octopus",
+    octopusPredatoryPressureStacks: 0,
+    octopusPerfectAdaptationChoice: "tentacle-storm",
+    coconutFortressActive: false,
   };
 }
 
@@ -332,6 +341,452 @@ function createOasisEffect(duration, sourceId) {
     sourceId: sourceId
   };
 }
+
+
+function isCoconutOctopus(fighter) {
+  return fighter && fighter.id === "coconut-octopus";
+}
+
+function getCoconutOctopusForms() {
+  return animals["coconut-octopus"]?.octopusForms || {};
+}
+
+function getCoconutOctopusFormDefinition(formId) {
+  return getCoconutOctopusForms()[formId] || null;
+}
+
+function removeCoconutOctopusPredatoryPressure(fighter, battle) {
+  if (!isCoconutOctopus(fighter) || !battle) return;
+
+  const fighters = [battle.fighterA, battle.fighterB];
+
+  fighters.forEach((target) => {
+    if (!target?.effects) return;
+
+    const before = target.effects.length;
+    target.effects = target.effects.filter((effect) => {
+      return !(effect.id === "predatory-pressure" && effect.sourceId === fighter.id);
+    });
+
+    if (before !== target.effects.length) {
+      addLog(
+        battle,
+        fighter.name + "'s Predatory Pressure stacks disappear from " + target.name + "."
+      );
+    }
+  });
+
+  fighter.octopusPredatoryPressureStacks = 0;
+}
+
+function clearCoconutOctopusFormStacks(fighter, battle, previousForm) {
+  if (!isCoconutOctopus(fighter)) return;
+
+  if (previousForm === "offensive") {
+    removeCoconutOctopusPredatoryPressure(fighter, battle);
+  }
+}
+
+function applyCoconutOctopusForm(fighter, formId) {
+  if (!isCoconutOctopus(fighter)) return false;
+
+  const form = getCoconutOctopusFormDefinition(formId);
+  if (!form) return false;
+
+  fighter.octopusForm = formId;
+  fighter.stats = { ...form.stats };
+  fighter.passive = form.passive ? { ...form.passive } : null;
+  fighter.special = form.special ? { ...form.special } : null;
+
+  fighter.maxHp = fighter.stats.life * 10;
+  fighter.hp = Math.min(fighter.hp, fighter.maxHp);
+
+  fighter.maxStamina = fighter.stats.resistance * 4;
+  fighter.stamina = Math.min(fighter.stamina, fighter.maxStamina);
+
+  return true;
+}
+
+export function transformCoconutOctopus(fighter, formId, battle = null) {
+  if (!isCoconutOctopus(fighter)) {
+    return {
+      ok: false,
+      message: "Only Coconut Octopus can transform."
+    };
+  }
+
+  const allowedForms = ["offensive", "defensive", "evasive"];
+
+  if (!allowedForms.includes(formId)) {
+    return {
+      ok: false,
+      message: "Invalid Coconut Octopus form."
+    };
+  }
+
+  if (fighter.octopusForm === formId) {
+    return {
+      ok: false,
+      message: fighter.name + " is already in " + getCoconutOctopusFormDefinition(formId).name + "."
+    };
+  }
+
+  const free = Boolean(fighter.octopusFreeTransformationAvailable);
+  const charges = fighter.octopusAdaptationCharges || 0;
+
+  if (!free && charges <= 0) {
+    return {
+      ok: false,
+      message: fighter.name + " has no adaptation charges left."
+    };
+  }
+
+  const previousForm = fighter.octopusForm || "base";
+  clearCoconutOctopusFormStacks(fighter, battle, previousForm);
+
+  if (free) {
+    fighter.octopusFreeTransformationAvailable = false;
+  } else {
+    fighter.octopusAdaptationCharges = Math.max(0, charges - 1);
+  }
+
+  applyCoconutOctopusForm(fighter, formId);
+
+  const form = getCoconutOctopusFormDefinition(formId);
+
+  if (battle) {
+    addLog(
+      battle,
+      fighter.name +
+        " adapts into " +
+        form.name +
+        (free
+          ? " for free through Initial Adaptation."
+          : ". Adaptation charges left: " + fighter.octopusAdaptationCharges + ".")
+    );
+  }
+
+  return {
+    ok: true,
+    message:
+      fighter.name +
+      " transformed into " +
+      form.name +
+      (free ? " for free." : ". Charges left: " + fighter.octopusAdaptationCharges + ".")
+  };
+}
+
+export function setCoconutOctopusPerfectAdaptationChoice(fighter, choice) {
+  if (!isCoconutOctopus(fighter)) return false;
+
+  const allowedChoices = ["tentacle-storm", "coconut-fortress", "ink-sea"];
+
+  if (!allowedChoices.includes(choice)) return false;
+
+  fighter.octopusPerfectAdaptationChoice = choice;
+  return true;
+}
+
+function applyCoconutOctopusPredatoryPressure(attacker, defender, battle) {
+  if (!isCoconutOctopus(attacker)) return;
+  if (attacker.octopusForm !== "offensive") return;
+  if (attacker.passive?.id !== "predatory-pressure") return;
+  if (!defender?.alive) return;
+
+  attacker.octopusPredatoryPressureStacks = Math.min(
+    8,
+    (attacker.octopusPredatoryPressureStacks || 0) + 1
+  );
+
+  const reduction = attacker.octopusPredatoryPressureStacks * 5;
+
+  addEffect(
+    defender,
+    createPredatoryPressureEffect(reduction, attacker.id),
+    battle
+  );
+
+  addLog(
+    battle,
+    attacker.name +
+      "'s Predatory Pressure reduces " +
+      defender.name +
+      "'s Attack by " +
+      reduction +
+      "% (" +
+      attacker.octopusPredatoryPressureStacks +
+      "/8 stack" +
+      (attacker.octopusPredatoryPressureStacks === 1 ? "" : "s") +
+      ")."
+  );
+}
+
+function handleCoconutOctopusMissPassive(defender, battle, attacker = null) {
+  if (!isCoconutOctopus(defender)) return;
+  if (defender.octopusForm !== "evasive") return;
+  if (defender.passive?.id !== "perfect-camouflage") return;
+  if (!defender.alive) return;
+
+  const hpBefore = defender.hp;
+  const staminaBefore = defender.stamina;
+
+  restoreHp(defender, 15);
+  restoreStamina(defender, 15, battle);
+
+  const healed = defender.hp - hpBefore;
+  const staminaRestored = defender.stamina - staminaBefore;
+
+  addLog(
+    battle,
+    defender.name +
+      "'s Perfect Camouflage converts the miss into survival: +" +
+      healed +
+      " HP and +" +
+      staminaRestored +
+      " stamina."
+  );
+}
+
+function applyCoconutFortressDefense(defender, damage, battle) {
+  if (!isCoconutOctopus(defender)) return damage;
+  if (!defender.coconutFortressActive) return damage;
+
+  if (damage > 0) {
+    addLog(
+      battle,
+      defender.name +
+        "'s Coconut Fortress reduces incoming damage from " +
+        damage +
+        " to 0."
+    );
+  }
+
+  return 0;
+}
+
+function getCoconutOctopusSpecialChoice(attacker) {
+  if (attacker.octopusForm === "offensive") return "tentacle-storm";
+  if (attacker.octopusForm === "defensive") return "coconut-fortress";
+  if (attacker.octopusForm === "evasive") return "ink-sea";
+
+  return attacker.octopusPerfectAdaptationChoice || "tentacle-storm";
+}
+
+function calculateCoconutTentacleDamage(attacker, defender, battle) {
+  const attackValue = getEffectiveStat(attacker, "attack", battle, defender, "special");
+  const explosiveValue = getEffectiveStat(attacker, "explosiveness", battle, defender, "special");
+  const hybridAttack = attackValue * 0.65 + explosiveValue * 0.35;
+  const defense = getEffectiveStat(defender, "defense", battle);
+
+  const difference = hybridAttack - defense;
+  const multiplier = 70 + difference / 4;
+  const finalMultiplier = multiplier / 100;
+
+  return {
+    damage: Math.max(1, Math.round(hybridAttack * finalMultiplier)),
+    attackValue: Math.round(attackValue * 100) / 100,
+    explosivenessValue: Math.round(explosiveValue * 100) / 100,
+    hybridAttack: Math.round(hybridAttack * 100) / 100,
+    defenseValue: Math.round(defense * 100) / 100,
+    multiplier: Math.round(multiplier * 100) / 100
+  };
+}
+
+function applyDirectHitRecoil(attacker, defender, battle, damage) {
+  if (!attacker?.alive || !defender || damage <= 0) return;
+
+  if (defender.id === "pufferfish") {
+    applyDamage(attacker, 10);
+
+    addLog(
+      battle,
+      attacker.name +
+        " suffers 10 damage from " +
+        defender.name +
+        "'s spines."
+    );
+  }
+
+  if (
+    isCoconutOctopus(defender) &&
+    defender.octopusForm === "defensive" &&
+    defender.passive?.id === "coconut-shell"
+  ) {
+    applyDamage(attacker, 10);
+
+    addLog(
+      battle,
+      attacker.name +
+        " suffers 10 damage from " +
+        defender.name +
+        "'s Coconut Shell."
+    );
+  }
+}
+
+function performCoconutTentacleStorm(attacker, defender, battle) {
+  let successfulHits = 0;
+  let totalDamage = 0;
+
+  addLog(
+    battle,
+    attacker.name + " uses Tentacle Storm, striking with all eight arms."
+  );
+
+  for (let i = 1; i <= 8; i++) {
+    const hit = rollHit(50);
+
+    if (!hit) {
+      addLog(
+        battle,
+        attacker.name +
+          "'s Tentacle Storm hit " +
+          i +
+          " misses " +
+          defender.name +
+          "."
+      );
+
+      handleReactiveChargeOnMiss(attacker, defender, battle);
+      continue;
+    }
+
+    let damageInfo = calculateCoconutTentacleDamage(attacker, defender, battle);
+    let damage = damageInfo.damage;
+
+    damage = applyIllusoryDanceDefense(defender, damage, battle);
+    damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+    damage = applyCoconutFortressDefense(defender, damage, battle);
+    damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
+
+    applyDamage(defender, damage);
+    applyDirectHitRecoil(attacker, defender, battle, damage);
+
+    successfulHits += 1;
+    totalDamage += damage;
+
+    addLog(
+      battle,
+      attacker.name +
+        "'s Tentacle Storm hit " +
+        i +
+        " lands on " +
+        defender.name +
+        " for " +
+        damage +
+        " damage."
+    );
+
+    applyCoconutOctopusPredatoryPressure(attacker, defender, battle);
+
+    if (!attacker.alive || !defender.alive) {
+      break;
+    }
+  }
+
+  addLog(
+    battle,
+    attacker.name +
+      "'s Tentacle Storm ends with " +
+      successfulHits +
+      " hit" +
+      (successfulHits === 1 ? "" : "s") +
+      " and " +
+      totalDamage +
+      " total damage."
+  );
+
+  if (successfulHits > 0) {
+    handleChargeGain(attacker, defender, true, battle);
+  }
+
+  consumeSpecialCharge(attacker);
+}
+
+function performCoconutFortressSpecial(attacker, battle) {
+  attacker.coconutFortressActive = true;
+
+  const hpBefore = attacker.hp;
+  const staminaBefore = attacker.stamina;
+
+  restoreHp(attacker, 50);
+  restoreStamina(attacker, 50, battle);
+
+  const healed = attacker.hp - hpBefore;
+  const staminaRestored = attacker.stamina - staminaBefore;
+
+  addLog(
+    battle,
+    attacker.name +
+      " uses Coconut Fortress: all received damage is reduced to 0 this turn. It restores " +
+      healed +
+      " HP and " +
+      staminaRestored +
+      " stamina."
+  );
+
+  consumeSpecialCharge(attacker);
+}
+
+function performCoconutInkSeaSpecial(attacker, defender, battle) {
+  if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
+    addLog(
+      battle,
+      attacker.name + "'s Ink Sea fails to cover " + defender.name + "."
+    );
+
+    consumeSpecialCharge(attacker);
+    return;
+  }
+
+  addEffect(defender, createInkSeaEffect(3, 50), battle);
+
+  addLog(
+    battle,
+    attacker.name +
+      " uses Ink Sea. " +
+      defender.name +
+      " suffers -50% Speed and -50% Technique for 3 turns."
+  );
+
+  consumeSpecialCharge(attacker);
+}
+
+function performCoconutOctopusSpecial(attacker, defender, battle) {
+  attacker.concentratedLastTurn = false;
+  attacker.overinflationUsedThisTurn = false;
+
+  const choice = getCoconutOctopusSpecialChoice(attacker);
+
+  if (attacker.octopusForm === "base") {
+    addLog(
+      battle,
+      attacker.name +
+        " uses Perfect Adaptation and chooses " +
+        getCoconutOctopusFormDefinition(choice === "tentacle-storm" ? "offensive" : choice === "coconut-fortress" ? "defensive" : "evasive").special.name +
+        " without changing form."
+    );
+  }
+
+  if (choice === "tentacle-storm") {
+    performCoconutTentacleStorm(attacker, defender, battle);
+    return;
+  }
+
+  if (choice === "coconut-fortress") {
+    performCoconutFortressSpecial(attacker, battle);
+    return;
+  }
+
+  if (choice === "ink-sea") {
+    performCoconutInkSeaSpecial(attacker, defender, battle);
+    return;
+  }
+
+  addLog(battle, attacker.name + "'s adaptation fails to find a form.");
+  consumeSpecialCharge(attacker);
+}
+
 
 function fennecOasisIsActive(battle, fighter) {
   const oasis = getBattleEffect(battle, "oasis");
@@ -792,6 +1247,7 @@ function performMarineEcho(attacker, defender, battle) {
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
+  applyDirectHitRecoil(attacker, defender, battle, damage);
 
   addLog(
     battle,
@@ -852,9 +1308,11 @@ function resolvePhantomCurrentStrike(fighter, opponent, battle) {
 
   damage = applyIllusoryDanceDefense(opponent, damage, battle);
   damage = applyAncestralRetreatDefense(opponent, fighter, damage, battle);
+  damage = applyCoconutFortressDefense(opponent, damage, battle);
   damage = applyDarwinsLarvalDefense(opponent, fighter, damage, battle);
 
   applyDamage(opponent, damage);
+  applyDirectHitRecoil(fighter, opponent, battle, damage);
 
   addLog(
     battle,
@@ -1521,6 +1979,11 @@ export function getActionPriority(actionType, fighter = null) {
     if (fighter?.special?.id === "illusory-dance") return 6;
     if (fighter?.special?.id === "marine-flash") return 7;
     if (fighter?.special?.id === "overinflation") return 9;
+    if (fighter?.special?.id === "coconut-fortress") return 8;
+    if (
+      fighter?.special?.id === "perfect-adaptation" &&
+      fighter?.octopusPerfectAdaptationChoice === "coconut-fortress"
+    ) return 8;
     if (fighter?.special?.chargeType !== "offensive") return 5;
     if (fighter?.special?.id === "neurotoxic-injection") return 5;
   }
@@ -1629,6 +2092,7 @@ function handleReactiveChargeOnMiss(attacker, defender, battle) {
   }
 
   handleInvertedInertia(attacker, defender, battle);
+  handleCoconutOctopusMissPassive(defender, battle, attacker);
 }
 
 function getNextAttackBuff(attacker) {
@@ -1739,6 +2203,8 @@ function handlePostHitPassive(attacker, defender, battle, wasCritical, actionTyp
       `${attacker.name}'s Relentless Bite applies Bite to ${defender.name} (-20% Agility, up to 5 turns, 50% escape chance each turn).`
     );
   }
+
+  applyCoconutOctopusPredatoryPressure(attacker, defender, battle);
 }
 
 function handleChargeGain(attacker, defender, hit, battle) {
@@ -1999,9 +2465,11 @@ export function performAttack(attacker, defender, actionType, battle) {
   finalDamage = applyMatamataAmbushBonus(attacker, defender, finalDamage, battle);
   finalDamage = applyIllusoryDanceDefense(defender, finalDamage, battle);
   finalDamage = applyAncestralRetreatDefense(defender, attacker, finalDamage, battle);
+  finalDamage = applyCoconutFortressDefense(defender, finalDamage, battle);
   finalDamage = applyDarwinsLarvalDefense(defender, attacker, finalDamage, battle);
 
   applyDamage(defender, finalDamage);
+  applyDirectHitRecoil(attacker, defender, battle, finalDamage);
 
   addLog(
     battle,
@@ -2024,18 +2492,6 @@ export function performAttack(attacker, defender, actionType, battle) {
       critical,
       hitChance
     };
-  }
-
-  if (defender.id === "pufferfish" && attacker.alive) {
-    applyDamage(attacker, 10);
-
-    addLog(
-      battle,
-      attacker.name +
-        " suffers 10 damage from " +
-        defender.name +
-        "'s spines."
-    );
   }
 
   if (critical) {
@@ -2132,9 +2588,11 @@ function performTigerSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
+  applyDirectHitRecoil(attacker, defender, battle, damage);
 
   if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
     addLog(
@@ -2218,9 +2676,11 @@ function performHoneyBadgerSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
+  applyDirectHitRecoil(attacker, defender, battle, damage);
 
   if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
     addLog(
@@ -2352,6 +2812,7 @@ function performMantisShrimpSpecial(attacker, defender, battle) {
     let partialDamageToEnemy = Math.max(1, Math.round(specialBaseDamage * 0.25));
     const selfDamage = Math.max(1, Math.round(specialBaseDamage * 0.5));
 
+    partialDamageToEnemy = applyCoconutFortressDefense(defender, partialDamageToEnemy, battle);
     partialDamageToEnemy = applyDarwinsLarvalDefense(
       defender,
       attacker,
@@ -2395,9 +2856,11 @@ function performMantisShrimpSpecial(attacker, defender, battle) {
 
   finalDamage = applyIllusoryDanceDefense(defender, finalDamage, battle);
   finalDamage = applyAncestralRetreatDefense(defender, attacker, finalDamage, battle);
+  finalDamage = applyCoconutFortressDefense(defender, finalDamage, battle);
   finalDamage = applyDarwinsLarvalDefense(defender, attacker, finalDamage, battle);
 
   applyDamage(defender, finalDamage);
+  applyDirectHitRecoil(attacker, defender, battle, finalDamage);
 
   addLog(
     battle,
@@ -2634,9 +3097,11 @@ function performDungBeetleSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
+  applyDirectHitRecoil(attacker, defender, battle, damage);
 
   if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
     addLog(
@@ -2735,9 +3200,11 @@ function performCaimanSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
+  applyDirectHitRecoil(attacker, defender, battle, damage);
 
   addLog(
     battle,
@@ -2787,6 +3254,7 @@ function performFennecSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
@@ -2966,9 +3434,11 @@ function performEmeraldWaspSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
+  applyDirectHitRecoil(attacker, defender, battle, damage);
 
   if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
     addLog(
@@ -3066,6 +3536,7 @@ function performDarwinsFrogSpecial(attacker, defender, battle) {
 
     overflowDamage = applyIllusoryDanceDefense(defender, overflowDamage, battle);
     overflowDamage = applyAncestralRetreatDefense(defender, attacker, overflowDamage, battle);
+    overflowDamage = applyCoconutFortressDefense(defender, overflowDamage, battle);
     overflowDamage = applyDarwinsLarvalDefense(defender, attacker, overflowDamage, battle);
 
     applyDamage(defender, overflowDamage);
@@ -3134,9 +3605,11 @@ function performFalconSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
+  applyDirectHitRecoil(attacker, defender, battle, damage);
 
   if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
     addLog(
@@ -3208,6 +3681,7 @@ function performMacaqueSpecial(attacker, defender, battle) {
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
+  applyDirectHitRecoil(attacker, defender, battle, damage);
 
   addLog(
     battle,
@@ -3332,9 +3806,11 @@ function performFireSalamanderSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
+  applyDirectHitRecoil(attacker, defender, battle, damage);
 
   if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
     addLog(
@@ -3435,6 +3911,7 @@ function performEurasianEagleOwlSpecial(attacker, defender, battle) {
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+  damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
@@ -3728,6 +4205,12 @@ function performSpecialAction(attacker, defender, battle) {
     case "darwinian-expulsion":
        performDarwinsFrogSpecial(attacker, defender, battle);
       break;
+    case "perfect-adaptation":
+    case "tentacle-storm":
+    case "coconut-fortress":
+    case "ink-sea":
+       performCoconutOctopusSpecial(attacker, defender, battle);
+      break;
 
     default:
       addLog(battle, `${attacker.name} has no implemented special logic yet.`);
@@ -3781,6 +4264,7 @@ function clearEndTurnTemporaryStates(fighter) {
 
   fighter.darwinsLarvalDefense = 0;
   fighter.darwinsLarvalBlocksEffects = false;
+  fighter.coconutFortressActive = false;
 }
 
 export function performAction(attacker, defender, actionType, battle) {

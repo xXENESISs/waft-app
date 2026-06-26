@@ -4,7 +4,9 @@ import {
   createBattle,
   resolveTurn,
   canUseAction,
-  getEffectiveStat
+  getEffectiveStat,
+  transformCoconutOctopus,
+  setCoconutOctopusPerfectAdaptationChoice
 } from "./battle-engine.js";
 
 let currentBattle = null;
@@ -24,6 +26,8 @@ let larvalDraftCommand = {
 
 let playerFlipped = false;
 let enemyFlipped = true;
+let pendingOctopusFormPreview = null;
+let pendingOctopusSpecialChoiceConfirmed = false;
 
 let isAnimatingTurn = false;
 let summaryAnimationToken = 0;
@@ -41,6 +45,20 @@ const TYPEWRITER_CHAR_DELAY = 8;
 const TYPEWRITER_LINE_PAUSE = 180;
 
 const ACTION_POOL = ["normal", "quick", "precise", "explosive", "concentration", "special"];
+
+const OCTOPUS_FORM_LABELS = {
+  base: "Base Form",
+  offensive: "Offensive Form",
+  defensive: "Defensive Form",
+  evasive: "Evasive Form"
+};
+
+const OCTOPUS_SPECIAL_CHOICE_LABELS = {
+  "tentacle-storm": "Tentacle Storm",
+  "coconut-fortress": "Coconut Fortress",
+  "ink-sea": "Ink Sea"
+};
+
 
 const ACTION_INFO = {
   normal: {
@@ -85,6 +103,62 @@ function prettyActionLabel(action, fighter = null) {
   };
 
   return labels[action] ?? action;
+}
+
+
+function isCoconutOctopusFighter(fighter) {
+  return fighter && fighter.id === "coconut-octopus";
+}
+
+function getCoconutOctopusFormText(fighter) {
+  if (!isCoconutOctopusFighter(fighter)) return "";
+  const form = fighter.octopusForm || "base";
+  return OCTOPUS_FORM_LABELS[form] || form;
+}
+
+function getCoconutOctopusStatusText(fighter) {
+  if (!isCoconutOctopusFighter(fighter)) return "";
+
+  const lines = [
+    "Form: " + getCoconutOctopusFormText(fighter),
+    "Adaptation charges: " + (fighter.octopusAdaptationCharges ?? 0) + "/8",
+    "First transformation: " + (fighter.octopusFreeTransformationAvailable ? "FREE" : "USED")
+  ];
+
+  if ((fighter.octopusForm || "base") === "base") {
+    lines.push("Perfect Adaptation: choose option when using Special");
+  }
+  if ((fighter.octopusForm || "base") === "offensive") {
+    lines.push("Predatory Pressure: " + ((fighter.octopusPredatoryPressureStacks || 0) * 5) + "% Attack reduction");
+  }
+  if ((fighter.octopusForm || "base") === "defensive") {
+    lines.push("Coconut Shell: 10 fixed damage on direct hit");
+    lines.push("Fortress active: " + (fighter.coconutFortressActive ? "YES" : "NO"));
+  }
+  if ((fighter.octopusForm || "base") === "evasive") {
+    lines.push("Perfect Camouflage: +15 HP / +15 Stamina when enemy misses");
+  }
+
+  return lines.join("\n");
+}
+
+function getCoconutOctopusFormDefinitionForPreview(formId) {
+  return animals["coconut-octopus"]?.octopusForms?.[formId] || null;
+}
+
+function getCoconutOctopusPreviewStatsHtml(form) {
+  if (!form?.stats) return "";
+  const rows = [
+    ["Life", form.stats.life],
+    ["Attack", form.stats.attack],
+    ["Defense", form.stats.defense],
+    ["Stamina", form.stats.resistance],
+    ["Speed", form.stats.speed],
+    ["Technique", form.stats.technique],
+    ["Agility", form.stats.agility],
+    ["Explosive", form.stats.explosiveness]
+  ];
+  return rows.map(([label, value]) => `<div class="octopus-preview-stat">${label}<strong>${value}</strong></div>`).join("");
 }
 
 function getBiomeRelation(fighter, biome) {
@@ -141,6 +215,7 @@ function getImageCandidates(id, animal) {
     "fennec": ["./images/animals/mammals/fennec.png"],
     "giant-asian-mantis": ["./images/animals/arthropods/asian-giant-mantis.png"],
     "darwins-frog": ["./images/animals/amphibians/darwins-frog.png"],
+    "coconut-octopus": ["./images/animals/fish/coconut-octopus.png"],
   };
 
   return [direct, ...(legacy[id] ?? [])];
@@ -362,6 +437,10 @@ function getExtraResourceText(fighter) {
     var maxLarvae = fighter.darwinsMaxLarvae || 5;
 
     return "Larvae: " + larvae + "/" + maxLarvae;
+  }
+
+  if (isCoconutOctopusFighter(fighter)) {
+    return getCoconutOctopusStatusText(fighter);
   }
 
   return "";
@@ -894,6 +973,115 @@ function bindLarvalCommandModalListeners() {
 }
 
 
+
+function renderCoconutOctopusFormPreview(player) {
+  const panel = document.getElementById("octopusFormPreviewPanel");
+  const titleEl = document.getElementById("octopusFormPreviewTitle");
+  const statsEl = document.getElementById("octopusFormPreviewStats");
+  const textEl = document.getElementById("octopusFormPreviewText");
+  const confirmBtn = document.getElementById("octopusConfirmFormBtn");
+  if (!panel || !titleEl || !statsEl || !textEl || !confirmBtn) return;
+  if (!player || player.id !== "coconut-octopus" || !pendingOctopusFormPreview) { panel.style.display = "none"; return; }
+  const form = getCoconutOctopusFormDefinitionForPreview(pendingOctopusFormPreview);
+  if (!form) { panel.style.display = "none"; return; }
+  const currentForm = player.octopusForm || "base";
+  const charges = player.octopusAdaptationCharges ?? 0;
+  const isCurrent = pendingOctopusFormPreview === currentForm;
+  const canPay = Boolean(player.octopusFreeTransformationAvailable) || charges > 0;
+  const blocked = !currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction || isCurrent || !canPay;
+  panel.style.display = "block";
+  titleEl.textContent = form.name + (isCurrent ? " — Current Form" : " — Preview");
+  statsEl.innerHTML = getCoconutOctopusPreviewStatsHtml(form);
+  textEl.textContent = "Passive — " + (form.passive?.name || "None") + "\n" + (form.passive?.description || "No passive.") + "\n\nSuper — " + (form.special?.name || "None") + "\n" + (form.special?.description || "No super.");
+  confirmBtn.textContent = isCurrent ? "Already in this form" : player.octopusFreeTransformationAvailable ? "Confirm Free Transformation" : "Confirm Form Change (-1 charge)";
+  confirmBtn.disabled = blocked;
+}
+
+function previewPlayerCoconutOctopusForm(formId) {
+  if (!currentBattle) return;
+  const { player } = getBattleFighters();
+  if (!isCoconutOctopusFighter(player)) return;
+  pendingOctopusFormPreview = formId;
+  updateCoconutOctopusPanel(player);
+}
+
+function clearPlayerCoconutOctopusPreview() {
+  pendingOctopusFormPreview = null;
+  const { player } = getBattleFighters();
+  updateCoconutOctopusPanel(player);
+}
+
+function updateCoconutOctopusPanel(player) {
+  const panel = document.getElementById("octopusAdaptationPanel");
+  const statusEl = document.getElementById("octopusAdaptationStatus");
+  if (!panel || !statusEl) return;
+  if (!player || player.id !== "coconut-octopus") { panel.style.display = "none"; pendingOctopusFormPreview = null; return; }
+  panel.style.display = "block";
+  const form = player.octopusForm || "base";
+  const charges = player.octopusAdaptationCharges ?? 0;
+  const freeText = player.octopusFreeTransformationAvailable ? " · first transformation free" : "";
+  statusEl.textContent = getCoconutOctopusFormText(player) + " · charges " + charges + "/8" + freeText;
+  document.querySelectorAll(".octopus-form-btn").forEach((btn) => {
+    const targetForm = btn.dataset.octopusForm;
+    btn.classList.toggle("active", targetForm === form);
+    btn.classList.toggle("preview", targetForm === pendingOctopusFormPreview && targetForm !== form);
+    btn.disabled = !currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction;
+  });
+  renderCoconutOctopusFormPreview(player);
+}
+
+function transformPlayerCoconutOctopus(formId) {
+  if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return;
+  const { player } = getBattleFighters();
+  if (!isCoconutOctopusFighter(player)) return;
+  if (isMultiplayer) {
+    if (!socket || !multiplayerRoomCode) return;
+    socket.emit("transformCoconutOctopusOnlineBattle", { roomCode: multiplayerRoomCode, formId });
+    pendingOctopusFormPreview = null;
+    lastTurnOutcome = "Adaptation";
+    lastTurnSummaryLines = ["Adaptation request sent."];
+    renderBattle();
+    return;
+  }
+  const result = transformCoconutOctopus(player, formId, currentBattle);
+  if (result.ok) pendingOctopusFormPreview = null;
+  lastTurnOutcome = result.ok ? "Adaptation" : "Adaptation Failed";
+  lastTurnSummaryLines = [result.message];
+  renderBattle();
+}
+
+function playerNeedsPerfectAdaptationChoice(action) {
+  if (action !== "special") return false;
+  if (pendingOctopusSpecialChoiceConfirmed) return false;
+  if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return false;
+  const { player } = getBattleFighters();
+  return isCoconutOctopusFighter(player) && (player.octopusForm || "base") === "base";
+}
+
+function openCoconutOctopusPerfectAdaptationModal() {
+  if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return;
+  const { player } = getBattleFighters();
+  if (!isCoconutOctopusFighter(player) || (player.octopusForm || "base") !== "base") return;
+  const modal = document.getElementById("octopusPerfectAdaptationModal");
+  if (modal) modal.style.display = "flex";
+}
+
+function closeCoconutOctopusPerfectAdaptationModal() {
+  const modal = document.getElementById("octopusPerfectAdaptationModal");
+  if (modal) modal.style.display = "none";
+}
+
+async function chooseCoconutOctopusPerfectAdaptationAndAttack(choice) {
+  if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return;
+  const { player } = getBattleFighters();
+  if (!isCoconutOctopusFighter(player) || (player.octopusForm || "base") !== "base") return;
+  if (!setCoconutOctopusPerfectAdaptationChoice(player, choice)) return;
+  closeCoconutOctopusPerfectAdaptationModal();
+  pendingOctopusSpecialChoiceConfirmed = true;
+  await playTurn("special");
+  pendingOctopusSpecialChoiceConfirmed = false;
+}
+
 function updateStaticActionButtons() {
   document.getElementById("btn-normal-title").textContent = ACTION_INFO.normal.title;
   document.getElementById("btn-normal-desc").textContent = ACTION_INFO.normal.desc;
@@ -959,6 +1147,7 @@ function renderBattle() {
   updateStaticActionButtons();
   updateSpecialButton(player);
   updateLarvalCommandButton(player);
+  updateCoconutOctopusPanel(player);
   updateActionButtons();
 
   document.getElementById("playerTooltip").innerHTML = formatTooltip(player);
@@ -984,6 +1173,9 @@ function renderBattle() {
 }
 
 function chooseEnemyAction(fighter) {
+  if (isCoconutOctopusFighter(fighter) && (fighter.octopusForm || "base") === "base") {
+    setCoconutOctopusPerfectAdaptationChoice(fighter, randomChoice(["tentacle-storm", "coconut-fortress", "ink-sea"]));
+  }
   const possible = ACTION_POOL.filter((action) =>
     canUseAction(fighter, action, currentBattle)
   );
@@ -1625,6 +1817,10 @@ async function resolveMultiplayerTurnFromServer(data) {
 
 async function playTurn(playerAction) {
   if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return;
+  if (playerNeedsPerfectAdaptationChoice(playerAction)) {
+    openCoconutOctopusPerfectAdaptationModal();
+    return;
+  }
 
   if (isMultiplayer) {
     if (!socket || !multiplayerRoomCode) return;
@@ -1648,10 +1844,16 @@ async function playTurn(playerAction) {
         }
       : null;
 
+    const coconutPerfectAdaptationChoice =
+      isCoconutOctopusFighter(player) && (player.octopusForm || "base") === "base" && playerAction === "special"
+        ? player.octopusPerfectAdaptationChoice || "tentacle-storm"
+        : null;
+
     socket.emit("playerAction", {
       roomCode: multiplayerRoomCode,
       action: playerAction,
-      larvalCommand
+      larvalCommand,
+      coconutPerfectAdaptationChoice
     });
 
     return;
@@ -1765,6 +1967,14 @@ function setupMultiplayer() {
     renderBattle();
   });
 
+  socket.on("battleUpdated", (data) => {
+    currentBattle = data.battle;
+    lastTurnOutcome = "Adaptation";
+    lastTurnSummaryLines = [data.message || "Coconut Octopus adapted."];
+    isWaitingForOpponentAction = false;
+    renderBattle();
+  });
+
   socket.on("waitingForOpponentAction", () => {
     isWaitingForOpponentAction = true;
     updateActionButtons();
@@ -1790,6 +2000,20 @@ function init() {
   setupMultiplayer();
 
   document.getElementById("startBattleBtn").addEventListener("click", startBattle);
+
+  document.querySelectorAll(".octopus-form-btn").forEach((btn) => {
+    btn.addEventListener("click", () => previewPlayerCoconutOctopusForm(btn.dataset.octopusForm));
+  });
+  document.getElementById("octopusConfirmFormBtn")?.addEventListener("click", () => {
+    if (pendingOctopusFormPreview) transformPlayerCoconutOctopus(pendingOctopusFormPreview);
+  });
+  document.getElementById("octopusCancelPreviewBtn")?.addEventListener("click", clearPlayerCoconutOctopusPreview);
+  document.getElementById("octopusPerfectAdaptationCloseBtn")?.addEventListener("click", closeCoconutOctopusPerfectAdaptationModal);
+  document.querySelectorAll("[data-octopus-perfect-choice]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await chooseCoconutOctopusPerfectAdaptationAndAttack(btn.dataset.octopusPerfectChoice);
+    });
+  });
 
   document.querySelectorAll(".action-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {

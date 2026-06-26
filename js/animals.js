@@ -778,4 +778,163 @@ export const animals = {
   }
 },
 
+
+"coconut-octopus": {
+  id: "coconut-octopus",
+  name: "Coconut Octopus",
+  scientificName: "Amphioctopus marginatus",
+  category: "fish-and-marine-invertebrates",
+
+  stats: {
+    life: 70,
+    attack: 80,
+    defense: 80,
+    resistance: 70,
+    technique: 95,
+    speed: 65,
+    agility: 80,
+    explosiveness: 60
+  },
+
+  biomes: {
+    favorable: ["marine", "jungle"],
+    neutral: ["forest", "mountain"],
+    unfavorable: ["arctic", "desert"]
+  },
+
+  passive: {
+    id: "cephalopod-adaptation",
+    name: "Cephalopod Adaptation",
+    description:
+      "The Coconut Octopus has 8 adaptation charges per combat. During the Stand Phase, it can transform into Offensive, Defensive or Evasive Form without consuming its action or turn. The first transformation does not consume a charge. Leaving a form removes that form's passive stacks."
+  },
+
+  special: {
+    id: "perfect-adaptation",
+    name: "Perfect Adaptation",
+    description:
+      "Uses a balanced version of Tentacle Storm, Coconut Fortress or Ink Sea using Base Form stats. It does not consume transformation, does not change form and does not consume adaptation charges.",
+    chargeType: "offensive",
+    chargeHits: 4
+  },
+
+  octopusForms: {
+    base: {
+      id: "base",
+      name: "Base Form",
+      stats: {
+        life: 70,
+        attack: 80,
+        defense: 80,
+        resistance: 70,
+        technique: 95,
+        speed: 65,
+        agility: 80,
+        explosiveness: 60
+      },
+      passive: {
+        id: "cephalopod-adaptation",
+        name: "Cephalopod Adaptation",
+        description:
+          "The Coconut Octopus has 8 adaptation charges per combat. During the Stand Phase, it can transform into Offensive, Defensive or Evasive Form without consuming its action or turn. The first transformation does not consume a charge. Leaving a form removes that form's passive stacks."
+      },
+      special: {
+        id: "perfect-adaptation",
+        name: "Perfect Adaptation",
+        description:
+          "Uses a balanced version of Tentacle Storm, Coconut Fortress or Ink Sea using Base Form stats. It does not consume transformation, does not change form and does not consume adaptation charges.",
+        chargeType: "offensive",
+        chargeHits: 4
+      }
+    },
+
+    offensive: {
+      id: "offensive",
+      name: "Offensive Form",
+      stats: {
+        life: 70,
+        attack: 110,
+        defense: 40,
+        resistance: 70,
+        technique: 95,
+        speed: 85,
+        agility: 40,
+        explosiveness: 90
+      },
+      passive: {
+        id: "predatory-pressure",
+        name: "Predatory Pressure",
+        description:
+          "Each successful hit reduces enemy Attack by 5%, up to 40%. Special hits can also apply stacks. Leaving Offensive Form removes all stacks immediately."
+      },
+      special: {
+        id: "tentacle-storm",
+        name: "Tentacle Storm",
+        description:
+          "The Coconut Octopus strikes with all eight arms: 8 independent hits, each with 50% accuracy. Each hit uses current Attack and Explosiveness.",
+        chargeType: "offensive",
+        chargeHits: 4
+      }
+    },
+
+    defensive: {
+      id: "defensive",
+      name: "Defensive Form",
+      stats: {
+        life: 70,
+        attack: 60,
+        defense: 120,
+        resistance: 70,
+        technique: 95,
+        speed: 65,
+        agility: 80,
+        explosiveness: 40
+      },
+      passive: {
+        id: "coconut-shell",
+        name: "Coconut Shell",
+        description:
+          "Each time the Coconut Octopus receives a direct hit, the attacker takes 10 fixed damage."
+      },
+      special: {
+        id: "coconut-fortress",
+        name: "Coconut Fortress",
+        description:
+          "The Coconut Octopus hides completely inside its refuge. This turn, all received damage is reduced to 0. It restores 50 HP and 50 Stamina.",
+        chargeType: "defensive",
+        chargeHits: 4
+      }
+    },
+
+    evasive: {
+      id: "evasive",
+      name: "Evasive Form",
+      stats: {
+        life: 70,
+        attack: 40,
+        defense: 40,
+        resistance: 70,
+        technique: 95,
+        speed: 95,
+        agility: 150,
+        explosiveness: 40
+      },
+      passive: {
+        id: "perfect-camouflage",
+        name: "Perfect Camouflage",
+        description:
+          "Each time an enemy attack misses, the Coconut Octopus restores 15 HP and 15 Stamina."
+      },
+      special: {
+        id: "ink-sea",
+        name: "Ink Sea",
+        description:
+          "Releases a massive cloud of ink. The enemy suffers -50% Speed and -50% Technique for 3 turns. The effect remains even if the Coconut Octopus later changes form.",
+        chargeType: "evasive",
+        chargeHits: 4
+      }
+    }
+  }
+},
+
 }

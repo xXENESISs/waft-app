@@ -124,6 +124,35 @@ export function createHeavyEvasionDownEffect(duration = 3, amount = 50) {
   };
 }
 
+
+export function createPredatoryPressureEffect(amount = 5, sourceId = null) {
+  return {
+    id: "predatory-pressure",
+    name: "Predatory Pressure",
+    duration: 99,
+    stackable: false,
+    allowsConcentration: true,
+    sourceId,
+    modifiers: {
+      attackPct: -amount
+    }
+  };
+}
+
+export function createInkSeaEffect(duration = 3, amount = 50) {
+  return {
+    id: "ink-sea",
+    name: "Ink Sea",
+    duration,
+    stackable: false,
+    allowsConcentration: true,
+    modifiers: {
+      speedPct: -amount,
+      techniquePct: -amount
+    }
+  };
+}
+
 export function createAgilityDownEffect(duration = 2, amount = 20) {
   return {
     id: "agility-down",

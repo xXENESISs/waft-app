@@ -1294,6 +1294,194 @@
       }
     }
 
+    .octopus-adaptation-panel {
+      display: none;
+      margin-bottom: 8px;
+      padding: 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(245,158,11,0.20);
+      background: rgba(245,158,11,0.08);
+    }
+
+    .octopus-adaptation-title {
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #ffd998;
+      margin-bottom: 5px;
+    }
+
+    .octopus-adaptation-status {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+      line-height: 1.35;
+    }
+
+    .octopus-adaptation-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .octopus-mini-btn {
+      min-height: 38px;
+      padding: 7px 8px;
+      font-size: 11px;
+      font-weight: 900;
+      border-radius: 11px;
+      background: rgba(255,255,255,0.08);
+      color: var(--text);
+    }
+
+    .octopus-mini-btn.active {
+      border-color: rgba(245,158,11,0.72);
+      box-shadow: 0 0 12px rgba(245,158,11,0.26);
+      color: #ffd998;
+    }
+
+    .octopus-mini-btn.preview {
+      border-color: rgba(59,130,246,0.72);
+      box-shadow: 0 0 12px rgba(59,130,246,0.22);
+      color: #bfdbfe;
+    }
+
+    .octopus-preview-panel {
+      display: none;
+      margin-top: 8px;
+      padding: 9px;
+      border-radius: 12px;
+      border: 1px solid rgba(59,130,246,0.22);
+      background: rgba(59,130,246,0.07);
+    }
+
+    .octopus-preview-title {
+      font-size: 12px;
+      font-weight: 900;
+      color: #bfdbfe;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+
+    .octopus-preview-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+
+    .octopus-preview-stat {
+      padding: 5px 6px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.07);
+      font-size: 10px;
+      line-height: 1.2;
+    }
+
+    .octopus-preview-stat strong {
+      display: block;
+      color: #fff;
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .octopus-preview-text {
+      font-size: 11px;
+      color: #d9e4f5;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      margin-bottom: 8px;
+    }
+
+    .octopus-preview-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .octopus-confirm-btn {
+      background: var(--special);
+      color: #17120a;
+    }
+
+    .octopus-cancel-btn {
+      background: rgba(255,255,255,0.08);
+      color: var(--text);
+    }
+
+    .octopus-base-choice-panel {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255,255,255,0.10);
+    }
+
+
+    .octopus-perfect-modal-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .octopus-perfect-option {
+      min-height: 138px;
+      padding: 13px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.08);
+      color: var(--text);
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .octopus-perfect-option:hover:not(:disabled) {
+      border-color: rgba(245,158,11,0.70);
+      box-shadow: 0 0 16px rgba(245,158,11,0.24);
+    }
+
+    .octopus-perfect-option-title {
+      font-size: 15px;
+      font-weight: 900;
+      color: #ffd998;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .octopus-perfect-option-subtitle {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .octopus-perfect-option-desc {
+      font-size: 12px;
+      line-height: 1.4;
+      color: #e2e6ec;
+    }
+
+    @media (max-width: 760px) {
+      .octopus-perfect-modal-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .octopus-perfect-option {
+        min-height: 104px;
+      }
+    }
+
+    .octopus-choice-label {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+
   </style>
 </head>
 <body>
@@ -1464,6 +1652,26 @@
         </div>
 
         <div class="actions-panel">
+          <div class="octopus-adaptation-panel" id="octopusAdaptationPanel">
+            <div class="octopus-adaptation-title">Coconut Octopus — Stand Phase</div>
+            <div class="octopus-adaptation-status" id="octopusAdaptationStatus">Base Form · charges 8/8</div>
+            <div class="octopus-adaptation-grid">
+              <button type="button" class="octopus-mini-btn octopus-form-btn" data-octopus-form="offensive">Offensive</button>
+              <button type="button" class="octopus-mini-btn octopus-form-btn" data-octopus-form="defensive">Defensive</button>
+              <button type="button" class="octopus-mini-btn octopus-form-btn" data-octopus-form="evasive">Evasive</button>
+            </div>
+
+            <div class="octopus-preview-panel" id="octopusFormPreviewPanel">
+              <div class="octopus-preview-title" id="octopusFormPreviewTitle">Form Preview</div>
+              <div class="octopus-preview-stats" id="octopusFormPreviewStats"></div>
+              <div class="octopus-preview-text" id="octopusFormPreviewText"></div>
+              <div class="octopus-preview-actions">
+                <button type="button" class="octopus-confirm-btn" id="octopusConfirmFormBtn">Confirm Form Change</button>
+                <button type="button" class="octopus-cancel-btn" id="octopusCancelPreviewBtn">Cancel Preview</button>
+              </div>
+            </div>
+          </div>
+
           <div class="actions-grid">
             <button class="action-btn" data-action="normal">
               <div class="action-btn-subtitle">Attack</div>
@@ -1631,6 +1839,39 @@
 
     <div id="turnOutcomeValue" class="hidden-support"></div>
   </div>
+
+
+    <div id="octopusPerfectAdaptationModal" class="larval-command-modal" style="display:none;">
+      <div class="larval-command-box">
+        <div class="larval-command-header">
+          <div>
+            <div class="larval-command-title">Perfect Adaptation</div>
+            <div class="larval-command-subtitle">Choose which Base Form super to release this turn.</div>
+          </div>
+          <button id="octopusPerfectAdaptationCloseBtn" class="larval-small-btn">×</button>
+        </div>
+
+        <div class="octopus-perfect-modal-grid">
+          <button type="button" class="octopus-perfect-option" data-octopus-perfect-choice="tentacle-storm">
+            <div class="octopus-perfect-option-subtitle">Offensive option</div>
+            <div class="octopus-perfect-option-title">Tentacle Storm</div>
+            <div class="octopus-perfect-option-desc">Balanced Base Form version of the eight-arm assault.</div>
+          </button>
+
+          <button type="button" class="octopus-perfect-option" data-octopus-perfect-choice="coconut-fortress">
+            <div class="octopus-perfect-option-subtitle">Defensive option</div>
+            <div class="octopus-perfect-option-title">Coconut Fortress</div>
+            <div class="octopus-perfect-option-desc">Balanced Base Form refuge option for protection and recovery.</div>
+          </button>
+
+          <button type="button" class="octopus-perfect-option" data-octopus-perfect-choice="ink-sea">
+            <div class="octopus-perfect-option-subtitle">Control option</div>
+            <div class="octopus-perfect-option-title">Ink Sea</div>
+            <div class="octopus-perfect-option-desc">Balanced Base Form ink cloud to weaken enemy Speed and Technique.</div>
+          </button>
+        </div>
+      </div>
+    </div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script type="module" src="./js/online-battle.js"></script>
