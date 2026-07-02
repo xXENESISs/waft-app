@@ -123,10 +123,10 @@ export const animals = {
 
     stats: {
       life: 67,
-      attack: 86,
+      attack: 89,
       defense: 63,
       resistance: 66,
-      technique: 74,
+      technique: 71,
       speed: 69,
       agility: 72,
       explosiveness: 100
@@ -268,7 +268,7 @@ export const animals = {
       description:
         "Restores all HP lost during the last turn x2. Does not deal damage.",
       chargeType: "defensive",
-      chargeHits: 6
+      chargeHits: 5
     }
   },
 
@@ -461,7 +461,7 @@ export const animals = {
       id: "refresh",
       name: "Refresh",
       description:
-        "Restores 40 HP and 40 Stamina (80 each during Humidity), and reduces the opponent's Technique and Agility by 20% for 1 turn.",
+        "Restores 40 HP and 40 Stamina (80 each during Humidity), and reduces the opponent's Technique and Agility by 20% for 1 turn. During Humidity, the debuff becomes -40% Technique and Agility for 2 turns.",
       chargeType: "offensive",
       chargeHits: 4
     }
@@ -775,6 +775,39 @@ export const animals = {
       "Generates 1, 2 or 3 larvae instantly. The number of active larvae cannot exceed 5.",
     chargeType: "defensive",
     chargeHits: 4
+  },
+
+  mechanicsPreview: {
+    title: "Special Mechanics / Commands",
+    subtitle: "Darwin's Frog is a larva-resource fighter. Its extra command only makes sense if you understand larvae before choosing it.",
+    sections: [
+      {
+        icon: "🐸",
+        title: "Larval Gestation",
+        lines: [
+          "At the end of each turn, Darwin's Frog has a 25% chance to generate 1 larva.",
+          "Maximum: 5 active larvae."
+        ]
+      },
+      {
+        icon: "🧬",
+        title: "Larval Command",
+        lines: [
+          "Attack: spends larvae for guaranteed damage.",
+          "Defend: larvae can block incoming damage.",
+          "Sacrifice: converts larvae into HP / stamina recovery.",
+          "Meditate: preserves resources for a later turn."
+        ]
+      },
+      {
+        icon: "🌋",
+        title: "Darwinian Expulsion",
+        lines: [
+          "Special: instantly generates 1, 2 or 3 larvae.",
+          "Cannot exceed the 5-larva cap."
+        ]
+      }
+    ]
   }
 },
 
@@ -816,6 +849,71 @@ export const animals = {
       "Can only be used in favorable or neutral biomes. Activates all 5 colonies for 3 turns, counting the activation turn, and immediately performs an explosive attack that can hit, miss or crit normally. During this state, colonies do not change even if the biome changes and colony progress is preserved. When it ends, the ecosystem follows the current biome again and colony progress resets.",
     chargeType: "defensive",
     chargeHits: 4
+  },
+
+  mechanicsPreview: {
+    title: "Living Ecosystem / Colonies",
+    subtitle: "The Three-Toed Sloth is a biome-dependent ecosystem fighter. The exact active colonies are random, but the whole system is visible before combat.",
+    sections: [
+      {
+        icon: "🌍",
+        title: "Biome Rule",
+        lines: [
+          "At battle start, 2 random colonies awaken.",
+          "Whenever the biome changes, active colonies and colony progress reset.",
+          "Arctic and Desert put the ecosystem into dormancy: no colonies awaken and Microecosystem Ancestral cannot be used."
+        ]
+      },
+      {
+        icon: "🟢",
+        title: "Algae Colony",
+        lines: [
+          "At the end of each turn, has a chance to restore HP and stamina."
+        ]
+      },
+      {
+        icon: "🍄",
+        title: "Fungal Colony",
+        lines: [
+          "Can invert numerical stat debuffs.",
+          "Does not invert bleed, poison, self-hit, stun, special lock or other non-stat states."
+        ]
+      },
+      {
+        icon: "🦠",
+        title: "Bacterial Colony",
+        lines: [
+          "Consecutive successful attacks build a damage chain.",
+          "The chain scales up to a strong boosted hit, then discharges and resets.",
+          "Using Concentration does not break the chain. Missing or being dodged does."
+        ]
+      },
+      {
+        icon: "🕷️",
+        title: "Mite Colony",
+        lines: [
+          "Attacks cost less stamina.",
+          "Basic attacks can drop to 0 stamina cost."
+        ]
+      },
+      {
+        icon: "🪨",
+        title: "Lichen Colony",
+        lines: [
+          "Amplifies the other active colony.",
+          "During Microecosystem Ancestral, amplifies the full ecosystem."
+        ]
+      },
+      {
+        icon: "🌳",
+        title: "Microecosystem Ancestral",
+        lines: [
+          "Special: activates all 5 colonies for 3 turns.",
+          "Immediately performs an explosive attack.",
+          "Colonies stay active during the special even if the biome changes."
+        ]
+      }
+    ]
   }
 },
 
@@ -859,6 +957,59 @@ export const animals = {
     chargeHits: 4
   },
 
+  mechanicsPreview: {
+    title: "Adaptation Forms / Commands",
+    subtitle: "The Coconut Octopus is a stance fighter. You need to know its forms before choosing it or fighting against it.",
+    sections: [
+      {
+        icon: "🐙",
+        title: "Cephalopod Adaptation",
+        lines: [
+          "8 adaptation charges per combat.",
+          "First transformation is free.",
+          "Transformation happens before the action and does not consume the turn.",
+          "Leaving a form clears that form's accumulated stacks."
+        ]
+      },
+      {
+        icon: "⚔️",
+        title: "Offensive Form",
+        lines: [
+          "Attack 120 / Technique 55 / Explosiveness 120.",
+          "Low defense and low agility.",
+          "Predatory Pressure: successful hits reduce enemy Attack by 5%, up to 40%.",
+          "Special: Tentacle Storm — 8 independent hits at 50% accuracy."
+        ]
+      },
+      {
+        icon: "🥥",
+        title: "Defensive Form",
+        lines: [
+          "High defense and survival.",
+          "Coconut Shell: attacker takes 10 fixed damage when directly hitting it.",
+          "Special: Coconut Fortress — incoming damage becomes 0 and restores 50 HP / 50 stamina."
+        ]
+      },
+      {
+        icon: "🌫️",
+        title: "Evasive Form",
+        lines: [
+          "Very high agility.",
+          "Perfect Camouflage: when the enemy misses, restores 15 HP and 15 stamina.",
+          "Special: Ink Sea — enemy suffers -50% Speed and -50% Technique for 3 turns."
+        ]
+      },
+      {
+        icon: "🌊",
+        title: "Base Special: Perfect Adaptation",
+        lines: [
+          "In Base Form, Special lets you choose a balanced version of Tentacle Storm, Coconut Fortress or Ink Sea.",
+          "It does not transform and does not spend adaptation charges."
+        ]
+      }
+    ]
+  },
+
   octopusForms: {
     base: {
       id: "base",
@@ -894,13 +1045,13 @@ export const animals = {
       name: "Offensive Form",
       stats: {
         life: 70,
-        attack: 120,
+        attack: 100,
         defense: 40,
         resistance: 70,
-        technique: 55,
+        technique: 45,
         speed: 85,
         agility: 40,
-        explosiveness: 120
+        explosiveness: 150
       },
       passive: {
         id: "predatory-pressure",
@@ -912,9 +1063,9 @@ export const animals = {
         id: "tentacle-storm",
         name: "Tentacle Storm",
         description:
-          "The Coconut Octopus strikes with all eight arms: 8 independent hits, each with 50% accuracy. Each hit uses current Attack and Explosiveness.",
+          "The Coconut Octopus strikes with all eight arms: 8 independent hits, each with 50% accuracy. Each hit uses current Attack and Explosiveness. Charges separately from the other forms.",
         chargeType: "offensive",
-        chargeHits: 4
+        chargeHits: 6
       }
     },
 
@@ -941,9 +1092,9 @@ export const animals = {
         id: "coconut-fortress",
         name: "Coconut Fortress",
         description:
-          "The Coconut Octopus hides completely inside its refuge. This turn, all received damage is reduced to 0. It restores 50 HP and 50 Stamina.",
+          "The Coconut Octopus hides completely inside its refuge. This turn, all received damage is reduced to 0. It restores 50 HP and 50 Stamina. Charges separately from the other forms.",
         chargeType: "defensive",
-        chargeHits: 4
+        chargeHits: 5
       }
     },
 
@@ -970,7 +1121,7 @@ export const animals = {
         id: "ink-sea",
         name: "Ink Sea",
         description:
-          "Releases a massive cloud of ink. The enemy suffers -50% Speed and -50% Technique for 3 turns. The effect remains even if the Coconut Octopus later changes form.",
+          "Releases a massive cloud of ink. The enemy suffers -50% Speed and -50% Technique for 3 turns. The effect remains even if the Coconut Octopus later changes form. Charges separately from the other forms.",
         chargeType: "evasive",
         chargeHits: 4
       }

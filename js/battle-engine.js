@@ -164,6 +164,12 @@ export function createFighter(id) {
     octopusFreeTransformationAvailable: animal.id === "coconut-octopus",
     octopusPredatoryPressureStacks: 0,
     octopusPerfectAdaptationChoice: "tentacle-storm",
+    octopusSpecialCharges: animal.id === "coconut-octopus"
+      ? { base: 0, offensive: 0, defensive: 0, evasive: 0 }
+      : null,
+    octopusSpecialReadyAnnounced: animal.id === "coconut-octopus"
+      ? { base: false, offensive: false, defensive: false, evasive: false }
+      : null,
     coconutFortressActive: false,
 
     slothActiveColonies: animal.id === "three-toed-sloth" ? [] : null,
@@ -640,6 +646,69 @@ function getCoconutOctopusFormDefinition(formId) {
   return getCoconutOctopusForms()[formId] || null;
 }
 
+const COCONUT_OCTOPUS_FORM_IDS = ["base", "offensive", "defensive", "evasive"];
+
+function ensureCoconutOctopusSpecialChargeState(fighter) {
+  if (!isCoconutOctopus(fighter)) return;
+
+  if (!fighter.octopusSpecialCharges) {
+    fighter.octopusSpecialCharges = { base: 0, offensive: 0, defensive: 0, evasive: 0 };
+  }
+
+  if (!fighter.octopusSpecialReadyAnnounced) {
+    fighter.octopusSpecialReadyAnnounced = { base: false, offensive: false, defensive: false, evasive: false };
+  }
+
+  COCONUT_OCTOPUS_FORM_IDS.forEach((formId) => {
+    if (typeof fighter.octopusSpecialCharges[formId] !== "number") {
+      fighter.octopusSpecialCharges[formId] = 0;
+    }
+
+    if (typeof fighter.octopusSpecialReadyAnnounced[formId] !== "boolean") {
+      fighter.octopusSpecialReadyAnnounced[formId] = false;
+    }
+  });
+}
+
+function getCoconutOctopusCurrentFormId(fighter) {
+  return COCONUT_OCTOPUS_FORM_IDS.includes(fighter?.octopusForm)
+    ? fighter.octopusForm
+    : "base";
+}
+
+function getCoconutOctopusFormSpecialRequirement(fighter, formId = null) {
+  if (!isCoconutOctopus(fighter)) return fighter?.special?.chargeHits ?? 0;
+
+  const activeForm = formId || getCoconutOctopusCurrentFormId(fighter);
+  const form = getCoconutOctopusFormDefinition(activeForm);
+  return form?.special?.chargeHits ?? fighter.special?.chargeHits ?? 0;
+}
+
+function getCoconutOctopusFormSpecialCharge(fighter, formId = null) {
+  if (!isCoconutOctopus(fighter)) return fighter?.specialCharge ?? 0;
+
+  ensureCoconutOctopusSpecialChargeState(fighter);
+  const activeForm = formId || getCoconutOctopusCurrentFormId(fighter);
+  return fighter.octopusSpecialCharges[activeForm] || 0;
+}
+
+function setCoconutOctopusFormSpecialCharge(fighter, formId, value) {
+  if (!isCoconutOctopus(fighter)) return;
+
+  ensureCoconutOctopusSpecialChargeState(fighter);
+  const activeForm = COCONUT_OCTOPUS_FORM_IDS.includes(formId) ? formId : "base";
+  const requirement = getCoconutOctopusFormSpecialRequirement(fighter, activeForm);
+  fighter.octopusSpecialCharges[activeForm] = Math.max(0, Math.min(requirement, value || 0));
+}
+
+function syncCoconutOctopusDisplayedSpecialCharge(fighter) {
+  if (!isCoconutOctopus(fighter)) return;
+
+  const activeForm = getCoconutOctopusCurrentFormId(fighter);
+  fighter.specialCharge = getCoconutOctopusFormSpecialCharge(fighter, activeForm);
+  fighter.specialReadyAnnounced = Boolean(fighter.octopusSpecialReadyAnnounced?.[activeForm]);
+}
+
 function removeCoconutOctopusPredatoryPressure(fighter, battle) {
   if (!isCoconutOctopus(fighter) || !battle) return;
 
@@ -689,6 +758,8 @@ function applyCoconutOctopusForm(fighter, formId) {
   fighter.maxStamina = fighter.stats.resistance * 4;
   fighter.stamina = Math.min(fighter.stamina, fighter.maxStamina);
 
+  syncCoconutOctopusDisplayedSpecialCharge(fighter);
+
   return true;
 }
 
@@ -726,7 +797,10 @@ export function transformCoconutOctopus(fighter, formId, battle = null) {
     };
   }
 
+  ensureCoconutOctopusSpecialChargeState(fighter);
+
   const previousForm = fighter.octopusForm || "base";
+  setCoconutOctopusFormSpecialCharge(fighter, previousForm, fighter.specialCharge || 0);
   clearCoconutOctopusFormStacks(fighter, battle, previousForm);
 
   if (free) {
@@ -2254,6 +2328,11 @@ export function canUseAction(fighter, actionType, battle = null) {
 
     if (fighter.parasiticControlActive || fighter.nervousDisruptionActive) return false;
 
+    if (isCoconutOctopus(fighter)) {
+      syncCoconutOctopusDisplayedSpecialCharge(fighter);
+      return getCoconutOctopusFormSpecialCharge(fighter) >= getCoconutOctopusFormSpecialRequirement(fighter);
+    }
+
     return fighter.specialCharge >= fighter.special.chargeHits;
   }
 
@@ -2299,6 +2378,32 @@ function gainSpecialCharge(fighter, amount, battle) {
   if (!fighter.special) return;
   if (fighter.special.id === "overinflation") return;
 
+  if (isCoconutOctopus(fighter)) {
+    ensureCoconutOctopusSpecialChargeState(fighter);
+
+    const formId = getCoconutOctopusCurrentFormId(fighter);
+    const requirement = getCoconutOctopusFormSpecialRequirement(fighter, formId);
+    const before = getCoconutOctopusFormSpecialCharge(fighter, formId);
+    const next = Math.min(requirement, before + amount);
+
+    setCoconutOctopusFormSpecialCharge(fighter, formId, next);
+    syncCoconutOctopusDisplayedSpecialCharge(fighter);
+
+    if (
+      next >= requirement &&
+      before < requirement &&
+      !fighter.octopusSpecialReadyAnnounced[formId]
+    ) {
+      fighter.octopusSpecialReadyAnnounced[formId] = true;
+      syncCoconutOctopusDisplayedSpecialCharge(fighter);
+
+      const formName = getCoconutOctopusFormDefinition(formId)?.name || formId;
+      addLog(battle, `${fighter.name}'s ${formName} Special Attack is ready.`);
+    }
+
+    return;
+  }
+
   const before = fighter.specialCharge;
   fighter.specialCharge = Math.min(
     fighter.special.chargeHits,
@@ -2317,6 +2422,15 @@ function gainSpecialCharge(fighter, amount, battle) {
 
 function consumeSpecialCharge(fighter) {
   if (fighter.special?.id === "overinflation") return;
+
+  if (isCoconutOctopus(fighter)) {
+    ensureCoconutOctopusSpecialChargeState(fighter);
+    const formId = getCoconutOctopusCurrentFormId(fighter);
+    setCoconutOctopusFormSpecialCharge(fighter, formId, 0);
+    fighter.octopusSpecialReadyAnnounced[formId] = false;
+    syncCoconutOctopusDisplayedSpecialCharge(fighter);
+    return;
+  }
 
   fighter.specialCharge = 0;
   fighter.specialReadyAnnounced = false;
@@ -4036,17 +4150,20 @@ function performIguanaSpecial(attacker, defender, battle) {
         " Stamina."
     );
   } else {
+    const debuffAmount = humidityActive ? 40 : 20;
+    const debuffDuration = humidityActive ? 2 : 1;
+
     addEffect(
       defender,
       {
         id: "refresh-debuff",
-        name: "Refresh Debuff",
-        duration: 1,
+        name: humidityActive ? "Empowered Refresh Debuff" : "Refresh Debuff",
+        duration: debuffDuration,
         stackable: false,
         allowsConcentration: true,
         modifiers: {
-          techniquePct: -20,
-          agilityPct: -20
+          techniquePct: -debuffAmount,
+          agilityPct: -debuffAmount
         }
       },
       battle
@@ -4061,7 +4178,13 @@ function performIguanaSpecial(attacker, defender, battle) {
         actualRestoredStamina +
         " Stamina, and reducing " +
         defender.name +
-        "'s Technique and Agility by 20% for 1 turn."
+        "'s Technique and Agility by " +
+        debuffAmount +
+        "% for " +
+        debuffDuration +
+        " turn" +
+        (debuffDuration === 1 ? "" : "s") +
+        "."
     );
   }
 

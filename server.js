@@ -44,33 +44,6 @@ function normalizeLarvalCommand(command) {
   return normalized;
 }
 
-
-function normalizeCoconutPerfectAdaptationChoice(choice) {
-  const allowed = ["tentacle-storm", "coconut-fortress", "ink-sea"];
-  return allowed.includes(choice) ? choice : null;
-}
-
-function getStandardBattleFighterForSocket(room, socketId) {
-  if (!room || !room.battle) return null;
-  const [p1, p2] = room.players;
-  if (socketId === p1) return room.battle.fighterA;
-  if (socketId === p2) return room.battle.fighterB;
-  return null;
-}
-
-function applyCoconutPerfectAdaptationChoiceFromActionData(fighter, actionData) {
-  if (!fighter || fighter.id !== "coconut-octopus" || !actionData) return;
-  const choice = normalizeCoconutPerfectAdaptationChoice(actionData.coconutPerfectAdaptationChoice);
-  if (choice) setCoconutOctopusPerfectAdaptationChoice(fighter, choice);
-}
-
-function getOnlineTournamentFighterForSocket(active, match, socketId) {
-  if (!active || !match) return null;
-  if (match.fighterA?.socketId === socketId) return active.battle.fighterA;
-  if (match.fighterB?.socketId === socketId) return active.battle.fighterB;
-  return null;
-}
-
 function getAvailableFighterIds() {
   return Object.keys(animals).filter((fighterId) => {
     const animal = animals[fighterId];
@@ -460,11 +433,11 @@ function resolveOnlineTournamentActiveTurn(room, matchId) {
   const keyB = getParticipantKey(match.fighterB);
 
   const actionDataA = match.fighterA.type === "bot"
-    ? { action: chooseOnlineTournamentBotAction(battle.fighterA, battle), larvalCommand: null }
+    ? { action: chooseOnlineTournamentBotAction(battle.fighterA, battle), larvalCommand: null, coconutPerfectAdaptationChoice: null }
     : active.actions[keyA];
 
   const actionDataB = match.fighterB.type === "bot"
-    ? { action: chooseOnlineTournamentBotAction(battle.fighterB, battle), larvalCommand: null }
+    ? { action: chooseOnlineTournamentBotAction(battle.fighterB, battle), larvalCommand: null, coconutPerfectAdaptationChoice: null }
     : active.actions[keyB];
 
   if (!actionDataA || !actionDataB) return null;
@@ -472,8 +445,8 @@ function resolveOnlineTournamentActiveTurn(room, matchId) {
   battle.fighterA.darwinsLarvalCommand = normalizeLarvalCommand(actionDataA.larvalCommand);
   battle.fighterB.darwinsLarvalCommand = normalizeLarvalCommand(actionDataB.larvalCommand);
 
-  applyCoconutPerfectAdaptationChoiceFromActionData(battle.fighterA, actionDataA);
-  applyCoconutPerfectAdaptationChoiceFromActionData(battle.fighterB, actionDataB);
+  applyCoconutPerfectAdaptationChoiceIfNeeded(battle.fighterA, actionDataA.coconutPerfectAdaptationChoice);
+  applyCoconutPerfectAdaptationChoiceIfNeeded(battle.fighterB, actionDataB.coconutPerfectAdaptationChoice);
 
   const oldLogLength = battle.log.length;
 
@@ -532,6 +505,26 @@ function emitOnlineTournamentState(roomCode) {
 
 function isOnlineTournamentPlayer(room, socketId) {
   return Boolean(room && room.players.includes(socketId));
+}
+
+
+function normalizeCoconutPerfectAdaptationChoice(choice) {
+  const allowed = ["tentacle-storm", "coconut-fortress", "ink-sea"];
+  return allowed.includes(choice) ? choice : null;
+}
+
+function applyCoconutPerfectAdaptationChoiceIfNeeded(fighter, choice) {
+  const normalized = normalizeCoconutPerfectAdaptationChoice(choice);
+  if (!normalized) return;
+  if (!fighter || fighter.id !== "coconut-octopus") return;
+  setCoconutOctopusPerfectAdaptationChoice(fighter, normalized);
+}
+
+function getBattleFighterForSocket(room, socketId) {
+  if (!room?.battle || !room.players) return null;
+  if (room.players[0] === socketId) return room.battle.fighterA;
+  if (room.players[1] === socketId) return room.battle.fighterB;
+  return null;
 }
 
 io.on("connection", (socket) => {
@@ -614,12 +607,12 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("transformCoconutOctopusOnlineBattle", ({ roomCode, formId }) => {
+  socket.on("transformCoconutOctopusMultiplayer", ({ roomCode, formId }) => {
     const normalizedCode = normalizeRoomCode(roomCode);
     const room = rooms[normalizedCode];
-    if (!room || !room.battle || !room.players.includes(socket.id)) return;
+    if (!room || !room.battle) return;
 
-    const fighter = getStandardBattleFighterForSocket(room, socket.id);
+    const fighter = getBattleFighterForSocket(room, socket.id);
     if (!fighter || fighter.id !== "coconut-octopus") {
       socket.emit("errorMessage", "Only Coconut Octopus can transform.");
       return;
@@ -627,14 +620,14 @@ io.on("connection", (socket) => {
 
     const result = transformCoconutOctopus(fighter, formId, room.battle);
     if (!result.ok) {
-      socket.emit("errorMessage", result.message || "Could not transform Coconut Octopus.");
+      socket.emit("errorMessage", result.message || "Coconut Octopus adaptation failed.");
       return;
     }
 
     io.to(normalizedCode).emit("battleUpdated", {
       battle: room.battle,
-      message: result.message,
-      playerId: socket.id
+      outcome: "Adaptation",
+      message: result.message
     });
   });
 
@@ -666,8 +659,8 @@ io.on("connection", (socket) => {
       room.battle.fighterA.darwinsLarvalCommand = larvalCommand1;
       room.battle.fighterB.darwinsLarvalCommand = larvalCommand2;
 
-      applyCoconutPerfectAdaptationChoiceFromActionData(room.battle.fighterA, player1ActionData);
-      applyCoconutPerfectAdaptationChoiceFromActionData(room.battle.fighterB, player2ActionData);
+      applyCoconutPerfectAdaptationChoiceIfNeeded(room.battle.fighterA, player1ActionData.coconutPerfectAdaptationChoice);
+      applyCoconutPerfectAdaptationChoiceIfNeeded(room.battle.fighterB, player2ActionData.coconutPerfectAdaptationChoice);
 
       const oldLogLength = room.battle.log.length;
 
@@ -891,8 +884,8 @@ io.on("connection", (socket) => {
   socket.on("transformCoconutOctopusOnlineTournament", ({ roomCode, matchId, formId }) => {
     const normalizedCode = normalizeRoomCode(roomCode);
     const room = onlineTournamentRooms[normalizedCode];
-    if (!isOnlineTournamentPlayer(room, socket.id)) return;
 
+    if (!isOnlineTournamentPlayer(room, socket.id)) return;
     if (!room.bracket || !room.activeMatches[matchId]) {
       socket.emit("onlineTournamentError", "There is no active combat for that match.");
       return;
@@ -902,7 +895,16 @@ io.on("connection", (socket) => {
     const found = findOnlineTournamentMatchById(room.bracket, matchId);
     if (!found) return;
 
-    const fighter = getOnlineTournamentFighterForSocket(active, found.match, socket.id);
+    const match = found.match;
+    const localIsA = match.fighterA?.socketId === socket.id;
+    const localIsB = match.fighterB?.socketId === socket.id;
+
+    if (!localIsA && !localIsB) {
+      socket.emit("onlineTournamentError", "You are spectating this combat.");
+      return;
+    }
+
+    const fighter = localIsA ? active.battle.fighterA : active.battle.fighterB;
     if (!fighter || fighter.id !== "coconut-octopus") {
       socket.emit("onlineTournamentError", "Only Coconut Octopus can transform.");
       return;
@@ -910,12 +912,13 @@ io.on("connection", (socket) => {
 
     const result = transformCoconutOctopus(fighter, formId, active.battle);
     if (!result.ok) {
-      socket.emit("onlineTournamentError", result.message || "Could not transform Coconut Octopus.");
+      socket.emit("onlineTournamentError", result.message || "Coconut Octopus adaptation failed.");
       return;
     }
 
-    io.to(normalizedCode).emit("onlineTournamentCombatGenerated", {
-      result: { type: "adaptation", message: result.message, matchId },
+    io.to(normalizedCode).emit("onlineTournamentBattleUpdated", {
+      matchId,
+      message: result.message,
       state: getOnlineTournamentPublicState(room)
     });
 

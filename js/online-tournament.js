@@ -33,6 +33,90 @@ const OCTOPUS_SPECIAL_CHOICE_LABELS = {
 };
 
 
+const SLOTH_COLONIES = [
+  { id: "algae", emoji: "🟢", label: "Algae", fullName: "Algae Colony", className: "sloth-colony-algae", effect: "50% end-turn: +30 HP and +15 stamina.", boosted: "With Lichens: two restoration rolls." },
+  { id: "fungi", emoji: "🍄", label: "Fungi", fullName: "Fungal Colony", className: "sloth-colony-fungi", effect: "50% chance to invert stat reductions.", boosted: "With Lichens: two inversion chances." },
+  { id: "bacteria", emoji: "🦠", label: "Bacteria", fullName: "Bacterial Colony", className: "sloth-colony-bacteria", effect: "Consecutive hits build damage. Peak resets.", boosted: "With Lichens: chain advances by 2." },
+  { id: "mites", emoji: "🕷️", label: "Mites", fullName: "Mite Colony", className: "sloth-colony-mites", effect: "Attacks cost 5 less stamina.", boosted: "With Lichens: attacks cost 10 less stamina." },
+  { id: "lichens", emoji: "🪨", label: "Lichens", fullName: "Lichen Colony", className: "sloth-colony-lichens", effect: "Amplifies active colonies.", boosted: "During Microecosystem, empowers all colonies." }
+];
+
+function isThreeToedSlothFighter(fighter) {
+  return fighter && fighter.id === "three-toed-sloth";
+}
+
+function getSlothActiveColonies(fighter) {
+  return Array.isArray(fighter?.slothActiveColonies) ? fighter.slothActiveColonies : [];
+}
+
+function isSlothDormantInBattle(fighter, battle) {
+  return isThreeToedSlothFighter(fighter) && battle && (battle.biome === "arctic" || battle.biome === "desert");
+}
+
+function slothHasColony(fighter, colonyId) {
+  return getSlothActiveColonies(fighter).includes(colonyId);
+}
+
+function getSlothBacterialBonusForHitLevel(hitLevel) {
+  if (hitLevel <= 1) return 0;
+  if (hitLevel === 2) return 25;
+  if (hitLevel === 3) return 50;
+  if (hitLevel === 4) return 75;
+  return 100;
+}
+
+function getSlothBacterialNextHitBonus(fighter) {
+  const current = Math.max(0, Math.min(5, fighter?.slothBacterialChain || 0));
+  return getSlothBacterialBonusForHitLevel(Math.min(5, current + 1));
+}
+
+function getSlothBacterialProgressText(fighter) {
+  const chain = Math.max(0, Math.min(5, fighter?.slothBacterialChain || 0));
+  return "Chain: " + chain + "/5 · Next hit +" + getSlothBacterialNextHitBonus(fighter) + "% · peak resets";
+}
+
+function renderSlothColonyChip(fighter, colony, battle) {
+  const active = slothHasColony(fighter, colony.id);
+  const dormant = isSlothDormantInBattle(fighter, battle);
+  const boosted = active && slothHasColony(fighter, "lichens") && colony.id !== "lichens";
+  return `<div class="sloth-colony-chip ${colony.className} ${active ? "active" : "inactive"}${dormant ? " dormant" : ""}${boosted ? " boosted" : ""}">
+    <div class="sloth-colony-chip-top"><span class="sloth-colony-emoji">${colony.emoji}</span><span class="sloth-colony-name">${escapeHtml(colony.label)}</span></div>
+    <div class="sloth-colony-state">${active ? (boosted ? "AMPLIFIED" : "ACTIVE") : dormant ? "LETARGO" : "DORMANT"}</div>
+  </div>`;
+}
+
+function renderSlothEcosystemMiniPanel(fighter, battle) {
+  if (!isThreeToedSlothFighter(fighter)) return "";
+  const dormant = isSlothDormantInBattle(fighter, battle);
+  const micro = Boolean(fighter.slothMicroecosystemActive);
+  const activeCount = getSlothActiveColonies(fighter).length;
+  const biome = battle?.biome ? battle.biome.toUpperCase() : "-";
+  const stateText = micro ? "MICROECOSYSTEM" : dormant ? "LETARGO" : activeCount + "/5 ACTIVE";
+  const stateSubtext = micro ? "All colonies awakened · " + (fighter.slothMicroecosystemTurns || 0) + " turn(s)" : dormant ? "Arctic/Desert blocks the ecosystem" : "Biome " + biome + " · colonies rotate with biome shifts";
+  return `<div class="sloth-ecosystem-card${micro ? " ancestral" : ""}${dormant ? " dormant" : ""}">
+    <div class="sloth-ecosystem-header"><div><div class="sloth-ecosystem-title">🌿 Living Ecosystem</div><div class="sloth-ecosystem-subtitle">${escapeHtml(stateSubtext)}</div></div><div class="sloth-ecosystem-badge">${escapeHtml(stateText)}</div></div>
+    <div class="sloth-mini-colonies">${SLOTH_COLONIES.map(c => renderSlothColonyChip(fighter, c, battle)).join("")}</div>
+    <div class="sloth-chain-strip"><span>🦠 ${escapeHtml(getSlothBacterialProgressText(fighter))}</span>${slothHasColony(fighter, "lichens") ? "<span>🪨 Lichens boost active</span>" : ""}</div>
+  </div>`;
+}
+
+function getCoconutOctopusFormChargeMax(formId) {
+  return animals["coconut-octopus"]?.octopusForms?.[formId]?.special?.chargeHits || 0;
+}
+function getCoconutOctopusFormCharge(fighter, formId) {
+  return fighter?.octopusSpecialCharges?.[formId] || 0;
+}
+function getCoconutOctopusCurrentCharge(fighter) {
+  return getCoconutOctopusFormCharge(fighter, fighter?.octopusForm || "base");
+}
+function getCoconutOctopusCurrentChargeMax(fighter) {
+  return getCoconutOctopusFormChargeMax(fighter?.octopusForm || "base");
+}
+function getCoconutOctopusChargeLine(fighter) {
+  return ["base", "offensive", "defensive", "evasive"].map(id => (OCTOPUS_FORM_LABELS[id] || id) + " " + getCoconutOctopusFormCharge(fighter, id) + "/" + getCoconutOctopusFormChargeMax(id)).join(" · ");
+}
+
+
 const MAX_TOURNAMENT_PLAYERS = 16;
 const MIN_TOURNAMENT_PLAYERS = 2;
 
@@ -150,7 +234,8 @@ function getCoconutOctopusStatusText(fighter) {
   const lines = [
     "Form: " + getCoconutOctopusFormText(fighter),
     "Adaptation charges: " + (fighter.octopusAdaptationCharges ?? 0) + "/8",
-    "First transformation: " + (fighter.octopusFreeTransformationAvailable ? "FREE" : "USED")
+    "First transformation: " + (fighter.octopusFreeTransformationAvailable ? "FREE" : "USED"),
+    "Special charges: " + getCoconutOctopusChargeLine(fighter)
   ];
 
   if ((fighter.octopusForm || "base") === "base") {
@@ -238,7 +323,8 @@ function getImageCandidates(id, animal) {
     fennec: ["./images/animals/mammals/fennec.png"],
     "giant-asian-mantis": ["./images/animals/arthropods/asian-giant-mantis.png"],
     "darwins-frog": ["./images/animals/amphibians/darwins-frog.png"],
-    "coconut-octopus": ["./images/animals/fish/coconut-octopus.png"]
+    "coconut-octopus": ["./images/animals/fish/coconut-octopus.png"],
+    "three-toed-sloth": ["./images/animals/mammals/three-toed-sloth.png"]
   };
 
   return [direct, ...(legacy[id] ?? [])];
@@ -625,10 +711,11 @@ function renderBattleBars(fighter) {
 
   const hpPct = percent(fighter.hp, fighter.maxHp);
   const staminaPct = percent(fighter.stamina, fighter.maxStamina);
-  const specialMax = fighter.special?.chargeHits || 0;
-  const specialReady = specialMax > 0 && fighter.specialCharge >= specialMax;
-  const specialPct = specialMax > 0 ? percent(fighter.specialCharge, specialMax) : 0;
-  const specialText = specialReady ? "READY" : `${fighter.specialCharge}/${specialMax}`;
+  const specialMax = isCoconutOctopusFighter(fighter) ? getCoconutOctopusCurrentChargeMax(fighter) : (fighter.special?.chargeHits || 0);
+  const specialCharge = isCoconutOctopusFighter(fighter) ? getCoconutOctopusCurrentCharge(fighter) : (fighter.specialCharge || 0);
+  const specialReady = specialMax > 0 && specialCharge >= specialMax;
+  const specialPct = specialMax > 0 ? percent(specialCharge, specialMax) : 0;
+  const specialText = specialReady ? "READY" : `${specialCharge}/${specialMax}`;
 
   return `
     <div class="online-bar-block">
@@ -680,7 +767,7 @@ function renderOnlineBattleFighterCard(participant, fighter, sideLabel, battle =
         <div class="combat-meta">${sideLabel} · ${meta}</div>
         ${renderBattleBars(fighter)}
 
-        ${extraResourceText ? `<div class="online-extra-resource">${escapeHtml(extraResourceText)}</div>` : ""}
+        ${isThreeToedSlothFighter(fighter) ? renderSlothEcosystemMiniPanel(fighter, battle) : (extraResourceText ? `<div class="online-extra-resource">${escapeHtml(extraResourceText)}</div>` : "")}
       </div>
     </div>
   `;
@@ -751,9 +838,9 @@ function getActionInfoForButton(action, localFighter, activeMatch) {
       title: localFighter?.special?.name || "Special Attack",
       desc: localFighter?.special
         ? localFighter.special.description + " " +
-          (localFighter.specialCharge >= localFighter.special.chargeHits
+          ((isCoconutOctopusFighter(localFighter) ? getCoconutOctopusCurrentCharge(localFighter) >= getCoconutOctopusCurrentChargeMax(localFighter) : localFighter.specialCharge >= localFighter.special.chargeHits)
             ? "READY"
-            : "Charge: " + localFighter.specialCharge + "/" + localFighter.special.chargeHits)
+            : "Charge: " + (isCoconutOctopusFighter(localFighter) ? getCoconutOctopusCurrentCharge(localFighter) : localFighter.specialCharge) + "/" + (isCoconutOctopusFighter(localFighter) ? getCoconutOctopusCurrentChargeMax(localFighter) : localFighter.special.chargeHits))
         : "No special available."
     },
     "larval-command": {
@@ -782,8 +869,9 @@ function renderActionButtons(activeMatch, canAct) {
     let disabled = !canAct;
 
     if (action === "special") {
-      const specialMax = localFighter?.special?.chargeHits || 0;
-      disabled = disabled || !localFighter?.special || localFighter.specialCharge < specialMax;
+      const specialMax = isCoconutOctopusFighter(localFighter) ? getCoconutOctopusCurrentChargeMax(localFighter) : (localFighter?.special?.chargeHits || 0);
+      const specialCharge = isCoconutOctopusFighter(localFighter) ? getCoconutOctopusCurrentCharge(localFighter) : (localFighter?.specialCharge || 0);
+      disabled = disabled || !localFighter?.special || specialCharge < specialMax;
     }
 
     if (action === "larval-command") {
@@ -793,7 +881,7 @@ function renderActionButtons(activeMatch, canAct) {
     const readyClass =
       action === "special" &&
       localFighter?.special &&
-      localFighter.specialCharge >= localFighter.special.chargeHits
+      (isCoconutOctopusFighter(localFighter) ? getCoconutOctopusCurrentCharge(localFighter) >= getCoconutOctopusCurrentChargeMax(localFighter) : localFighter.specialCharge >= localFighter.special.chargeHits)
         ? " special-ready"
         : "";
 
@@ -1086,7 +1174,8 @@ function renderOnlineTournamentOctopusPanel(activeMatch, canAct) {
 
   return `<div class="octopus-adaptation-panel" id="octopusAdaptationPanel">
       <div class="octopus-adaptation-title">Coconut Octopus — Stand Phase</div>
-      <div class="octopus-adaptation-status">${escapeHtml(getCoconutOctopusFormText(fighter))} · charges ${charges}/8${escapeHtml(freeText)}</div>
+      <div class="octopus-adaptation-status">${escapeHtml(getCoconutOctopusFormText(fighter))} · adaptation ${charges}/8${escapeHtml(freeText)}
+Special charges: ${escapeHtml(getCoconutOctopusChargeLine(fighter))}</div>
       <div class="octopus-adaptation-grid">
         ${["offensive", "defensive", "evasive"].map((formId) => `<button type="button" class="octopus-mini-btn octopus-form-btn ${formId === currentForm ? "active" : ""} ${formId === preview && formId !== currentForm ? "preview" : ""}" data-online-octopus-preview="${escapeHtml(formId)}" data-match-id="${escapeHtml(matchId)}" ${!canAct ? "disabled" : ""}>${escapeHtml(formId[0].toUpperCase() + formId.slice(1))}</button>`).join("")}
       </div>
@@ -1812,6 +1901,12 @@ function initSocket() {
     if (localActive) viewedMatchId = localActive.matchId;
     else if (!viewedMatchId && currentState.activeMatches?.[0]) viewedMatchId = currentState.activeMatches[0].matchId;
 
+    renderState();
+  });
+
+  socket.on("onlineTournamentBattleUpdated", ({ matchId, message, state }) => {
+    currentState = state;
+    if (message) addLog(message);
     renderState();
   });
 

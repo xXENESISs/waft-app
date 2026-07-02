@@ -18,16 +18,11 @@ let lastEnemyAction = "-";
 let lastTurnOutcome = "-";
 let lastTurnSummaryLines = ["Start a battle to begin."];
 
-let larvalDraftCommand = {
-  attack: 0,
-  defense: 0,
-  sacrifice: 0
-};
-
 let playerFlipped = false;
 let enemyFlipped = true;
 let pendingOctopusFormPreview = null;
-let pendingOctopusSpecialChoiceConfirmed = false;
+let pendingMultiplayerOctopusFormId = null;
+let preBattlePreviewPlayer = null;
 
 let isAnimatingTurn = false;
 let summaryAnimationToken = 0;
@@ -59,6 +54,374 @@ const OCTOPUS_SPECIAL_CHOICE_LABELS = {
   "ink-sea": "Ink Sea"
 };
 
+const SLOTH_COLONIES = [
+  {
+    id: "algae",
+    emoji: "🟢",
+    label: "Algae",
+    fullName: "Algae Colony",
+    className: "sloth-colony-algae",
+    shortEffect: "50% end turn: +30 HP / +15 Stamina.",
+    detail: "At the end of each turn, rolls 50%. On success, restores 30 HP and 15 Stamina.",
+    amplified: "With Lichens: rolls twice independently."
+  },
+  {
+    id: "fungi",
+    emoji: "🍄",
+    label: "Fungi",
+    fullName: "Fungal Colony",
+    className: "sloth-colony-fungi",
+    shortEffect: "50% to invert stat reductions.",
+    detail: "When the sloth receives a numeric stat debuff, rolls 50%. On success, turns the stat loss into the same stat gain.",
+    amplified: "With Lichens: gets two independent inversion chances."
+  },
+  {
+    id: "bacteria",
+    emoji: "🦠",
+    label: "Bacteria",
+    fullName: "Bacterial Colony",
+    className: "sloth-colony-bacteria",
+    shortEffect: "Consecutive hits scale damage, then discharge.",
+    detail: "Successful attacks build a 5-step chain. Softer damage curve: 1st hit +0%, 2nd +25%, 3rd +50%, 4th +75%, 5th +100%. After the peak hit, the chain resets to 0/5.",
+    amplified: "With Lichens: each hit advances the chain by 2 steps, but the damage bonus is not doubled."
+  },
+  {
+    id: "mites",
+    emoji: "🕷️",
+    label: "Mites",
+    fullName: "Mite Colony",
+    className: "sloth-colony-mites",
+    shortEffect: "Attacks cost -5 Stamina.",
+    detail: "Normal, Quick, Precise and Explosive attacks cost 5 less Stamina. Costs cannot go below 0.",
+    amplified: "With Lichens: attacks cost 10 less Stamina."
+  },
+  {
+    id: "lichens",
+    emoji: "🪨",
+    label: "Lichens",
+    fullName: "Lichen Colony",
+    className: "sloth-colony-lichens",
+    shortEffect: "Amplifies the other active colony.",
+    detail: "While active, it doubles the effect of the other active colony.",
+    amplified: "During Microecosystem Ancestral, it empowers all four other colonies at once."
+  }
+];
+
+const SLOTH_COLONY_BY_ID = Object.fromEntries(
+  SLOTH_COLONIES.map((colony) => [colony.id, colony])
+);
+
+function isThreeToedSlothFighter(fighter) {
+  return fighter && fighter.id === "three-toed-sloth";
+}
+
+function getSlothActiveColonies(fighter) {
+  if (!isThreeToedSlothFighter(fighter)) return [];
+
+  return Array.isArray(fighter.slothActiveColonies)
+    ? fighter.slothActiveColonies
+    : [];
+}
+
+function isSlothDormantInCurrentBiome(fighter) {
+  if (!isThreeToedSlothFighter(fighter)) return false;
+  if (fighter.slothMicroecosystemActive) return false;
+
+  return currentBattle && (currentBattle.biome === "arctic" || currentBattle.biome === "desert");
+}
+
+function slothHasColony(fighter, colonyId) {
+  return getSlothActiveColonies(fighter).includes(colonyId);
+}
+
+function getSlothBacterialBonusForHitLevel(hitLevel) {
+  const level = Math.max(1, Math.min(5, hitLevel || 1));
+
+  switch (level) {
+    case 2:
+      return 25;
+    case 3:
+      return 50;
+    case 4:
+      return 75;
+    case 5:
+      return 100;
+    default:
+      return 0;
+  }
+}
+
+function getSlothBacterialNextHitBonus(fighter) {
+  const chain = Math.max(0, Math.min(5, fighter.slothBacterialChain || 0));
+  return getSlothBacterialBonusForHitLevel(Math.min(5, chain + 1));
+}
+
+function getSlothBacterialFollowingHitBonus(fighter) {
+  const current = Math.max(0, Math.min(5, fighter.slothBacterialChain || 0));
+  const progressGain = slothHasColony(fighter, "lichens") ? 2 : 1;
+  const afterNextHit = Math.min(5, current + progressGain);
+
+  if (Math.min(5, current + 1) >= 5) return 0;
+
+  return getSlothBacterialBonusForHitLevel(Math.min(5, afterNextHit + 1));
+}
+
+function getSlothBacterialProgressText(fighter) {
+  const chain = Math.max(0, Math.min(5, fighter.slothBacterialChain || 0));
+  const nextHitBonus = getSlothBacterialNextHitBonus(fighter);
+  const followingBonus = getSlothBacterialFollowingHitBonus(fighter);
+
+  return (
+    "Chain: " +
+    chain +
+    "/5 · Next hit +" +
+    nextHitBonus +
+    "% · Following +" +
+    followingBonus +
+    "% · peak resets"
+  );
+}
+
+function getThreeToedSlothStatusText(fighter) {
+  if (!isThreeToedSlothFighter(fighter)) return "";
+
+  const colonies = getSlothActiveColonies(fighter);
+  const colonyText = colonies.length > 0
+    ? colonies.map((colonyId) => SLOTH_COLONY_BY_ID[colonyId]?.label || colonyId).join(", ")
+    : "None";
+
+  const lines = [
+    "Living Ecosystem: " +
+      (fighter.slothMicroecosystemActive
+        ? "MICROECOSYSTEM"
+        : isSlothDormantInCurrentBiome(fighter)
+          ? "DORMANT"
+          : "ACTIVE"),
+    "Active colonies: " + colonyText,
+    getSlothBacterialProgressText(fighter)
+  ];
+
+  if (slothHasColony(fighter, "lichens")) {
+    lines.push(
+      fighter.slothMicroecosystemActive
+        ? "Lichens: empowering all colonies."
+        : "Lichens: advancing the other colony faster."
+    );
+  }
+
+  if (fighter.slothMicroecosystemActive) {
+    lines.push(
+      "Microecosystem Ancestral: " +
+        (fighter.slothMicroecosystemTurns || 0) +
+        " turn(s) left"
+    );
+  }
+
+  if (isSlothDormantInCurrentBiome(fighter)) {
+    lines.push("Arctic/Desert dormancy: no colonies and no Microecosystem.");
+  }
+
+  return lines.join("\n");
+}
+
+function getSlothColonyCurrentEffectText(fighter, colony) {
+  const active = slothHasColony(fighter, colony.id);
+  const lichensActive = slothHasColony(fighter, "lichens");
+  const micro = Boolean(fighter.slothMicroecosystemActive);
+
+  if (colony.id === "bacteria") {
+    return getSlothBacterialProgressText(fighter);
+  }
+
+  if (colony.id === "lichens") {
+    if (!active) return colony.shortEffect;
+    return micro
+      ? "Empowering Algae, Fungi, Bacteria and Mites."
+      : "Doubling the other active colony.";
+  }
+
+  if (active && lichensActive) {
+    return colony.amplified;
+  }
+
+  return colony.shortEffect;
+}
+
+function renderSlothColonyChip(fighter, colony, compact = false) {
+  const active = slothHasColony(fighter, colony.id);
+  const dormant = isSlothDormantInCurrentBiome(fighter);
+  const lichensActive = slothHasColony(fighter, "lichens");
+  const boosted = active && lichensActive && colony.id !== "lichens";
+  const state = active ? "active" : "inactive";
+
+  return `
+    <div class="sloth-colony-chip ${colony.className} ${state}${dormant ? " dormant" : ""}${boosted ? " boosted" : ""}">
+      <div class="sloth-colony-chip-top">
+        <span class="sloth-colony-emoji">${colony.emoji}</span>
+        <span class="sloth-colony-name">${compact ? colony.label : colony.fullName}</span>
+      </div>
+      <div class="sloth-colony-state">${active ? (boosted ? "AMPLIFIED" : "ACTIVE") : dormant ? "LETARGO" : "DORMANT"}</div>
+    </div>
+  `;
+}
+
+function renderSlothEcosystemMiniPanel(fighter) {
+  const preview = Boolean(fighter.slothPreviewMode && !currentBattle);
+  const dormant = !preview && isSlothDormantInCurrentBiome(fighter);
+  const micro = Boolean(fighter.slothMicroecosystemActive);
+  const activeCount = getSlothActiveColonies(fighter).length;
+  const biome = currentBattle?.biome ? currentBattle.biome.toUpperCase() : "-";
+  const stateText = preview
+    ? "PREVIEW"
+    : micro
+      ? "MICROECOSYSTEM"
+      : dormant
+        ? "LETARGO"
+        : activeCount + "/5 ACTIVE";
+  const stateSubtext = preview
+    ? "All colonies shown · battle starts with 2 random colonies"
+    : micro
+      ? "All colonies awakened · " + (fighter.slothMicroecosystemTurns || 0) + " turn(s)"
+      : dormant
+        ? "Arctic/Desert blocks the ecosystem"
+        : "Biome " + biome + " · colonies rotate with biome shifts";
+
+  return `
+    <div class="sloth-ecosystem-card${micro ? " ancestral" : ""}${dormant ? " dormant" : ""}">
+      <div class="sloth-ecosystem-header">
+        <div>
+          <div class="sloth-ecosystem-title">🌿 Living Ecosystem</div>
+          <div class="sloth-ecosystem-subtitle">${stateSubtext}</div>
+        </div>
+        <div class="sloth-ecosystem-badge">${stateText}</div>
+      </div>
+      <div class="sloth-mini-colonies">
+        ${SLOTH_COLONIES.map((colony) => renderSlothColonyChip(fighter, colony, true)).join("")}
+      </div>
+      <div class="sloth-chain-strip">
+        <span>🦠 ${getSlothBacterialProgressText(fighter)}</span>
+        ${slothHasColony(fighter, "lichens") ? "<span>🪨 Lichens speed up colony growth</span>" : ""}
+      </div>
+    </div>
+  `;
+}
+
+function renderSlothColonyDetailCard(fighter, colony) {
+  const active = slothHasColony(fighter, colony.id);
+  const dormant = isSlothDormantInCurrentBiome(fighter);
+  const lichensActive = slothHasColony(fighter, "lichens");
+  const boosted = active && lichensActive && colony.id !== "lichens";
+
+  return `
+    <div class="sloth-modal-colony ${colony.className} ${active ? "active" : "inactive"}${dormant ? " dormant" : ""}${boosted ? " boosted" : ""}">
+      <div class="sloth-modal-colony-head">
+        <div class="sloth-modal-colony-title">
+          <span>${colony.emoji}</span>
+          <strong>${colony.fullName}</strong>
+        </div>
+        <div class="sloth-modal-status">${active ? (boosted ? "AMPLIFIED" : "ACTIVE") : dormant ? "LETARGO" : "DORMANT"}</div>
+      </div>
+      <div class="sloth-modal-colony-effect">${colony.detail}</div>
+      <div class="sloth-modal-colony-current">${getSlothColonyCurrentEffectText(fighter, colony)}</div>
+      <div class="sloth-modal-colony-boost">${colony.amplified}</div>
+    </div>
+  `;
+}
+
+function renderSlothEcosystemModal(fighterOverride = null) {
+  const player = fighterOverride || (currentBattle ? getBattleFighters().player : preBattlePreviewPlayer);
+  const body = document.getElementById("slothEcosystemModalBody");
+  const subtitle = document.getElementById("slothEcosystemModalSubtitle");
+
+  if (!body || !subtitle || !isThreeToedSlothFighter(player)) return;
+
+  const preview = Boolean(player.slothPreviewMode && !currentBattle);
+  const dormant = !preview && isSlothDormantInCurrentBiome(player);
+  const micro = Boolean(player.slothMicroecosystemActive);
+  const activeCount = getSlothActiveColonies(player).length;
+  const biome = preview ? "PRE-BATTLE" : currentBattle?.biome ? currentBattle.biome.toUpperCase() : "-";
+
+  subtitle.textContent = preview
+    ? "Pre-battle view: these are the 5 possible colonies. Battle start awakens 2 random colonies unless the biome is Arctic or Desert."
+    : micro
+      ? "Microecosystem Ancestral active: all colonies are awake for " + (player.slothMicroecosystemTurns || 0) + " turn(s)."
+      : dormant
+        ? "Biome " + biome + ": ecosystem in letargo. No colonies are active and Microecosystem is blocked."
+        : "Biome " + biome + ": " + activeCount + "/5 colonies active. Lichens accelerate colony growth when awake.";
+
+  body.innerHTML = `
+    <div class="sloth-modal-summary${micro ? " ancestral" : ""}${dormant ? " dormant" : ""}">
+      <div>
+        <div class="sloth-modal-summary-label">Current State</div>
+        <div class="sloth-modal-summary-value">${preview ? "PRE-BATTLE COLONY GUIDE" : micro ? "MICROECOSYSTEM ANCESTRAL" : dormant ? "LETARGO" : "LIVING ECOSYSTEM ACTIVE"}</div>
+      </div>
+      <div>
+        <div class="sloth-modal-summary-label">Bacterial Chain</div>
+        <div class="sloth-modal-summary-value">${getSlothBacterialProgressText(player)}</div>
+      </div>
+      <div>
+        <div class="sloth-modal-summary-label">Lichens</div>
+        <div class="sloth-modal-summary-value">${
+          slothHasColony(player, "lichens")
+            ? micro
+              ? "Boosting all colonies"
+              : "Accelerating the other colony"
+            : "Inactive"
+        }</div>
+      </div>
+    </div>
+
+    <div class="sloth-modal-grid">
+      ${SLOTH_COLONIES.map((colony) => renderSlothColonyDetailCard(player, colony)).join("")}
+    </div>
+  `;
+}
+
+function updateSlothEcosystemButton(player) {
+  const btn = document.getElementById("slothEcosystemBtn");
+  const titleEl = document.getElementById("btn-sloth-title");
+  const descEl = document.getElementById("btn-sloth-desc");
+
+  if (!btn || !titleEl || !descEl) return;
+
+  if (!player || !isThreeToedSlothFighter(player)) {
+    btn.style.display = "none";
+    return;
+  }
+
+  const dormant = isSlothDormantInCurrentBiome(player);
+  const micro = Boolean(player.slothMicroecosystemActive);
+  const activeCount = getSlothActiveColonies(player).length;
+
+  btn.style.display = "block";
+  titleEl.textContent = "Living Ecosystem";
+  descEl.textContent = micro
+    ? "All colonies active. " + (player.slothMicroecosystemTurns || 0) + " turn(s) left."
+    : dormant
+      ? "Ecosystem in letargo. View blocked colonies."
+      : activeCount + "/5 colonies active. Open full colony panel.";
+}
+
+function openSlothEcosystemModal() {
+  if (currentBattle?.finished) return;
+
+  const player = currentBattle ? getBattleFighters().player : preBattlePreviewPlayer;
+
+  if (!isThreeToedSlothFighter(player)) {
+    alert("Only the Three-Toed Sloth has a Living Ecosystem.");
+    return;
+  }
+
+  renderSlothEcosystemModal(player);
+
+  const modal = document.getElementById("slothEcosystemModal");
+  if (modal) modal.style.display = "flex";
+}
+
+function closeSlothEcosystemModal() {
+  const modal = document.getElementById("slothEcosystemModal");
+  if (modal) modal.style.display = "none";
+}
 
 const ACTION_INFO = {
   normal: {
@@ -93,72 +456,16 @@ function prettyActionLabel(action, fighter = null) {
   }
 
   const labels = {
-    normal: "Normal Attack",
-    quick: "Quick Attack",
-    precise: "Precise Attack",
-    explosive: "Explosive Attack",
-    concentration: "Concentration",
-    special: "Special Attack",
-    "larval-command": "Larval Command"
-  };
+  normal: "Normal Attack",
+  quick: "Quick Attack",
+  precise: "Precise Attack",
+  explosive: "Explosive Attack",
+  concentration: "Concentration",
+  special: "Special Attack",
+  "larval-command": "Larval Command"
+};
 
   return labels[action] ?? action;
-}
-
-
-function isCoconutOctopusFighter(fighter) {
-  return fighter && fighter.id === "coconut-octopus";
-}
-
-function getCoconutOctopusFormText(fighter) {
-  if (!isCoconutOctopusFighter(fighter)) return "";
-  const form = fighter.octopusForm || "base";
-  return OCTOPUS_FORM_LABELS[form] || form;
-}
-
-function getCoconutOctopusStatusText(fighter) {
-  if (!isCoconutOctopusFighter(fighter)) return "";
-
-  const lines = [
-    "Form: " + getCoconutOctopusFormText(fighter),
-    "Adaptation charges: " + (fighter.octopusAdaptationCharges ?? 0) + "/8",
-    "First transformation: " + (fighter.octopusFreeTransformationAvailable ? "FREE" : "USED")
-  ];
-
-  if ((fighter.octopusForm || "base") === "base") {
-    lines.push("Perfect Adaptation: choose option when using Special");
-  }
-  if ((fighter.octopusForm || "base") === "offensive") {
-    lines.push("Predatory Pressure: " + ((fighter.octopusPredatoryPressureStacks || 0) * 5) + "% Attack reduction");
-  }
-  if ((fighter.octopusForm || "base") === "defensive") {
-    lines.push("Coconut Shell: 10 fixed damage on direct hit");
-    lines.push("Fortress active: " + (fighter.coconutFortressActive ? "YES" : "NO"));
-  }
-  if ((fighter.octopusForm || "base") === "evasive") {
-    lines.push("Perfect Camouflage: +15 HP / +15 Stamina when enemy misses");
-  }
-
-  return lines.join("\n");
-}
-
-function getCoconutOctopusFormDefinitionForPreview(formId) {
-  return animals["coconut-octopus"]?.octopusForms?.[formId] || null;
-}
-
-function getCoconutOctopusPreviewStatsHtml(form) {
-  if (!form?.stats) return "";
-  const rows = [
-    ["Life", form.stats.life],
-    ["Attack", form.stats.attack],
-    ["Defense", form.stats.defense],
-    ["Stamina", form.stats.resistance],
-    ["Speed", form.stats.speed],
-    ["Technique", form.stats.technique],
-    ["Agility", form.stats.agility],
-    ["Explosive", form.stats.explosiveness]
-  ];
-  return rows.map(([label, value]) => `<div class="octopus-preview-stat">${label}<strong>${value}</strong></div>`).join("");
 }
 
 function getBiomeRelation(fighter, biome) {
@@ -169,6 +476,109 @@ function getBiomeRelation(fighter, biome) {
   if (animal.biomes.unfavorable?.includes(biome)) return "Unfavorable";
   return "Neutral";
 }
+
+
+function isCoconutOctopusFighter(fighter) {
+  return fighter && fighter.id === "coconut-octopus";
+}
+
+function getCoconutOctopusFormText(fighter) {
+  if (!isCoconutOctopusFighter(fighter)) return "";
+
+  const form = fighter.octopusForm || "base";
+  return OCTOPUS_FORM_LABELS[form] || form;
+}
+
+function getCoconutOctopusSpecialChoiceText(fighter) {
+  if (!isCoconutOctopusFighter(fighter)) return "";
+
+  const choice = fighter.octopusPerfectAdaptationChoice || "tentacle-storm";
+  return OCTOPUS_SPECIAL_CHOICE_LABELS[choice] || choice;
+}
+
+const OCTOPUS_FORM_ORDER = ["base", "offensive", "defensive", "evasive"];
+
+const OCTOPUS_FORM_SHORT_LABELS = {
+  base: "Base",
+  offensive: "Off",
+  defensive: "Def",
+  evasive: "Eva"
+};
+
+function getCoconutOctopusFormChargeMax(formId) {
+  const form = animals["coconut-octopus"]?.octopusForms?.[formId];
+  return form?.special?.chargeHits ?? 0;
+}
+
+function getCoconutOctopusFormCharge(fighter, formId) {
+  if (!isCoconutOctopusFighter(fighter)) return 0;
+
+  if (fighter.octopusSpecialCharges && typeof fighter.octopusSpecialCharges[formId] === "number") {
+    return fighter.octopusSpecialCharges[formId];
+  }
+
+  const currentForm = fighter.octopusForm || "base";
+  if (currentForm === formId && typeof fighter.specialCharge === "number") {
+    return fighter.specialCharge;
+  }
+
+  return 0;
+}
+
+function getCoconutOctopusCurrentCharge(fighter) {
+  if (!isCoconutOctopusFighter(fighter)) return fighter?.specialCharge ?? 0;
+  return getCoconutOctopusFormCharge(fighter, fighter.octopusForm || "base");
+}
+
+function getCoconutOctopusCurrentChargeMax(fighter) {
+  if (!isCoconutOctopusFighter(fighter)) return fighter?.special?.chargeHits ?? 0;
+  return getCoconutOctopusFormChargeMax(fighter.octopusForm || "base");
+}
+
+function getCoconutOctopusChargeLine(fighter) {
+  if (!isCoconutOctopusFighter(fighter)) return "";
+
+  return OCTOPUS_FORM_ORDER.map((formId) => {
+    return (
+      OCTOPUS_FORM_SHORT_LABELS[formId] +
+      " " +
+      getCoconutOctopusFormCharge(fighter, formId) +
+      "/" +
+      getCoconutOctopusFormChargeMax(formId)
+    );
+  }).join(" · ");
+}
+
+function getCoconutOctopusStatusText(fighter) {
+  if (!isCoconutOctopusFighter(fighter)) return "";
+
+  const lines = [
+    "Form: " + getCoconutOctopusFormText(fighter),
+    "Adaptation charges: " + (fighter.octopusAdaptationCharges ?? 0) + "/8",
+    "First transformation: " + (fighter.octopusFreeTransformationAvailable ? "FREE" : "USED"),
+    "Special charges: " + getCoconutOctopusChargeLine(fighter)
+  ];
+
+  if ((fighter.octopusForm || "base") === "base") {
+    lines.push("Perfect Adaptation: choose option when using Special");
+  }
+
+  if ((fighter.octopusForm || "base") === "offensive") {
+    lines.push("Predatory Pressure: " + ((fighter.octopusPredatoryPressureStacks || 0) * 5) + "% Attack reduction");
+  }
+
+  if ((fighter.octopusForm || "base") === "defensive") {
+    lines.push("Coconut Shell: 10 fixed damage on direct hit");
+    lines.push("Fortress active: " + (fighter.coconutFortressActive ? "YES" : "NO"));
+  }
+
+  if ((fighter.octopusForm || "base") === "evasive") {
+    lines.push("Perfect Camouflage: +15 HP / +15 Stamina when enemy misses");
+  }
+
+  return lines.join("\n");
+}
+
 
 function getBattleFighters() {
   if (!currentBattle) return { player: null, enemy: null };
@@ -216,6 +626,7 @@ function getImageCandidates(id, animal) {
     "giant-asian-mantis": ["./images/animals/arthropods/asian-giant-mantis.png"],
     "darwins-frog": ["./images/animals/amphibians/darwins-frog.png"],
     "coconut-octopus": ["./images/animals/fish/coconut-octopus.png"],
+    "three-toed-sloth": ["./images/animals/mammals/three-toed-sloth.png"],
   };
 
   return [direct, ...(legacy[id] ?? [])];
@@ -317,8 +728,30 @@ function getBattlefieldDurationLines(battle, fighter) {
   return lines.join("\n");
 }
 
+function getCircadianPhaseText(battle) {
+  if (!battle) return "";
+
+  const phaseIndex = Math.floor((battle.turn - 1) / 2) % 2;
+  const turnInsidePhase = ((battle.turn - 1) % 2) + 1;
+  const turnsLeft = 2 - turnInsidePhase;
+
+  if (phaseIndex === 0) {
+    return "☀️ Day — Dawn holds the battlefield. " +
+      turnsLeft + " turn" + (turnsLeft === 1 ? "" : "s") +
+      " until sunset.";
+  }
+
+  return "🌙 Night — The sun has fallen. " +
+    turnsLeft + " turn" + (turnsLeft === 1 ? "" : "s") +
+    " until sunrise.";
+}
+
 function getExtraResourceText(fighter) {
   if (!fighter) return "";
+
+  if (fighter.passive && fighter.passive.id === "circadian-cycle") {
+  return getCircadianPhaseText(currentBattle);
+}
 
   if (fighter.passive && fighter.passive.id === "persistent-harassment") {
     return "Loot: " + fighter.macaqueLoot + "\nChain: " + fighter.macaqueHitChain;
@@ -439,8 +872,17 @@ function getExtraResourceText(fighter) {
     return "Larvae: " + larvae + "/" + maxLarvae;
   }
 
-  if (isCoconutOctopusFighter(fighter)) {
+  if (fighter.passive && (
+    fighter.passive.id === "cephalopod-adaptation" ||
+    fighter.passive.id === "predatory-pressure" ||
+    fighter.passive.id === "coconut-shell" ||
+    fighter.passive.id === "perfect-camouflage"
+  )) {
     return getCoconutOctopusStatusText(fighter);
+  }
+
+  if (isThreeToedSlothFighter(fighter)) {
+    return getThreeToedSlothStatusText(fighter);
   }
 
   return "";
@@ -529,6 +971,26 @@ function formatTooltip(fighter) {
   `
       : "";
 
+  const coconutExtra =
+    isCoconutOctopusFighter(fighter)
+      ? `
+    <div class="tooltip-section">
+      <div class="tooltip-label">Coconut Octopus Adaptation</div>
+      <div class="tooltip-text">${getCoconutOctopusStatusText(fighter)}</div>
+    </div>
+  `
+      : "";
+
+  const slothExtra =
+    isThreeToedSlothFighter(fighter)
+      ? `
+    <div class="tooltip-section">
+      <div class="tooltip-label">Living Ecosystem</div>
+      <div class="tooltip-text">${getThreeToedSlothStatusText(fighter)}</div>
+    </div>
+  `
+      : "";
+
   return `
     <h3>${animal.name}</h3>
 
@@ -566,6 +1028,8 @@ ${formatStatArrowLine(fighter, "explosiveness", "Explosiveness")}</div>
 
     ${macaqueExtra}
     ${iguanaExtra}
+    ${coconutExtra}
+    ${slothExtra}
   `;
 }
 
@@ -583,24 +1047,34 @@ function renderFighter(prefix, fighter) {
     `${fighter.stamina}/${fighter.maxStamina} (${staminaPct}%)`;
   document.getElementById(`${prefix}StaminaBar`).style.width = `${staminaPct}%`;
 
-  const specialMax = fighter.special?.chargeHits ?? 0;
-  const specialReady = specialMax > 0 && fighter.specialCharge >= specialMax;
+  const specialMax = isCoconutOctopusFighter(fighter)
+    ? getCoconutOctopusCurrentChargeMax(fighter)
+    : fighter.special?.chargeHits ?? 0;
+  const specialCharge = isCoconutOctopusFighter(fighter)
+    ? getCoconutOctopusCurrentCharge(fighter)
+    : fighter.specialCharge ?? 0;
+  const specialReady = specialMax > 0 && specialCharge >= specialMax;
 
   document.getElementById(`${prefix}SpecialText`).textContent =
-    specialReady ? "READY" : `${fighter.specialCharge}/${specialMax}`;
+    specialReady ? "READY" : `${specialCharge}/${specialMax}`;
   document.getElementById(`${prefix}SpecialBar`).style.width =
-    `${specialMax > 0 ? percent(fighter.specialCharge, specialMax) : 0}%`;
+    `${specialMax > 0 ? percent(specialCharge, specialMax) : 0}%`;
 
   const extraResourceEl = document.getElementById(`${prefix}ExtraResource`);
   if (extraResourceEl) {
-    const extraResourceText = getExtraResourceText(fighter);
-
-    if (extraResourceText) {
-      extraResourceEl.textContent = extraResourceText;
+    if (isThreeToedSlothFighter(fighter)) {
+      extraResourceEl.innerHTML = renderSlothEcosystemMiniPanel(fighter);
       extraResourceEl.style.display = "block";
     } else {
-      extraResourceEl.textContent = "";
-      extraResourceEl.style.display = "none";
+      const extraResourceText = getExtraResourceText(fighter);
+
+      if (extraResourceText) {
+        extraResourceEl.textContent = extraResourceText;
+        extraResourceEl.style.display = "block";
+      } else {
+        extraResourceEl.textContent = "";
+        extraResourceEl.style.display = "none";
+      }
     }
   }
 
@@ -697,11 +1171,28 @@ function updateSpecialButton(player) {
     return;
   }
 
-  const needed = player.special.chargeHits ?? 0;
-  const ready = player.specialCharge >= needed;
+  const needed = isCoconutOctopusFighter(player)
+    ? getCoconutOctopusCurrentChargeMax(player)
+    : player.special.chargeHits ?? 0;
+  const currentCharge = isCoconutOctopusFighter(player)
+    ? getCoconutOctopusCurrentCharge(player)
+    : player.specialCharge ?? 0;
+  const ready = currentCharge >= needed;
 
   titleEl.textContent = player.special.name;
-  descEl.textContent = `${player.special.description} ${ready ? "READY" : `Charge: ${player.specialCharge}/${needed}`}`;
+
+  if (isCoconutOctopusFighter(player) && (player.octopusForm || "base") === "base") {
+    descEl.textContent = ready
+      ? "READY. Press to choose Tentacle Storm, Coconut Fortress or Ink Sea."
+      : "Choose Tentacle Storm, Coconut Fortress or Ink Sea when ready. Charge: " + currentCharge + "/" + needed + " · " + getCoconutOctopusChargeLine(player);
+  } else if (isThreeToedSlothFighter(player)) {
+    const dormant = currentBattle && (currentBattle.biome === "arctic" || currentBattle.biome === "desert");
+    descEl.textContent = dormant
+      ? "Dormant in Arctic/Desert. Microecosystem Ancestral cannot be used here."
+      : `${player.special.description} ${ready ? "READY" : `Charge: ${currentCharge}/${needed}`}`;
+  } else {
+    descEl.textContent = `${player.special.description} ${ready ? "READY" : `Charge: ${currentCharge}/${needed}`}`;
+  }
 
   if (ready) {
     specialBtn.classList.add("special-ready");
@@ -709,7 +1200,6 @@ function updateSpecialButton(player) {
     specialBtn.classList.remove("special-ready");
   }
 }
-
 
 function updateLarvalCommandButton(player) {
   const larvalBtn = document.getElementById("larvalCommandBtn");
@@ -725,254 +1215,40 @@ function updateLarvalCommandButton(player) {
 
   const larvae = player.darwinsLarvae || 0;
   const maxLarvae = player.darwinsMaxLarvae || 5;
-  const command = player.darwinsLarvalCommand;
 
   larvalBtn.style.display = "block";
-  titleEl.textContent = command ? "Larval Command Prepared" : "Larval Command";
-
-  if (command) {
-    const used =
-      (command.attack || 0) +
-      (command.defense || 0) +
-      (command.sacrifice || 0);
-    const conserved = Math.max(0, larvae - used);
-
-    descEl.textContent =
-      "A: " +
-      (command.attack || 0) +
-      " | D: " +
-      (command.defense || 0) +
-      " | S: " +
-      (command.sacrifice || 0) +
-      " | Conserved: " +
-      conserved;
-  } else {
-    descEl.textContent =
-      "Larvae: " +
-      larvae +
-      "/" +
-      maxLarvae +
-      ". Assign larvae to attack, defend or sacrifice.";
-  }
+  titleEl.textContent = "Larval Command";
+  descEl.textContent =
+    "Larvae: " +
+    larvae +
+    "/" +
+    maxLarvae +
+    ". Assign larvae to attack, defend or sacrifice.";
 }
 
-function getLarvalDraftTotal() {
-  return (
-    larvalDraftCommand.attack +
-    larvalDraftCommand.defense +
-    larvalDraftCommand.sacrifice
-  );
+
+function getCoconutOctopusFormDefinitionForPreview(formId) {
+  return animals["coconut-octopus"]?.octopusForms?.[formId] || null;
 }
 
-function getCurrentPlayerLarvae() {
-  if (!currentBattle) return 0;
+function getCoconutOctopusPreviewStatsHtml(form) {
+  if (!form?.stats) return "";
 
-  const { player } = getBattleFighters();
-
-  return player?.darwinsLarvae || 0;
-}
-
-function renderLarvalCommandModal() {
-  const larvae = getCurrentPlayerLarvae();
-  const totalUsed = getLarvalDraftTotal();
-  const conserved = Math.max(0, larvae - totalUsed);
-
-  const availableEl = document.getElementById("larvalAvailableText");
-  const attackValueEl = document.getElementById("larvalAttackValue");
-  const defenseValueEl = document.getElementById("larvalDefenseValue");
-  const sacrificeValueEl = document.getElementById("larvalSacrificeValue");
-  const conserveValueEl = document.getElementById("larvalConserveValue");
-
-  if (
-    !availableEl ||
-    !attackValueEl ||
-    !defenseValueEl ||
-    !sacrificeValueEl ||
-    !conserveValueEl
-  ) {
-    return;
-  }
-
-  availableEl.textContent = "Larvae available: " + larvae + "/5";
-
-  attackValueEl.textContent = larvalDraftCommand.attack;
-  defenseValueEl.textContent = larvalDraftCommand.defense;
-  sacrificeValueEl.textContent = larvalDraftCommand.sacrifice;
-  conserveValueEl.textContent = conserved;
-
-  const attackMinus = document.getElementById("larvalAttackMinus");
-  const attackPlus = document.getElementById("larvalAttackPlus");
-  const defenseMinus = document.getElementById("larvalDefenseMinus");
-  const defensePlus = document.getElementById("larvalDefensePlus");
-  const sacrificeMinus = document.getElementById("larvalSacrificeMinus");
-  const sacrificePlus = document.getElementById("larvalSacrificePlus");
-
-  if (attackMinus) attackMinus.disabled = larvalDraftCommand.attack <= 0;
-  if (defenseMinus) defenseMinus.disabled = larvalDraftCommand.defense <= 0;
-  if (sacrificeMinus) sacrificeMinus.disabled = larvalDraftCommand.sacrifice <= 0;
-
-  if (attackPlus) attackPlus.disabled = totalUsed >= larvae;
-  if (defensePlus) {
-    defensePlus.disabled =
-      totalUsed >= larvae || larvalDraftCommand.defense >= 2;
-  }
-  if (sacrificePlus) sacrificePlus.disabled = totalUsed >= larvae;
-}
-
-async function openLarvalCommandPrompt() {
-  if (
-    !currentBattle ||
-    currentBattle.finished ||
-    isAnimatingTurn ||
-    isWaitingForOpponentAction
-  ) {
-    return;
-  }
-
-  const { player } = getBattleFighters();
-
-  if (!player || player.passive?.id !== "larval-gestation") {
-    alert("Only Darwin's Frog can command larvae.");
-    return;
-  }
-
-  const larvae = player.darwinsLarvae || 0;
-
-  if (larvae <= 0) {
-    alert("No larvae available.");
-    return;
-  }
-
-  larvalDraftCommand = player.darwinsLarvalCommand
-    ? {
-        attack: player.darwinsLarvalCommand.attack || 0,
-        defense: player.darwinsLarvalCommand.defense || 0,
-        sacrifice: player.darwinsLarvalCommand.sacrifice || 0
-      }
-    : {
-        attack: 0,
-        defense: 0,
-        sacrifice: 0
-      };
-
-  const modal = document.getElementById("larvalCommandModal");
-  if (!modal) return;
-
-  modal.style.display = "flex";
-
-  renderLarvalCommandModal();
-}
-
-function closeLarvalCommandModal() {
-  const modal = document.getElementById("larvalCommandModal");
-  if (!modal) return;
-
-  modal.style.display = "none";
-}
-
-function adjustLarvalDraft(type, delta) {
-  const larvae = getCurrentPlayerLarvae();
-  const currentValue = larvalDraftCommand[type] || 0;
-
-  if (delta > 0 && getLarvalDraftTotal() >= larvae) {
-    return;
-  }
-
-  if (type === "defense" && delta > 0 && currentValue >= 2) {
-    return;
-  }
-
-  larvalDraftCommand[type] = Math.max(0, currentValue + delta);
-
-  renderLarvalCommandModal();
-}
-
-function clearLarvalDraft() {
-  larvalDraftCommand = {
-    attack: 0,
-    defense: 0,
-    sacrifice: 0
-  };
-
-  renderLarvalCommandModal();
-}
-
-function confirmLarvalCommandModal() {
-  if (!currentBattle || currentBattle.finished) return;
-
-  const { player } = getBattleFighters();
-  const larvae = player.darwinsLarvae || 0;
-  const totalUsed = getLarvalDraftTotal();
-
-  if (totalUsed > larvae) {
-    alert("You assigned more larvae than available.");
-    return;
-  }
-
-  if (totalUsed <= 0) {
-    player.darwinsLarvalCommand = null;
-
-    lastTurnOutcome = "Larvae Conserved";
-    lastTurnSummaryLines = [
-      "Larval Command cleared.",
-      "All larvae will be conserved.",
-      "Choose a main action to resolve the turn."
-    ];
-
-    closeLarvalCommandModal();
-    renderBattle();
-    return;
-  }
-
-  player.darwinsLarvalCommand = {
-    attack: larvalDraftCommand.attack,
-    defense: larvalDraftCommand.defense,
-    sacrifice: larvalDraftCommand.sacrifice
-  };
-
-  const conserved = larvae - totalUsed;
-
-  lastTurnOutcome = "Larvae Prepared";
-  lastTurnSummaryLines = [
-    "Larval Command prepared.",
-    "Attack larvae: " + larvalDraftCommand.attack,
-    "Defense larvae: " + larvalDraftCommand.defense,
-    "Sacrifice larvae: " + larvalDraftCommand.sacrifice,
-    "Conserved larvae: " + conserved,
-    "Choose a main action to resolve the turn."
+  const rows = [
+    ["Life", form.stats.life],
+    ["Attack", form.stats.attack],
+    ["Defense", form.stats.defense],
+    ["Stamina", form.stats.resistance],
+    ["Speed", form.stats.speed],
+    ["Technique", form.stats.technique],
+    ["Agility", form.stats.agility],
+    ["Explosive", form.stats.explosiveness]
   ];
 
-  closeLarvalCommandModal();
-  renderBattle();
+  return rows
+    .map(([label, value]) => `<div class="octopus-preview-stat">${label}<strong>${value}</strong></div>`)
+    .join("");
 }
-
-function bindLarvalCommandModalListeners() {
-  const closeBtn = document.getElementById("larvalCommandCloseBtn");
-  const attackMinus = document.getElementById("larvalAttackMinus");
-  const attackPlus = document.getElementById("larvalAttackPlus");
-  const defenseMinus = document.getElementById("larvalDefenseMinus");
-  const defensePlus = document.getElementById("larvalDefensePlus");
-  const sacrificeMinus = document.getElementById("larvalSacrificeMinus");
-  const sacrificePlus = document.getElementById("larvalSacrificePlus");
-  const clearBtn = document.getElementById("larvalClearBtn");
-  const confirmBtn = document.getElementById("larvalConfirmBtn");
-
-  if (closeBtn) closeBtn.addEventListener("click", closeLarvalCommandModal);
-
-  if (attackMinus) attackMinus.addEventListener("click", () => adjustLarvalDraft("attack", -1));
-  if (attackPlus) attackPlus.addEventListener("click", () => adjustLarvalDraft("attack", 1));
-
-  if (defenseMinus) defenseMinus.addEventListener("click", () => adjustLarvalDraft("defense", -1));
-  if (defensePlus) defensePlus.addEventListener("click", () => adjustLarvalDraft("defense", 1));
-
-  if (sacrificeMinus) sacrificeMinus.addEventListener("click", () => adjustLarvalDraft("sacrifice", -1));
-  if (sacrificePlus) sacrificePlus.addEventListener("click", () => adjustLarvalDraft("sacrifice", 1));
-
-  if (clearBtn) clearBtn.addEventListener("click", clearLarvalDraft);
-  if (confirmBtn) confirmBtn.addEventListener("click", confirmLarvalCommandModal);
-}
-
-
 
 function renderCoconutOctopusFormPreview(player) {
   const panel = document.getElementById("octopusFormPreviewPanel");
@@ -980,107 +1256,202 @@ function renderCoconutOctopusFormPreview(player) {
   const statsEl = document.getElementById("octopusFormPreviewStats");
   const textEl = document.getElementById("octopusFormPreviewText");
   const confirmBtn = document.getElementById("octopusConfirmFormBtn");
+
   if (!panel || !titleEl || !statsEl || !textEl || !confirmBtn) return;
-  if (!player || player.id !== "coconut-octopus" || !pendingOctopusFormPreview) { panel.style.display = "none"; return; }
+
+  if (!player || player.id !== "coconut-octopus" || !pendingOctopusFormPreview) {
+    panel.style.display = "none";
+    return;
+  }
+
   const form = getCoconutOctopusFormDefinitionForPreview(pendingOctopusFormPreview);
-  if (!form) { panel.style.display = "none"; return; }
+  if (!form) {
+    panel.style.display = "none";
+    return;
+  }
+
   const currentForm = player.octopusForm || "base";
   const charges = player.octopusAdaptationCharges ?? 0;
   const isCurrent = pendingOctopusFormPreview === currentForm;
   const canPay = Boolean(player.octopusFreeTransformationAvailable) || charges > 0;
-  const blocked = !currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction || isCurrent || !canPay;
+  const blocked =
+    !currentBattle ||
+    currentBattle.finished ||
+    isAnimatingTurn ||
+    isWaitingForOpponentAction ||
+    isMultiplayer ||
+    isCurrent ||
+    !canPay;
+
   panel.style.display = "block";
   titleEl.textContent = form.name + (isCurrent ? " — Current Form" : " — Preview");
   statsEl.innerHTML = getCoconutOctopusPreviewStatsHtml(form);
-  textEl.textContent = "Passive — " + (form.passive?.name || "None") + "\n" + (form.passive?.description || "No passive.") + "\n\nSuper — " + (form.special?.name || "None") + "\n" + (form.special?.description || "No super.");
-  confirmBtn.textContent = isCurrent ? "Already in this form" : player.octopusFreeTransformationAvailable ? "Confirm Free Transformation" : "Confirm Form Change (-1 charge)";
+  textEl.textContent =
+    "Passive — " +
+    (form.passive?.name || "None") +
+    "\n" +
+    (form.passive?.description || "No passive.") +
+    "\n\nSuper — " +
+    (form.special?.name || "None") +
+    "\n" +
+    "Charge: " +
+    getCoconutOctopusFormCharge(player, pendingOctopusFormPreview) +
+    "/" +
+    getCoconutOctopusFormChargeMax(pendingOctopusFormPreview) +
+    "\n" +
+    (form.special?.description || "No super.");
+
+  if (!currentBattle) {
+    confirmBtn.textContent = "Preview only — start battle to transform";
+  } else if (isCurrent) {
+    confirmBtn.textContent = "Already in this form";
+  } else if (player.octopusFreeTransformationAvailable) {
+    confirmBtn.textContent = "Confirm Free Transformation";
+  } else {
+    confirmBtn.textContent = "Confirm Form Change (-1 charge)";
+  }
+
   confirmBtn.disabled = blocked;
 }
 
 function previewPlayerCoconutOctopusForm(formId) {
-  if (!currentBattle) return;
-  const { player } = getBattleFighters();
+  const player = currentBattle ? getBattleFighters().player : preBattlePreviewPlayer;
+
   if (!isCoconutOctopusFighter(player)) return;
+
   pendingOctopusFormPreview = formId;
   updateCoconutOctopusPanel(player);
 }
 
 function clearPlayerCoconutOctopusPreview() {
   pendingOctopusFormPreview = null;
-  const { player } = getBattleFighters();
+  const player = currentBattle ? getBattleFighters().player : preBattlePreviewPlayer;
   updateCoconutOctopusPanel(player);
 }
 
 function updateCoconutOctopusPanel(player) {
   const panel = document.getElementById("octopusAdaptationPanel");
   const statusEl = document.getElementById("octopusAdaptationStatus");
+
   if (!panel || !statusEl) return;
-  if (!player || player.id !== "coconut-octopus") { panel.style.display = "none"; pendingOctopusFormPreview = null; return; }
+
+  if (!player || player.id !== "coconut-octopus") {
+    panel.style.display = "none";
+    return;
+  }
+
   panel.style.display = "block";
+
   const form = player.octopusForm || "base";
   const charges = player.octopusAdaptationCharges ?? 0;
   const freeText = player.octopusFreeTransformationAvailable ? " · first transformation free" : "";
-  statusEl.textContent = getCoconutOctopusFormText(player) + " · charges " + charges + "/8" + freeText;
+
+  statusEl.textContent =
+    getCoconutOctopusFormText(player) +
+    " · adaptation " +
+    charges +
+    "/8" +
+    freeText +
+    "\nSpecial charges: " +
+    getCoconutOctopusChargeLine(player);
+
+  if (pendingOctopusFormPreview && !getCoconutOctopusFormDefinitionForPreview(pendingOctopusFormPreview)) {
+    pendingOctopusFormPreview = null;
+  }
+
   document.querySelectorAll(".octopus-form-btn").forEach((btn) => {
     const targetForm = btn.dataset.octopusForm;
-    btn.classList.toggle("active", targetForm === form);
-    btn.classList.toggle("preview", targetForm === pendingOctopusFormPreview && targetForm !== form);
-    btn.disabled = !currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction;
+    const isCurrent = targetForm === form;
+    const isPreview = targetForm === pendingOctopusFormPreview;
+
+    btn.classList.toggle("active", isCurrent);
+    btn.classList.toggle("preview", isPreview && !isCurrent);
+
+    btn.disabled = currentBattle ? currentBattle.finished : false;
   });
+
   renderCoconutOctopusFormPreview(player);
 }
 
 function transformPlayerCoconutOctopus(formId) {
   if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return;
+
   const { player } = getBattleFighters();
-  if (!isCoconutOctopusFighter(player)) return;
+
   if (isMultiplayer) {
     if (!socket || !multiplayerRoomCode) return;
-    socket.emit("transformCoconutOctopusOnlineBattle", { roomCode: multiplayerRoomCode, formId });
-    pendingOctopusFormPreview = null;
-    lastTurnOutcome = "Adaptation";
-    lastTurnSummaryLines = ["Adaptation request sent."];
+    pendingMultiplayerOctopusFormId = formId;
+    socket.emit("transformCoconutOctopusMultiplayer", {
+      roomCode: multiplayerRoomCode,
+      formId
+    });
+    lastTurnOutcome = "Adaptation Sent";
+    lastTurnSummaryLines = ["Coconut Octopus adaptation sent. Waiting for server sync..."];
     renderBattle();
     return;
   }
+
+
+  if (!isCoconutOctopusFighter(player)) return;
+
   const result = transformCoconutOctopus(player, formId, currentBattle);
-  if (result.ok) pendingOctopusFormPreview = null;
+
+  if (result.ok) {
+    pendingOctopusFormPreview = null;
+  }
+
   lastTurnOutcome = result.ok ? "Adaptation" : "Adaptation Failed";
   lastTurnSummaryLines = [result.message];
+
   renderBattle();
 }
 
 function playerNeedsPerfectAdaptationChoice(action) {
   if (action !== "special") return false;
-  if (pendingOctopusSpecialChoiceConfirmed) return false;
   if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return false;
+
   const { player } = getBattleFighters();
+
   return isCoconutOctopusFighter(player) && (player.octopusForm || "base") === "base";
 }
 
 function openCoconutOctopusPerfectAdaptationModal() {
   if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return;
+
   const { player } = getBattleFighters();
-  if (!isCoconutOctopusFighter(player) || (player.octopusForm || "base") !== "base") return;
+
+  if (!isCoconutOctopusFighter(player) || (player.octopusForm || "base") !== "base") {
+    return;
+  }
+
   const modal = document.getElementById("octopusPerfectAdaptationModal");
-  if (modal) modal.style.display = "flex";
+  if (!modal) return;
+
+  modal.style.display = "flex";
 }
 
 function closeCoconutOctopusPerfectAdaptationModal() {
   const modal = document.getElementById("octopusPerfectAdaptationModal");
-  if (modal) modal.style.display = "none";
+  if (!modal) return;
+
+  modal.style.display = "none";
 }
 
 async function chooseCoconutOctopusPerfectAdaptationAndAttack(choice) {
   if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return;
+
   const { player } = getBattleFighters();
-  if (!isCoconutOctopusFighter(player) || (player.octopusForm || "base") !== "base") return;
-  if (!setCoconutOctopusPerfectAdaptationChoice(player, choice)) return;
+
+  if (!isCoconutOctopusFighter(player)) return;
+  if ((player.octopusForm || "base") !== "base") return;
+
+  const ok = setCoconutOctopusPerfectAdaptationChoice(player, choice);
+  if (!ok) return;
+
   closeCoconutOctopusPerfectAdaptationModal();
-  pendingOctopusSpecialChoiceConfirmed = true;
   await playTurn("special");
-  pendingOctopusSpecialChoiceConfirmed = false;
 }
+
 
 function updateStaticActionButtons() {
   document.getElementById("btn-normal-title").textContent = ACTION_INFO.normal.title;
@@ -1103,30 +1474,54 @@ function updateActionButtons() {
   const { player } = getBattleFighters();
   const buttons = document.querySelectorAll(".action-btn");
 
+  if (!currentBattle) {
+    const previewPlayer = preBattlePreviewPlayer;
+
+    buttons.forEach((btn) => {
+      const action = btn.dataset.action;
+
+      if (btn.id === "slothEcosystemBtn") {
+        btn.disabled = !isThreeToedSlothFighter(previewPlayer);
+        return;
+      }
+
+      if (action === "larval-command") {
+        btn.disabled = !(previewPlayer?.passive?.id === "larval-gestation");
+        return;
+      }
+
+      btn.disabled = true;
+    });
+
+    document.querySelectorAll(".octopus-form-btn").forEach((btn) => {
+      btn.disabled = !isCoconutOctopusFighter(previewPlayer);
+    });
+
+    return;
+  }
+
   if (
-    !currentBattle ||
     !player ||
     currentBattle.finished ||
     isAnimatingTurn ||
     isWaitingForOpponentAction
   ) {
     buttons.forEach((btn) => (btn.disabled = true));
+    document.querySelectorAll(".octopus-form-btn").forEach((btn) => (btn.disabled = true));
     return;
   }
 
   buttons.forEach((btn) => {
     const action = btn.dataset.action;
 
-    if (!action) {
-      btn.disabled = true;
+    if (btn.id === "slothEcosystemBtn") {
+      btn.disabled = !isThreeToedSlothFighter(player);
       return;
     }
 
     if (action === "larval-command") {
       const larvae = player.darwinsLarvae || 0;
-      const isDarwinsFrog = player.passive?.id === "larval-gestation";
-
-      btn.disabled = !(isDarwinsFrog && larvae > 0);
+      btn.disabled = !(player.passive?.id === "larval-gestation" && larvae > 0);
       return;
     }
 
@@ -1144,10 +1539,17 @@ function renderBattle() {
   renderFighter("enemy", enemy);
   renderSummary();
   renderLog();
+
   updateStaticActionButtons();
   updateSpecialButton(player);
-  updateLarvalCommandButton(player);
+
+  if (typeof updateLarvalCommandButton === "function") {
+    updateLarvalCommandButton(player);
+  }
+
+  updateSlothEcosystemButton(player);
   updateCoconutOctopusPanel(player);
+
   updateActionButtons();
 
   document.getElementById("playerTooltip").innerHTML = formatTooltip(player);
@@ -1174,8 +1576,10 @@ function renderBattle() {
 
 function chooseEnemyAction(fighter) {
   if (isCoconutOctopusFighter(fighter) && (fighter.octopusForm || "base") === "base") {
-    setCoconutOctopusPerfectAdaptationChoice(fighter, randomChoice(["tentacle-storm", "coconut-fortress", "ink-sea"]));
+    const choices = ["tentacle-storm", "coconut-fortress", "ink-sea"];
+    setCoconutOctopusPerfectAdaptationChoice(fighter, randomChoice(choices));
   }
+
   const possible = ACTION_POOL.filter((action) =>
     canUseAction(fighter, action, currentBattle)
   );
@@ -1184,9 +1588,16 @@ function chooseEnemyAction(fighter) {
     return "concentration";
   }
 
+  const specialCharge = isCoconutOctopusFighter(fighter)
+    ? getCoconutOctopusCurrentCharge(fighter)
+    : fighter.specialCharge ?? 0;
+  const specialMax = isCoconutOctopusFighter(fighter)
+    ? getCoconutOctopusCurrentChargeMax(fighter)
+    : fighter.special?.chargeHits ?? 0;
+
   if (
     fighter.special &&
-    fighter.specialCharge >= fighter.special.chargeHits &&
+    specialCharge >= specialMax &&
     canUseAction(fighter, "special", currentBattle)
   ) {
     return "special";
@@ -1212,25 +1623,29 @@ function buildTurnSummary(newLines) {
     filtered.push(line);
 
     const specialUseMatch =
-      line.match(/^(.+?) uses Lethal Bite/) ||
-      line.match(/^(.+?) uses Arctic Storm/) ||
-      line.match(/^(.+?) uses Illusory Dance/) ||
-      line.match(/^(.+?) uses Ballistic Strike/) ||
-      line.match(/^(.+?) uses Dung Throw/) ||
-      line.match(/^(.+?) uses Death Roll/) ||
-      line.match(/^(.+?) uses Total Regeneration/) ||
-      line.match(/^(.+?) uses Nervous Disruption/) ||
-      line.match(/^(.+?) uses Deadly Dive/) ||
-      line.match(/^(.+?) uses Phantom Current/) ||
-      line.match(/^(.+?) uses Looting Burst/) ||
-      line.match(/^(.+?) uses Refresh/) ||
-      line.match(/^(.+?) uses Mutilation/) ||
-      line.match(/^(.+?) uses Anubis' Staff/) ||
-      line.match(/^(.+?) uses Ancestral Retreat/) ||
-      line.match(/^(.+?) uses Darwinian Expulsion/) ||
-      line.match(/^(.+?) uses Neurotoxic Injection \(Tetrodotoxin\)/) ||
-      line.match(/^(.+?) uses Overinflation/) ||
-      line.match(/^(.+?) explodes/);
+      line.match(/^(.+?) uses Lethal Bite\b/) ||
+      line.match(/^(.+?) uses Arctic Storm\b/) ||
+      line.match(/^(.+?) uses Illusory Dance\b/) ||
+      line.match(/^(.+?) uses Ballistic Strike\b/) ||
+      line.match(/^(.+?) uses Dung Throw\b/) ||
+      line.match(/^(.+?) uses Death Roll\b/) ||
+      line.match(/^(.+?) uses Total Regeneration\b/) ||
+      line.match(/^(.+?) uses Nervous Disruption\b/) ||
+      line.match(/^(.+?) uses Deadly Dive\b/) ||
+      line.match(/^(.+?) uses Phantom Current\b/) ||
+      line.match(/^(.+?) uses Looting Burst\b/) ||
+      line.match(/^(.+?) uses Refresh\b/) ||
+      line.match(/^(.+?) uses Mutilation\b/) ||
+      line.match(/^(.+?) uses Anubis' Staff\b/) ||
+      line.match(/^(.+?) uses Ancestral Retreat\b/) ||
+      line.match(/^(.+?) uses Darwinian Expulsion\b/) ||
+      line.match(/^(.+?) uses Perfect Adaptation\b/) ||
+      line.match(/^(.+?) uses Tentacle Storm\b/) ||
+      line.match(/^(.+?) uses Coconut Fortress\b/) ||
+      line.match(/^(.+?) uses Ink Sea\b/) ||
+      line.match(/^(.+?) uses Neurotoxic Injection \(Tetrodotoxin\)\b/) ||
+      line.match(/^(.+?) uses Overinflation\b/) ||
+      line.match(/^(.+?) explodes\b/);
 
     if (specialUseMatch) {
       fightersWhoUsedSpecial.add(specialUseMatch[1]);
@@ -1344,7 +1759,7 @@ function buildTurnSummary(newLines) {
       line.includes("Larval Sacrifice") ||
       line.includes("Larval Defense") ||
       line.includes("Larval Attack") ||
-      (line.includes("conserves") && line.includes("larva")) ||
+      line.includes("conserves") && line.includes("larva") ||
       line.includes("larvae") ||
       line.includes("larva") ||
       line.includes("overflowing larva") ||
@@ -1372,6 +1787,15 @@ function deriveTurnOutcome(summaryLines) {
 
   if (joined.includes("has been defeated")) return "Defeat";
   if (joined.includes("(CRITICAL)")) return "Critical Hit";
+  if (joined.includes("Perfect Adaptation")) return "Special Triggered";
+  if (joined.includes("Tentacle Storm")) return "Special Triggered";
+  if (joined.includes("Coconut Fortress")) return "Special Triggered";
+  if (joined.includes("Ink Sea")) return "Special Triggered";
+  if (joined.includes("Predatory Pressure")) return "Passive Triggered";
+  if (joined.includes("Perfect Camouflage")) return "Passive Triggered";
+  if (joined.includes("Microecosystem Ancestral")) return "Special Triggered";
+  if (joined.includes("Ancestral Explosive Strike")) return "Special Triggered";
+  if (joined.includes("Colony")) return "Passive Triggered";
   if (joined.includes("Mutilation")) return "Special Triggered";
   if (joined.includes("Neurotoxic Injection (Tetrodotoxin)")) return "Special Triggered";
   if (joined.includes("Overinflation")) return "Special Triggered";
@@ -1382,11 +1806,11 @@ function deriveTurnOutcome(summaryLines) {
   if (joined.includes("Deadly Dive")) return "Special Triggered";
   if (joined.includes("Nervous Disruption")) return "Special Triggered";
   if (joined.includes("Total Regeneration")) return "Special Triggered";
+  if (joined.includes("Death Roll")) return "Special Triggered";
   if (joined.includes("Ancestral Retreat")) return "Special Triggered";
   if (joined.includes("Anubis' Staff")) return "Special Triggered";
   if (joined.includes("Thoth's Mirage")) return "Passive Triggered";
   if (joined.includes("Oasis")) return "Oasis Active";
-  if (joined.includes("Death Roll")) return "Special Triggered";
   if (joined.includes("Dung Throw")) return "Special Triggered";
   if (joined.includes("Ballistic Strike")) return "Special Triggered";
   if (joined.includes("Illusory Dance")) return "Special Triggered";
@@ -1401,13 +1825,7 @@ function deriveTurnOutcome(summaryLines) {
   if (joined.includes("activates Suffocating Humidity")) return "Humidity Activated";
   if (joined.includes("cannot use")) return "Action Blocked";
   if (joined.includes("Decapitation")) return "Execution";
-  if (joined.includes("Raptorial Chain")) return "Special Triggered";
-  if (joined.includes("Darwinian Expulsion")) return "Special Triggered";
-  if (joined.includes("Larval Command")) return "Larvae Prepared";
-  if (joined.includes("Larval Attack")) return "Larval Attack";
-  if (joined.includes("Larval Defense")) return "Larval Defense";
-  if (joined.includes("Larval Sacrifice")) return "Larval Sacrifice";
-  if (joined.includes("larva") || joined.includes("larvae")) return "Larval System";
+  if (joined.includes("Raptorial Chain")) return "Special Triggered"; 
 
   return "Resolved";
 }
@@ -1608,6 +2026,7 @@ function startBattle() {
   summaryAnimationToken += 1;
   isAnimatingTurn = false;
   isWaitingForOpponentAction = false;
+  pendingOctopusFormPreview = null;
 
   if (isMultiplayer) {
     if (!multiplayerRoomCode || !socket) {
@@ -1630,6 +2049,7 @@ function startBattle() {
     return;
   }
 
+  preBattlePreviewPlayer = null;
   currentBattle = createBattle(playerId, enemyId);
 
   playerFlipped = false;
@@ -1647,9 +2067,58 @@ function startBattle() {
   renderBattle();
 }
 
+function createPreviewFighterState(fighterId) {
+  const animal = animals[fighterId];
+  if (!animal) return null;
+
+  const maxHp = animal.stats.life * 10;
+  const maxStamina = animal.stats.resistance * 4;
+
+  return {
+    id: animal.id,
+    name: animal.name,
+    category: animal.category,
+    hp: maxHp,
+    maxHp,
+    stamina: maxStamina,
+    maxStamina,
+    stats: { ...animal.stats },
+    biomes: animal.biomes ? { ...animal.biomes } : null,
+    passive: animal.passive ?? null,
+    special: animal.special ?? null,
+    effects: [],
+    alive: true,
+    specialCharge: 0,
+
+    darwinsLarvae: animal.id === "darwins-frog" ? 0 : 0,
+    darwinsMaxLarvae: animal.id === "darwins-frog" ? 5 : 5,
+
+    octopusForm: animal.id === "coconut-octopus" ? "base" : null,
+    octopusAdaptationCharges: animal.id === "coconut-octopus" ? 8 : 0,
+    octopusFreeTransformationAvailable: animal.id === "coconut-octopus",
+    octopusPredatoryPressureStacks: 0,
+    octopusPerfectAdaptationChoice: "tentacle-storm",
+    octopusSpecialCharges: animal.id === "coconut-octopus"
+      ? { base: 0, offensive: 0, defensive: 0, evasive: 0 }
+      : null,
+    octopusSpecialReadyAnnounced: animal.id === "coconut-octopus"
+      ? { base: false, offensive: false, defensive: false, evasive: false }
+      : null,
+    coconutFortressActive: false,
+
+    slothPreviewMode: animal.id === "three-toed-sloth",
+    slothActiveColonies: animal.id === "three-toed-sloth" ? SLOTH_COLONIES.map((colony) => colony.id) : null,
+    slothBacterialChain: 0,
+    slothMicroecosystemActive: false,
+    slothMicroecosystemTurns: 0
+  };
+}
+
 function renderFighterPreview(prefix, fighterId) {
   const animal = animals[fighterId];
   if (!animal) return;
+
+  const previewFighter = createPreviewFighterState(fighterId);
 
   document.getElementById(`${prefix}Name`).textContent = animal.name;
 
@@ -1667,6 +2136,24 @@ function renderFighterPreview(prefix, fighterId) {
   document.getElementById(`${prefix}SpecialBar`).style.width = "0%";
 
   loadFighterImage(document.getElementById(`${prefix}Image`), fighterId);
+
+  const extraResourceEl = document.getElementById(`${prefix}ExtraResource`);
+  if (extraResourceEl) {
+    if (previewFighter && isThreeToedSlothFighter(previewFighter)) {
+      extraResourceEl.innerHTML = renderSlothEcosystemMiniPanel(previewFighter);
+      extraResourceEl.style.display = "block";
+    } else {
+      const extraResourceText = previewFighter ? getExtraResourceText(previewFighter) : "";
+
+      if (extraResourceText) {
+        extraResourceEl.textContent = extraResourceText;
+        extraResourceEl.style.display = "block";
+      } else {
+        extraResourceEl.textContent = "";
+        extraResourceEl.style.display = "none";
+      }
+    }
+  }
 
   const effectsEl = document.getElementById(`${prefix}Effects`);
   effectsEl.innerHTML = "";
@@ -1694,6 +2181,10 @@ function renderSelectionPreview() {
 
   playerId = playerSelect.value;
   enemyId = enemySelect.value;
+
+  const previewPlayer = createPreviewFighterState(playerId);
+  const previewEnemy = createPreviewFighterState(enemyId);
+  preBattlePreviewPlayer = previewPlayer;
 
   renderFighterPreview("player", playerId);
   renderFighterPreview("enemy", enemyId);
@@ -1736,10 +2227,20 @@ function renderSelectionPreview() {
     `Biomes: favorable ${enemyAnimal.biomes?.favorable?.join(", ") || "none"} | neutral ${enemyAnimal.biomes?.neutral?.join(", ") || "none"} | unfavorable ${enemyAnimal.biomes?.unfavorable?.join(", ") || "none"}`
   ];
 
-  updateSpecialButton({
+  updateSpecialButton(previewPlayer || {
     special: playerAnimal.special,
     specialCharge: 0
   });
+
+  updateLarvalCommandButton(previewPlayer);
+  updateSlothEcosystemButton(previewPlayer);
+  updateCoconutOctopusPanel(previewPlayer);
+  updateActionButtons();
+
+  const slothBtn = document.getElementById("slothEcosystemBtn");
+  if (slothBtn && isThreeToedSlothFighter(previewPlayer)) {
+    slothBtn.disabled = false;
+  }
 
   renderSummary();
 }
@@ -1749,34 +2250,44 @@ async function resolveLocalTurn(playerAction) {
 
   isAnimatingTurn = true;
 
-  const { player, enemy } = getBattleFighters();
-  const enemyAction = chooseEnemyAction(enemy);
-  const oldLogLength = currentBattle.log.length;
+  try {
+    const { player, enemy } = getBattleFighters();
+    const enemyAction = chooseEnemyAction(enemy);
+    const oldLogLength = currentBattle.log.length;
 
-  lastPlayerAction = prettyActionLabel(playerAction, player);
-  lastEnemyAction = prettyActionLabel(enemyAction, enemy);
+    lastPlayerAction = prettyActionLabel(playerAction, player);
+    lastEnemyAction = prettyActionLabel(enemyAction, enemy);
 
-  if (currentBattle.fighterA.id === player.id) {
-    resolveTurn(currentBattle, playerAction, enemyAction);
-  } else {
-    resolveTurn(currentBattle, enemyAction, playerAction);
+    if (currentBattle.fighterA.id === player.id) {
+      resolveTurn(currentBattle, playerAction, enemyAction);
+    } else {
+      resolveTurn(currentBattle, enemyAction, playerAction);
+    }
+
+    const newLines = currentBattle.log.slice(oldLogLength);
+    const summaryLines = buildTurnSummary(newLines);
+
+    lastTurnSummaryLines = [""];
+    lastTurnOutcome = deriveTurnOutcome(summaryLines);
+
+    renderBattle();
+
+    await runShakeSequence(newLines, player, enemy);
+    await typeTurnSummary(summaryLines);
+
+    lastTurnSummaryLines = summaryLines;
+  } catch (error) {
+    console.error("Turn resolution failed:", error);
+
+    lastTurnSummaryLines = [
+      "Turn resolution failed. Check the console for the exact error."
+    ];
+
+    lastTurnOutcome = "Error";
+  } finally {
+    isAnimatingTurn = false;
+    renderBattle();
   }
-
-  const newLines = currentBattle.log.slice(oldLogLength);
-  const summaryLines = buildTurnSummary(newLines);
-
-  lastTurnSummaryLines = [""];
-  lastTurnOutcome = deriveTurnOutcome(summaryLines);
-
-  renderBattle();
-
-  await runShakeSequence(newLines, player, enemy);
-  await typeTurnSummary(summaryLines);
-
-  lastTurnSummaryLines = summaryLines;
-  isAnimatingTurn = false;
-
-  renderBattle();
 }
 
 async function resolveMultiplayerTurnFromServer(data) {
@@ -1815,12 +2326,212 @@ async function resolveMultiplayerTurnFromServer(data) {
   renderBattle();
 }
 
-async function playTurn(playerAction) {
-  if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return;
-  if (playerNeedsPerfectAdaptationChoice(playerAction)) {
-    openCoconutOctopusPerfectAdaptationModal();
+let larvalDraftCommand = {
+  attack: 0,
+  defense: 0,
+  sacrifice: 0
+};
+
+let larvalPreviewMode = false;
+
+function getLarvalDraftTotal() {
+  return (
+    larvalDraftCommand.attack +
+    larvalDraftCommand.defense +
+    larvalDraftCommand.sacrifice
+  );
+}
+
+function getCurrentPlayerLarvae() {
+  if (!currentBattle) {
+    return preBattlePreviewPlayer?.passive?.id === "larval-gestation"
+      ? preBattlePreviewPlayer.darwinsMaxLarvae || 5
+      : 0;
+  }
+
+  const { player } = getBattleFighters();
+
+  return player.darwinsLarvae || 0;
+}
+
+function renderLarvalCommandModal() {
+  const larvae = getCurrentPlayerLarvae();
+  const totalUsed = getLarvalDraftTotal();
+  const conserved = Math.max(0, larvae - totalUsed);
+
+  document.getElementById("larvalAvailableText").textContent =
+    "Larvae available: " + larvae + "/5";
+
+  document.getElementById("larvalAttackValue").textContent = larvalDraftCommand.attack;
+  document.getElementById("larvalDefenseValue").textContent = larvalDraftCommand.defense;
+  document.getElementById("larvalSacrificeValue").textContent = larvalDraftCommand.sacrifice;
+  document.getElementById("larvalConserveValue").textContent = conserved;
+
+  document.getElementById("larvalAttackMinus").disabled = larvalDraftCommand.attack <= 0;
+  document.getElementById("larvalDefenseMinus").disabled = larvalDraftCommand.defense <= 0;
+  document.getElementById("larvalSacrificeMinus").disabled = larvalDraftCommand.sacrifice <= 0;
+
+  document.getElementById("larvalAttackPlus").disabled = totalUsed >= larvae;
+  document.getElementById("larvalDefensePlus").disabled =
+    totalUsed >= larvae || larvalDraftCommand.defense >= 2;
+  document.getElementById("larvalSacrificePlus").disabled = totalUsed >= larvae;
+
+  const clearBtn = document.getElementById("larvalClearBtn");
+  const confirmBtn = document.getElementById("larvalConfirmBtn");
+
+  if (larvalPreviewMode) {
+    document.getElementById("larvalAvailableText").textContent =
+      "Preview: larvae can be assigned once they exist in battle. Simulate up to " + larvae + "/5.";
+    if (clearBtn) clearBtn.textContent = "Reset Preview";
+    if (confirmBtn) {
+      confirmBtn.textContent = "Preview only";
+      confirmBtn.disabled = true;
+    }
+  } else {
+    if (clearBtn) clearBtn.textContent = "Clear";
+    if (confirmBtn) {
+      confirmBtn.textContent = "Confirm Command";
+      confirmBtn.disabled = false;
+    }
+  }
+}
+
+async function openLarvalCommandPrompt() {
+  if (currentBattle && (currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction)) return;
+
+  const player = currentBattle ? getBattleFighters().player : preBattlePreviewPlayer;
+
+  if (!player || player.passive?.id !== "larval-gestation") {
+    alert("Only Darwin's Frog can command larvae.");
     return;
   }
+
+  if (!currentBattle) {
+    larvalPreviewMode = true;
+    larvalDraftCommand = {
+      attack: 0,
+      defense: 0,
+      sacrifice: 0
+    };
+
+    const modal = document.getElementById("larvalCommandModal");
+    modal.style.display = "flex";
+    renderLarvalCommandModal();
+    return;
+  }
+
+  larvalPreviewMode = false;
+
+  const larvae = player.darwinsLarvae || 0;
+
+  if (larvae <= 0) {
+    alert("No larvae available.");
+    return;
+  }
+
+  larvalDraftCommand = player.darwinsLarvalCommand
+    ? {
+        attack: player.darwinsLarvalCommand.attack || 0,
+        defense: player.darwinsLarvalCommand.defense || 0,
+        sacrifice: player.darwinsLarvalCommand.sacrifice || 0
+      }
+    : {
+        attack: 0,
+        defense: 0,
+        sacrifice: 0
+      };
+
+  const modal = document.getElementById("larvalCommandModal");
+  modal.style.display = "flex";
+
+  renderLarvalCommandModal();
+}
+
+function closeLarvalCommandModal() {
+  const modal = document.getElementById("larvalCommandModal");
+  modal.style.display = "none";
+  larvalPreviewMode = false;
+}
+
+function adjustLarvalDraft(type, delta) {
+  const larvae = getCurrentPlayerLarvae();
+  const currentValue = larvalDraftCommand[type] || 0;
+
+  if (delta > 0 && getLarvalDraftTotal() >= larvae) {
+    return;
+  }
+
+  if (type === "defense" && delta > 0 && currentValue >= 2) {
+    return;
+  }
+
+  larvalDraftCommand[type] = Math.max(0, currentValue + delta);
+
+  renderLarvalCommandModal();
+}
+
+function clearLarvalDraft() {
+  larvalDraftCommand = {
+    attack: 0,
+    defense: 0,
+    sacrifice: 0
+  };
+
+  renderLarvalCommandModal();
+}
+
+function confirmLarvalCommandModal() {
+  if (larvalPreviewMode) return;
+  if (!currentBattle || currentBattle.finished) return;
+
+  const { player } = getBattleFighters();
+  const larvae = player.darwinsLarvae || 0;
+  const totalUsed = getLarvalDraftTotal();
+
+  if (totalUsed > larvae) {
+    alert("You assigned more larvae than available.");
+    return;
+  }
+
+  if (totalUsed <= 0) {
+    player.darwinsLarvalCommand = null;
+
+    lastTurnOutcome = "Larvae Conserved";
+    lastTurnSummaryLines = [
+      "Larval Command cleared.",
+      "All larvae will be conserved.",
+      "Choose a main action to resolve the turn."
+    ];
+
+    closeLarvalCommandModal();
+    renderBattle();
+    return;
+  }
+
+  player.darwinsLarvalCommand = {
+    attack: larvalDraftCommand.attack,
+    defense: larvalDraftCommand.defense,
+    sacrifice: larvalDraftCommand.sacrifice
+  };
+
+  const conserved = larvae - totalUsed;
+
+  lastTurnOutcome = "Larvae Prepared";
+  lastTurnSummaryLines = [
+    "Larval Command prepared.",
+    "Attack larvae: " + larvalDraftCommand.attack,
+    "Defense larvae: " + larvalDraftCommand.defense,
+    "Sacrifice larvae: " + larvalDraftCommand.sacrifice,
+    "Conserved larvae: " + conserved,
+    "Choose a main action to resolve the turn."
+  ];
+
+  closeLarvalCommandModal();
+  renderBattle();
+}
+
+async function playTurn(playerAction) {
+  if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return;
 
   if (isMultiplayer) {
     if (!socket || !multiplayerRoomCode) return;
@@ -1836,24 +2547,11 @@ async function playTurn(playerAction) {
 
     renderBattle();
 
-    const larvalCommand = player.darwinsLarvalCommand
-      ? {
-          attack: player.darwinsLarvalCommand.attack || 0,
-          defense: player.darwinsLarvalCommand.defense || 0,
-          sacrifice: player.darwinsLarvalCommand.sacrifice || 0
-        }
-      : null;
-
-    const coconutPerfectAdaptationChoice =
-      isCoconutOctopusFighter(player) && (player.octopusForm || "base") === "base" && playerAction === "special"
-        ? player.octopusPerfectAdaptationChoice || "tentacle-storm"
-        : null;
-
     socket.emit("playerAction", {
       roomCode: multiplayerRoomCode,
       action: playerAction,
-      larvalCommand,
-      coconutPerfectAdaptationChoice
+      larvalCommand: player.darwinsLarvalCommand || null,
+      coconutPerfectAdaptationChoice: isCoconutOctopusFighter(player) ? (player.octopusPerfectAdaptationChoice || null) : null
     });
 
     return;
@@ -1968,9 +2666,13 @@ function setupMultiplayer() {
   });
 
   socket.on("battleUpdated", (data) => {
+    if (!data?.battle) return;
+
     currentBattle = data.battle;
-    lastTurnOutcome = "Adaptation";
-    lastTurnSummaryLines = [data.message || "Coconut Octopus adapted."];
+    pendingMultiplayerOctopusFormId = null;
+    pendingOctopusFormPreview = null;
+    lastTurnOutcome = data.outcome || "Battle Updated";
+    lastTurnSummaryLines = data.message ? [data.message] : ["Battle state updated."];
     isWaitingForOpponentAction = false;
     renderBattle();
   });
@@ -2001,26 +2703,22 @@ function init() {
 
   document.getElementById("startBattleBtn").addEventListener("click", startBattle);
 
-  document.querySelectorAll(".octopus-form-btn").forEach((btn) => {
-    btn.addEventListener("click", () => previewPlayerCoconutOctopusForm(btn.dataset.octopusForm));
-  });
-  document.getElementById("octopusConfirmFormBtn")?.addEventListener("click", () => {
-    if (pendingOctopusFormPreview) transformPlayerCoconutOctopus(pendingOctopusFormPreview);
-  });
-  document.getElementById("octopusCancelPreviewBtn")?.addEventListener("click", clearPlayerCoconutOctopusPreview);
-  document.getElementById("octopusPerfectAdaptationCloseBtn")?.addEventListener("click", closeCoconutOctopusPerfectAdaptationModal);
-  document.querySelectorAll("[data-octopus-perfect-choice]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      await chooseCoconutOctopusPerfectAdaptationAndAttack(btn.dataset.octopusPerfectChoice);
-    });
-  });
-
   document.querySelectorAll(".action-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const action = btn.dataset.action;
 
+      if (btn.id === "slothEcosystemBtn") {
+        openSlothEcosystemModal();
+        return;
+      }
+
       if (action === "larval-command") {
         await openLarvalCommandPrompt();
+        return;
+      }
+
+      if (playerNeedsPerfectAdaptationChoice(action)) {
+        openCoconutOctopusPerfectAdaptationModal();
         return;
       }
 
@@ -2030,7 +2728,44 @@ function init() {
     btn.disabled = true;
   });
 
-  bindLarvalCommandModalListeners();
+  document.querySelectorAll(".octopus-form-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      previewPlayerCoconutOctopusForm(btn.dataset.octopusForm);
+    });
+  });
+
+  document.getElementById("octopusConfirmFormBtn")?.addEventListener("click", () => {
+    if (!pendingOctopusFormPreview) return;
+    transformPlayerCoconutOctopus(pendingOctopusFormPreview);
+  });
+
+  document.getElementById("octopusCancelPreviewBtn")?.addEventListener("click", () => {
+    clearPlayerCoconutOctopusPreview();
+  });
+
+
+  document.getElementById("octopusPerfectAdaptationCloseBtn")?.addEventListener("click", closeCoconutOctopusPerfectAdaptationModal);
+
+  document.querySelectorAll("[data-octopus-perfect-choice]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await chooseCoconutOctopusPerfectAdaptationAndAttack(btn.dataset.octopusPerfectChoice);
+    });
+  });
+
+  document.getElementById("larvalCommandCloseBtn").addEventListener("click", closeLarvalCommandModal);
+  document.getElementById("slothEcosystemCloseBtn")?.addEventListener("click", closeSlothEcosystemModal);
+
+  document.getElementById("larvalAttackMinus").addEventListener("click", () => adjustLarvalDraft("attack", -1));
+  document.getElementById("larvalAttackPlus").addEventListener("click", () => adjustLarvalDraft("attack", 1));
+
+  document.getElementById("larvalDefenseMinus").addEventListener("click", () => adjustLarvalDraft("defense", -1));
+  document.getElementById("larvalDefensePlus").addEventListener("click", () => adjustLarvalDraft("defense", 1));
+
+  document.getElementById("larvalSacrificeMinus").addEventListener("click", () => adjustLarvalDraft("sacrifice", -1));
+  document.getElementById("larvalSacrificePlus").addEventListener("click", () => adjustLarvalDraft("sacrifice", 1));
+
+  document.getElementById("larvalClearBtn").addEventListener("click", clearLarvalDraft);
+  document.getElementById("larvalConfirmBtn").addEventListener("click", confirmLarvalCommandModal);
 
   initFlipButtons();
   updateStaticActionButtons();
