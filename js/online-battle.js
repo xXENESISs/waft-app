@@ -8,6 +8,7 @@ import {
   transformCoconutOctopus,
   setCoconutOctopusPerfectAdaptationChoice
 } from "./battle-engine.js";
+import { chooseAndApplyAIAction } from "./ai-controller.js";
 
 let currentBattle = null;
 let playerId = null;
@@ -247,6 +248,21 @@ function getSlothColonyCurrentEffectText(fighter, colony) {
   return colony.shortEffect;
 }
 
+
+function getSlothMiniStateLabel(active, boosted, dormant) {
+  if (active && boosted) return "AMP";
+  if (active) return "ACTIVE";
+  if (dormant) return "LETARGO";
+  return "DORMANT";
+}
+
+function getSlothFullStateLabel(active, boosted, dormant) {
+  if (active && boosted) return "AMPLIFIED";
+  if (active) return "ACTIVE";
+  if (dormant) return "LETARGO";
+  return "DORMANT";
+}
+
 function renderSlothColonyChip(fighter, colony, compact = false) {
   const active = slothHasColony(fighter, colony.id);
   const dormant = isSlothDormantInCurrentBiome(fighter);
@@ -260,7 +276,7 @@ function renderSlothColonyChip(fighter, colony, compact = false) {
         <span class="sloth-colony-emoji">${colony.emoji}</span>
         <span class="sloth-colony-name">${compact ? colony.label : colony.fullName}</span>
       </div>
-      <div class="sloth-colony-state">${active ? (boosted ? "AMPLIFIED" : "ACTIVE") : dormant ? "LETARGO" : "DORMANT"}</div>
+      <div class="sloth-colony-state">${getSlothMiniStateLabel(active, boosted, dormant)}</div>
     </div>
   `;
 }
@@ -319,7 +335,7 @@ function renderSlothColonyDetailCard(fighter, colony) {
           <span>${colony.emoji}</span>
           <strong>${colony.fullName}</strong>
         </div>
-        <div class="sloth-modal-status">${active ? (boosted ? "AMPLIFIED" : "ACTIVE") : dormant ? "LETARGO" : "DORMANT"}</div>
+        <div class="sloth-modal-status">${getSlothFullStateLabel(active, boosted, dormant)}</div>
       </div>
       <div class="sloth-modal-colony-effect">${colony.detail}</div>
       <div class="sloth-modal-colony-current">${getSlothColonyCurrentEffectText(fighter, colony)}</div>
@@ -1575,35 +1591,8 @@ function renderBattle() {
 }
 
 function chooseEnemyAction(fighter) {
-  if (isCoconutOctopusFighter(fighter) && (fighter.octopusForm || "base") === "base") {
-    const choices = ["tentacle-storm", "coconut-fortress", "ink-sea"];
-    setCoconutOctopusPerfectAdaptationChoice(fighter, randomChoice(choices));
-  }
-
-  const possible = ACTION_POOL.filter((action) =>
-    canUseAction(fighter, action, currentBattle)
-  );
-
-  if (possible.length === 0) {
-    return "concentration";
-  }
-
-  const specialCharge = isCoconutOctopusFighter(fighter)
-    ? getCoconutOctopusCurrentCharge(fighter)
-    : fighter.specialCharge ?? 0;
-  const specialMax = isCoconutOctopusFighter(fighter)
-    ? getCoconutOctopusCurrentChargeMax(fighter)
-    : fighter.special?.chargeHits ?? 0;
-
-  if (
-    fighter.special &&
-    specialCharge >= specialMax &&
-    canUseAction(fighter, "special", currentBattle)
-  ) {
-    return "special";
-  }
-
-  return randomChoice(possible);
+  const decision = chooseAndApplyAIAction(currentBattle, fighter);
+  return decision.action;
 }
 
 function buildTurnSummary(newLines) {

@@ -874,6 +874,11 @@
       line-height: 1;
       font-weight: 950;
       opacity: 0.88;
+      display: block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
       letter-spacing: 0.04em;
     }
 
@@ -1012,7 +1017,10 @@
     }
 
     .sloth-modal-colony-head {
-      align-items: center;
+      display: grid;
+      grid-template-columns: 1fr;
+      align-items: flex-start;
+      gap: 6px;
       margin-bottom: 10px;
     }
 
@@ -1020,6 +1028,7 @@
       display: flex;
       align-items: center;
       gap: 7px;
+      min-width: 0;
       font-size: 13px;
       line-height: 1.2;
       text-transform: uppercase;
@@ -1027,13 +1036,17 @@
     }
 
     .sloth-modal-status {
-      flex: 0 0 auto;
+      width: fit-content;
+      max-width: 100%;
+      align-self: flex-start;
       padding: 4px 7px;
       border-radius: 999px;
       background: rgba(255,255,255,0.10);
       font-size: 8px;
+      line-height: 1;
       font-weight: 950;
       letter-spacing: 0.05em;
+      white-space: nowrap;
     }
 
     .sloth-modal-colony-effect,
@@ -1861,6 +1874,9 @@
       }
 
       .sloth-modal-colony-head {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 4px;
         margin-bottom: 5px;
       }
 
@@ -1917,6 +1933,35 @@
       }
     }
 
+  
+
+    /* Sloth colony badge safety: keep ACTIVE/AMP labels from covering emoji/title. */
+    .sloth-colony-state {
+      display: block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sloth-modal-colony-head {
+      display: grid;
+      grid-template-columns: 1fr;
+      align-items: flex-start;
+      gap: 6px;
+    }
+
+    .sloth-modal-colony-title {
+      min-width: 0;
+    }
+
+    .sloth-modal-status {
+      width: fit-content;
+      max-width: 100%;
+      align-self: flex-start;
+      line-height: 1;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>

@@ -3,6 +3,7 @@ import http from "http";
 import { Server } from "socket.io";
 import { createBattle, resolveTurn, canUseAction, transformCoconutOctopus, setCoconutOctopusPerfectAdaptationChoice } from "./js/battle-engine.js";
 import { animals } from "./js/animals.js";
+import { chooseAndApplyAIAction } from "./js/ai-controller.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -20,6 +21,7 @@ const onlineTournamentRooms = {};
 const MAX_ONLINE_TOURNAMENT_PLAYERS = 16;
 const MIN_ONLINE_TOURNAMENT_PLAYERS = 2;
 const ONLINE_TOURNAMENT_ACTION_POOL = ["normal", "quick", "precise", "explosive", "concentration", "special"];
+const ONLINE_TOURNAMENT_BOT_TURN_DELAY_MS = 900;
 
 function generateRoomCode() {
   return "WAFT-" + Math.floor(1000 + Math.random() * 9000);
@@ -66,6 +68,33 @@ function shuffleArray(array) {
   }
 
   return copy;
+}
+
+function cloneBattleForReplay(battle) {
+  return JSON.parse(JSON.stringify(battle));
+}
+
+function createOnlineTournamentReplayFrame(battle, summaryLines, label) {
+  return {
+    battle: cloneBattleForReplay(battle),
+    summaryLines: Array.isArray(summaryLines) && summaryLines.length
+      ? [...summaryLines]
+      : ["No major events this turn."],
+    label: label || "Turn " + battle.turn
+  };
+}
+
+function createInitialOnlineTournamentReplay(match, battle) {
+  return [
+    createOnlineTournamentReplayFrame(
+      battle,
+      [
+        "Combat ready.",
+        (match.fighterA?.name || "Fighter A") + " vs " + (match.fighterB?.name || "Fighter B") + "."
+      ],
+      "Start"
+    )
+  ];
 }
 
 function createParticipant({ slotId, fighterId, type, socketId = null, playerNumber = null }) {
@@ -193,31 +222,45 @@ function getOnlineTournamentMatchHumanSocketIds(match) {
   return ids;
 }
 
-function getOnlineTournamentParticipantForWinner(match, battleWinner) {
+function getOnlineTournamentParticipantForWinner(match, battleWinner, battle = null) {
   if (!match) return null;
 
   if (battleWinner === match.fighterA?.fighterId) return match.fighterA;
   if (battleWinner === match.fighterB?.fighterId) return match.fighterB;
 
-  return Math.random() < 0.5 ? match.fighterA : match.fighterB;
+  if (battle) {
+    const scoreA =
+      (battle.fighterA?.hp || 0) +
+      (battle.fighterA?.stamina || 0) * 0.35 +
+      ((battle.fighterA?.specialCharge || 0) * 10);
+
+    const scoreB =
+      (battle.fighterB?.hp || 0) +
+      (battle.fighterB?.stamina || 0) * 0.35 +
+      ((battle.fighterB?.specialCharge || 0) * 10);
+
+    return scoreA >= scoreB ? match.fighterA : match.fighterB;
+  }
+
+  return match.fighterA || match.fighterB || null;
+}
+
+function chooseOnlineTournamentBotActionData(fighter, battle) {
+  const decision = chooseAndApplyAIAction(battle, fighter);
+
+  return {
+    action: decision.action,
+    larvalCommand: decision.larvalCommand || null,
+    coconutPerfectAdaptationChoice: decision.coconutPerfectAdaptationChoice || null
+  };
 }
 
 function chooseOnlineTournamentBotAction(fighter, battle) {
-  const possible = ONLINE_TOURNAMENT_ACTION_POOL.filter((action) =>
-    canUseAction(fighter, action, battle)
-  );
+  return chooseOnlineTournamentBotActionData(fighter, battle).action;
+}
 
-  if (possible.length === 0) return "concentration";
-
-  if (
-    fighter.special &&
-    fighter.specialCharge >= fighter.special.chargeHits &&
-    canUseAction(fighter, "special", battle)
-  ) {
-    return "special";
-  }
-
-  return possible[Math.floor(Math.random() * possible.length)];
+function isOnlineTournamentBotOnlyMatch(match) {
+  return Boolean(match?.fighterA && match?.fighterB && match.fighterA.type === "bot" && match.fighterB.type === "bot");
 }
 
 function findOnlineTournamentMatchById(bracket, matchId) {
@@ -292,19 +335,39 @@ function getCurrentPlayableRoundIndex(bracket) {
 function simulateOnlineTournamentBotMatch(room, roundIndex, matchIndex) {
   const match = room.bracket.rounds[roundIndex].matches[matchIndex];
   const battle = createBattle(match.fighterA.fighterId, match.fighterB.fighterId);
+  const replay = createInitialOnlineTournamentReplay(match, battle);
 
   let safety = 0;
 
-  while (!battle.finished && safety < 120) {
-    const actionA = chooseOnlineTournamentBotAction(battle.fighterA, battle);
-    const actionB = chooseOnlineTournamentBotAction(battle.fighterB, battle);
-    resolveTurn(battle, actionA, actionB);
+  while (!battle.finished && safety < 160) {
+    const oldLogLength = battle.log.length;
+    const actionDataA = chooseOnlineTournamentBotActionData(battle.fighterA, battle);
+    const actionDataB = chooseOnlineTournamentBotActionData(battle.fighterB, battle);
+
+    battle.fighterA.darwinsLarvalCommand = normalizeLarvalCommand(actionDataA.larvalCommand);
+    battle.fighterB.darwinsLarvalCommand = normalizeLarvalCommand(actionDataB.larvalCommand);
+
+    applyCoconutPerfectAdaptationChoiceIfNeeded(battle.fighterA, actionDataA.coconutPerfectAdaptationChoice);
+    applyCoconutPerfectAdaptationChoiceIfNeeded(battle.fighterB, actionDataB.coconutPerfectAdaptationChoice);
+
+    resolveTurn(battle, actionDataA.action, actionDataB.action);
+
+    const newLines = battle.log.slice(oldLogLength);
+    replay.push(
+      createOnlineTournamentReplayFrame(
+        battle,
+        newLines,
+        "Turn " + Math.max(1, battle.turn - 1)
+      )
+    );
+
     safety += 1;
   }
 
-  const winnerParticipant = getOnlineTournamentParticipantForWinner(match, battle.winner);
+  const winnerParticipant = getOnlineTournamentParticipantForWinner(match, battle.winner, battle);
 
-  match.battleLog = battle.log.slice(-40);
+  match.battleLog = battle.log.slice(-80);
+  match.battleReplay = replay;
   match.turns = battle.turn;
   placeOnlineTournamentWinner(room, roundIndex, matchIndex, winnerParticipant);
 
@@ -323,6 +386,7 @@ function createOnlineTournamentActiveMatch(room, roundIndex, matchIndex) {
     matchId: match.id,
     battle,
     actions: {},
+    replay: createInitialOnlineTournamentReplay(match, battle),
     createdAt: Date.now()
   };
 
@@ -389,12 +453,6 @@ function generateAvailableOnlineTournamentCombats(room) {
     for (const { match, matchIndex } of readyMatches) {
       const humanSocketIds = getOnlineTournamentMatchHumanSocketIds(match);
 
-      if (humanSocketIds.length === 0) {
-        simulateOnlineTournamentBotMatch(room, roundIndex, matchIndex);
-        autoResolvedCount += 1;
-        continue;
-      }
-
       createOnlineTournamentActiveMatch(room, roundIndex, matchIndex);
       createdMatches.push({
         matchId: match.id,
@@ -403,10 +461,14 @@ function generateAvailableOnlineTournamentCombats(room) {
         fighterA: match.fighterA,
         fighterB: match.fighterB
       });
+
+      if (humanSocketIds.length === 0) {
+        continue;
+      }
     }
 
     if (createdMatches.length > 0) {
-      return { type: "human", autoResolvedCount, createdMatches };
+      return { type: "active", autoResolvedCount, createdMatches };
     }
   }
 
@@ -433,11 +495,11 @@ function resolveOnlineTournamentActiveTurn(room, matchId) {
   const keyB = getParticipantKey(match.fighterB);
 
   const actionDataA = match.fighterA.type === "bot"
-    ? { action: chooseOnlineTournamentBotAction(battle.fighterA, battle), larvalCommand: null, coconutPerfectAdaptationChoice: null }
+    ? chooseOnlineTournamentBotActionData(battle.fighterA, battle)
     : active.actions[keyA];
 
   const actionDataB = match.fighterB.type === "bot"
-    ? { action: chooseOnlineTournamentBotAction(battle.fighterB, battle), larvalCommand: null, coconutPerfectAdaptationChoice: null }
+    ? chooseOnlineTournamentBotActionData(battle.fighterB, battle)
     : active.actions[keyB];
 
   if (!actionDataA || !actionDataB) return null;
@@ -455,11 +517,24 @@ function resolveOnlineTournamentActiveTurn(room, matchId) {
   const newLines = battle.log.slice(oldLogLength);
   active.actions = {};
 
+  if (!Array.isArray(active.replay)) {
+    active.replay = createInitialOnlineTournamentReplay(match, battle);
+  }
+
+  active.replay.push(
+    createOnlineTournamentReplayFrame(
+      battle,
+      newLines,
+      "Turn " + Math.max(1, battle.turn - 1)
+    )
+  );
+
   let winnerParticipant = null;
 
   if (battle.finished) {
-    winnerParticipant = getOnlineTournamentParticipantForWinner(match, battle.winner);
+    winnerParticipant = getOnlineTournamentParticipantForWinner(match, battle.winner, battle);
     match.battleLog = battle.log.slice(-60);
+    match.battleReplay = active.replay;
     match.turns = battle.turn;
     placeOnlineTournamentWinner(room, roundIndex, matchIndex, winnerParticipant);
   }
@@ -473,6 +548,66 @@ function resolveOnlineTournamentActiveTurn(room, matchId) {
     winnerParticipant,
     finished: battle.finished
   };
+}
+
+function scheduleOnlineTournamentBotMatch(roomCode, matchId) {
+  const room = onlineTournamentRooms[roomCode];
+  if (!room?.activeMatches?.[matchId]) return;
+
+  const active = room.activeMatches[matchId];
+  const found = findOnlineTournamentMatchById(room.bracket, matchId);
+  const match = found?.match;
+
+  if (!isOnlineTournamentBotOnlyMatch(match)) return;
+  if (active.botTimer) return;
+
+  active.botTimer = setTimeout(() => {
+    active.botTimer = null;
+    advanceOnlineTournamentBotMatch(roomCode, matchId);
+  }, ONLINE_TOURNAMENT_BOT_TURN_DELAY_MS);
+}
+
+function scheduleOnlineTournamentBotMatches(roomCode) {
+  const room = onlineTournamentRooms[roomCode];
+  if (!room?.activeMatches) return;
+
+  Object.keys(room.activeMatches).forEach((matchId) => {
+    scheduleOnlineTournamentBotMatch(roomCode, matchId);
+  });
+}
+
+function advanceOnlineTournamentBotMatch(roomCode, matchId) {
+  const room = onlineTournamentRooms[roomCode];
+  if (!room?.activeMatches?.[matchId]) return;
+
+  const found = findOnlineTournamentMatchById(room.bracket, matchId);
+  if (!isOnlineTournamentBotOnlyMatch(found?.match)) return;
+
+  const result = resolveOnlineTournamentActiveTurn(room, matchId);
+
+  if (result) {
+    io.to(roomCode).emit("onlineTournamentTurnResolved", {
+      result,
+      state: getOnlineTournamentPublicState(room)
+    });
+  }
+
+  emitOnlineTournamentState(roomCode);
+
+  if (!result || !result.finished) {
+    scheduleOnlineTournamentBotMatch(roomCode, matchId);
+    return;
+  }
+
+  const generationResult = generateAvailableOnlineTournamentCombats(room);
+
+  io.to(roomCode).emit("onlineTournamentCombatGenerated", {
+    result: generationResult,
+    state: getOnlineTournamentPublicState(room)
+  });
+
+  emitOnlineTournamentState(roomCode);
+  scheduleOnlineTournamentBotMatches(roomCode);
 }
 
 function getOnlineTournamentPublicState(room) {
@@ -879,6 +1014,7 @@ io.on("connection", (socket) => {
     });
 
     emitOnlineTournamentState(normalizedCode);
+    scheduleOnlineTournamentBotMatches(normalizedCode);
   });
 
   socket.on("transformCoconutOctopusOnlineTournament", ({ roomCode, matchId, formId }) => {
@@ -984,6 +1120,7 @@ io.on("connection", (socket) => {
     });
 
     emitOnlineTournamentState(normalizedCode);
+    scheduleOnlineTournamentBotMatches(normalizedCode);
   });
 
   socket.on("resetOnlineTournamentRoom", ({ roomCode }) => {
@@ -995,6 +1132,12 @@ io.on("connection", (socket) => {
     if (room.hostId !== socket.id) {
       socket.emit("onlineTournamentError", "Only the room host can reset the tournament.");
       return;
+    }
+
+    if (room.activeMatches) {
+      Object.values(room.activeMatches).forEach((active) => {
+        if (active.botTimer) clearTimeout(active.botTimer);
+      });
     }
 
     room.bracket = null;

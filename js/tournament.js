@@ -8,11 +8,16 @@ import {
   transformCoconutOctopus,
   setCoconutOctopusPerfectAdaptationChoice
 } from "./battle-engine.js";
+import { chooseAndApplyAIAction } from "./ai-controller.js";
 
 let currentTournament = null;
 let currentBattle = null;
+let currentPlayerBattle = null;
 let currentPlayerMatch = null;
 let currentOpponentId = null;
+let currentBattleViewMode = "player";
+let currentAIReplayMatch = null;
+let currentAIReplayIndex = 0;
 let isResolvingTurn = false;
 
 let playerFlipped = false;
@@ -572,6 +577,88 @@ function placeWinnerInNextRound(roundIndex, matchIndex, winnerId) {
   }
 }
 
+function cloneBattleForReplay(battle) {
+  return JSON.parse(JSON.stringify(battle));
+}
+
+function createAIReplayFrame(battle, summaryLines, label) {
+  return {
+    battle: cloneBattleForReplay(battle),
+    summaryLines: Array.isArray(summaryLines) && summaryLines.length
+      ? [...summaryLines]
+      : ["No major events this turn."],
+    label: label || "Turn " + battle.turn
+  };
+}
+
+function getAIReplayFrames(match) {
+  return Array.isArray(match?.aiReplay) ? match.aiReplay : [];
+}
+
+function resolveAIMatchToCompletion(match) {
+  if (!match || !match.fighterA || !match.fighterB) return null;
+
+  const battle = createBattle(match.fighterA, match.fighterB);
+  let safety = 0;
+
+  match.aiReplay = [
+    createAIReplayFrame(
+      battle,
+      [
+        "AI combat ready.",
+        getAnimalName(match.fighterA) + " vs " + getAnimalName(match.fighterB) + ".",
+        "Use Next Turn / Previous Turn to review the fight."
+      ],
+      "Start"
+    )
+  ];
+
+  while (!battle.finished && safety < 160) {
+    const oldLogLength = battle.log.length;
+    const decisionA = chooseAndApplyAIAction(battle, battle.fighterA);
+    const decisionB = chooseAndApplyAIAction(battle, battle.fighterB);
+
+    resolveTurn(battle, decisionA.action, decisionB.action);
+
+    const newLines = battle.log.slice(oldLogLength);
+    match.aiReplay.push(
+      createAIReplayFrame(
+        battle,
+        buildTurnSummary(newLines),
+        "Turn " + Math.max(1, battle.turn - 1)
+      )
+    );
+
+    safety += 1;
+  }
+
+  match.aiBattle = cloneBattleForReplay(battle);
+  match.battleLog = battle.log.slice(-80);
+  match.turns = battle.turn;
+
+  return battle;
+}
+
+function getAIMatchWinnerId(match, battle) {
+  if (!match || !battle) return match?.fighterA || null;
+
+  if (battle.winner === match.fighterA || battle.winner === match.fighterB) {
+    return battle.winner;
+  }
+
+  const scoreA =
+    (battle.fighterA?.hp || 0) +
+    (battle.fighterA?.stamina || 0) * 0.35 +
+    ((battle.fighterA?.specialCharge || 0) * 10);
+
+  const scoreB =
+    (battle.fighterB?.hp || 0) +
+    (battle.fighterB?.stamina || 0) * 0.35 +
+    ((battle.fighterB?.specialCharge || 0) * 10);
+
+  return scoreA >= scoreB ? match.fighterA : match.fighterB;
+}
+
 function resolveRandomNonPlayerMatches(roundIndex) {
   if (!currentTournament) return;
 
@@ -583,7 +670,8 @@ function resolveRandomNonPlayerMatches(roundIndex) {
     if (!match.fighterA || !match.fighterB) return;
     if (matchContainsPlayer(match)) return;
 
-    const winner = Math.random() < 0.5 ? match.fighterA : match.fighterB;
+    const battle = resolveAIMatchToCompletion(match);
+    const winner = getAIMatchWinnerId(match, battle);
 
     match.winner = winner;
     match.resolved = true;
@@ -604,7 +692,8 @@ function resolveRemainingTournamentAfterElimination(startRoundIndex) {
       if (match.resolved) return;
       if (!match.fighterA || !match.fighterB) return;
 
-      const winner = Math.random() < 0.5 ? match.fighterA : match.fighterB;
+      const battle = resolveAIMatchToCompletion(match);
+      const winner = getAIMatchWinnerId(match, battle);
 
       match.winner = winner;
       match.resolved = true;
@@ -614,23 +703,33 @@ function resolveRemainingTournamentAfterElimination(startRoundIndex) {
   }
 }
 
+
 function loadCurrentPlayerBattle() {
   if (!currentTournament || currentTournament.finished || currentTournament.playerEliminated) {
     currentBattle = null;
+    currentPlayerBattle = null;
     currentPlayerMatch = null;
     currentOpponentId = null;
+    currentBattleViewMode = "player";
+    currentAIReplayMatch = null;
+    currentAIReplayIndex = 0;
     return;
   }
 
+  currentBattleViewMode = "player";
+  currentAIReplayMatch = null;
+  currentAIReplayIndex = 0;
   currentPlayerMatch = getPlayerMatch(currentTournament.currentRoundIndex);
   currentOpponentId = getMatchOpponent(currentPlayerMatch);
 
   if (!currentPlayerMatch || !currentOpponentId) {
     currentBattle = null;
+    currentPlayerBattle = null;
     return;
   }
 
-  currentBattle = createBattle(currentTournament.playerFighterId, currentOpponentId);
+  currentPlayerBattle = createBattle(currentTournament.playerFighterId, currentOpponentId);
+  currentBattle = currentPlayerBattle;
 
   playerFlipped = false;
   enemyFlipped = true;
@@ -647,31 +746,20 @@ function loadCurrentPlayerBattle() {
 }
 
 function chooseEnemyAction(fighter) {
-  if (isCoconutOctopusFighter(fighter) && (fighter.octopusForm || "base") === "base") {
-    setCoconutOctopusPerfectAdaptationChoice(fighter, randomChoice(["tentacle-storm", "coconut-fortress", "ink-sea"]));
-  }
-  const possible = ACTION_POOL.filter((action) =>
-    canUseAction(fighter, action, currentBattle)
-  );
-
-  if (possible.length === 0) {
-    return "concentration";
-  }
-
-  if (
-    fighter.special &&
-    fighter.specialCharge >= fighter.special.chargeHits &&
-    canUseAction(fighter, "special", currentBattle)
-  ) {
-    return "special";
-  }
-
-  return randomChoice(possible);
+  const decision = chooseAndApplyAIAction(currentBattle, fighter);
+  return decision.action;
 }
 
 function getBattleFighters() {
   if (!currentBattle || !currentTournament) {
     return { player: null, enemy: null };
+  }
+
+  if (currentBattleViewMode === "ai-replay") {
+    return {
+      player: currentBattle.fighterA,
+      enemy: currentBattle.fighterB
+    };
   }
 
   const player =
@@ -685,6 +773,95 @@ function getBattleFighters() {
       : currentBattle.fighterA;
 
   return { player, enemy };
+}
+
+function setAIReplayFrame(match, frameIndex) {
+  const frames = getAIReplayFrames(match);
+  if (!match || frames.length === 0) return;
+
+  currentAIReplayMatch = match;
+  currentAIReplayIndex = Math.max(0, Math.min(frames.length - 1, frameIndex));
+
+  const frame = frames[currentAIReplayIndex];
+  currentBattle = cloneBattleForReplay(frame.battle);
+  currentOpponentId = match.fighterB;
+  currentBattleViewMode = "ai-replay";
+
+  const finalFrame = currentAIReplayIndex === frames.length - 1;
+  lastTurnSummaryLines = [
+    frame.label + " / " + (frames.length - 1),
+    ...frame.summaryLines,
+    finalFrame && match.winner ? "Winner: " + getAnimalName(match.winner) : null
+  ].filter(Boolean);
+
+  renderTournament();
+}
+
+function viewResolvedAIMatch(roundIndex, matchIndex) {
+  if (!currentTournament) return;
+
+  const match = currentTournament.rounds[roundIndex]?.matches?.[matchIndex];
+  if (!match || !match.aiBattle) return;
+
+  if (!Array.isArray(match.aiReplay) || match.aiReplay.length === 0) {
+    match.aiReplay = [
+      createAIReplayFrame(
+        match.aiBattle,
+        [
+          "This AI combat was created before turn replay existed.",
+          "Only the final state can be shown."
+        ],
+        "Final"
+      )
+    ];
+  }
+
+  setAIReplayFrame(match, 0);
+}
+
+function returnToPlayerCombat() {
+  if (!currentTournament) return;
+
+  currentAIReplayMatch = null;
+  currentAIReplayIndex = 0;
+  currentBattleViewMode = "player";
+  currentPlayerMatch = getPlayerMatch(currentTournament.currentRoundIndex);
+  currentOpponentId = getMatchOpponent(currentPlayerMatch);
+
+  if (currentPlayerBattle) {
+    currentBattle = currentPlayerBattle;
+  } else if (currentPlayerMatch && currentOpponentId && !currentPlayerMatch.resolved) {
+    currentPlayerBattle = createBattle(currentTournament.playerFighterId, currentOpponentId);
+    currentBattle = currentPlayerBattle;
+  } else {
+    currentBattle = null;
+  }
+
+  lastTurnSummaryLines = currentBattle
+    ? ["Returned to your combat."]
+    : ["Returned to the tournament bracket."];
+
+  renderTournament();
+}
+
+function moveAIReplayFrame(delta) {
+  if (!currentAIReplayMatch) return;
+  setAIReplayFrame(currentAIReplayMatch, currentAIReplayIndex + delta);
+}
+
+function jumpAIReplayFrame(target) {
+  if (!currentAIReplayMatch) return;
+  const frames = getAIReplayFrames(currentAIReplayMatch);
+  if (frames.length === 0) return;
+
+  if (target === "start") {
+    setAIReplayFrame(currentAIReplayMatch, 0);
+    return;
+  }
+
+  if (target === "end") {
+    setAIReplayFrame(currentAIReplayMatch, frames.length - 1);
+  }
 }
 
 function getBiomeRelation(fighter) {
@@ -1080,6 +1257,7 @@ function renderActionButtons() {
       currentTournament?.awaitingContinue ||
       currentTournament?.finished ||
       currentTournament?.playerEliminated ||
+      currentBattleViewMode !== "player" ||
       isResolvingTurn
     ) {
       btn.disabled = true;
@@ -1199,6 +1377,16 @@ function createMatchCard(match, roundIndex, matchIndex) {
 
   card.appendChild(createFighterSlot(match.fighterA, match, match.positionA || null));
   card.appendChild(createFighterSlot(match.fighterB, match, match.positionB || null));
+
+  if (match.aiBattle && !matchContainsPlayer(match)) {
+    const replayBtn = document.createElement("button");
+    replayBtn.type = "button";
+    replayBtn.className = "secondary-btn";
+    replayBtn.style.marginTop = "8px";
+    replayBtn.textContent = "Replay AI Combat";
+    replayBtn.addEventListener("click", () => viewResolvedAIMatch(roundIndex, matchIndex));
+    card.appendChild(replayBtn);
+  }
 
   return card;
 }
@@ -1385,6 +1573,48 @@ function formatBattleLogLine(line) {
   return line;
 }
 
+function renderAIReplayControls() {
+  const summaryBox = document.getElementById("turnSummaryBox");
+  if (!summaryBox || !summaryBox.parentElement) return;
+
+  let controls = document.getElementById("aiReplayControls");
+  if (!controls) {
+    controls = document.createElement("div");
+    controls.id = "aiReplayControls";
+    controls.style.display = "none";
+    controls.style.gridTemplateColumns = "repeat(5, minmax(0, 1fr))";
+    controls.style.gap = "8px";
+    controls.style.marginBottom = "10px";
+    summaryBox.parentElement.insertBefore(controls, summaryBox);
+  }
+
+  if (currentBattleViewMode !== "ai-replay" || !currentAIReplayMatch) {
+    controls.style.display = "none";
+    controls.innerHTML = "";
+    return;
+  }
+
+  const frames = getAIReplayFrames(currentAIReplayMatch);
+  const atStart = currentAIReplayIndex <= 0;
+  const atEnd = currentAIReplayIndex >= frames.length - 1;
+  const canReturn = Boolean(currentPlayerBattle || getPlayerMatch(currentTournament?.currentRoundIndex));
+
+  controls.style.display = "grid";
+  controls.innerHTML = `
+    <button type="button" class="secondary-btn" id="aiReplayStartBtn" ${atStart ? "disabled" : ""}>⏮ Start</button>
+    <button type="button" class="secondary-btn" id="aiReplayPrevBtn" ${atStart ? "disabled" : ""}>◀ Previous Turn</button>
+    <button type="button" class="secondary-btn" id="aiReplayNextBtn" ${atEnd ? "disabled" : ""}>Next Turn ▶</button>
+    <button type="button" class="secondary-btn" id="aiReplayEndBtn" ${atEnd ? "disabled" : ""}>Final ⏭</button>
+    <button type="button" class="continue-btn" id="returnToPlayerCombatBtn" ${canReturn ? "" : "disabled"}>Return to Your Combat</button>
+  `;
+
+  document.getElementById("aiReplayStartBtn")?.addEventListener("click", () => jumpAIReplayFrame("start"));
+  document.getElementById("aiReplayPrevBtn")?.addEventListener("click", () => moveAIReplayFrame(-1));
+  document.getElementById("aiReplayNextBtn")?.addEventListener("click", () => moveAIReplayFrame(1));
+  document.getElementById("aiReplayEndBtn")?.addEventListener("click", () => jumpAIReplayFrame("end"));
+  document.getElementById("returnToPlayerCombatBtn")?.addEventListener("click", returnToPlayerCombat);
+}
+
 function renderBattle() {
   const battlePanel = document.getElementById("battlePanel");
   const logPanel = document.getElementById("logPanel");
@@ -1392,6 +1622,7 @@ function renderBattle() {
   if (!currentBattle) {
     battlePanel.style.display = "none";
     logPanel.style.display = "none";
+    renderAIReplayControls();
     renderActionButtons();
     return;
   }
@@ -1410,24 +1641,27 @@ function renderBattle() {
   updateCoconutOctopusPanel(player);
 
   document.getElementById("currentMatchTitle").textContent =
-    currentTournament.rounds[currentTournament.currentRoundIndex].name;
+    currentBattleViewMode !== "player"
+      ? "AI vs AI Combat Log"
+      : currentTournament.rounds[currentTournament.currentRoundIndex].name;
 
   document.getElementById("currentMatchSubtitle").textContent =
-    getAnimalName(currentTournament.playerFighterId) +
+    player.name +
     " vs " +
-    getAnimalName(currentOpponentId) +
+    enemy.name +
     " | Turn " +
     currentBattle.turn +
     " | Biome: " +
     (currentBattle.biome ? currentBattle.biome.toUpperCase() : "-") +
     " | Modified stat: " +
     (currentBattle.biomeStat ? currentBattle.biomeStat.toUpperCase() : "-") +
-    " | Your biome: " +
+    " | Left biome: " +
     getBiomeRelation(player) +
-    " | Enemy biome: " +
+    " | Right biome: " +
     getBiomeRelation(enemy);
 
   document.getElementById("turnSummaryBox").textContent = lastTurnSummaryLines.join("\n");
+  renderAIReplayControls();
 
   document.getElementById("battleLog").textContent = currentBattle.log
     .map((line, index) => index + 1 + ". " + formatBattleLogLine(line))
@@ -1457,6 +1691,7 @@ function processFinishedPlayerMatch() {
 
   currentPlayerMatch.winner = winnerId;
   currentPlayerMatch.resolved = true;
+  currentPlayerBattle = currentBattle;
 
   placeWinnerInNextRound(roundIndex, matchIndex, winnerId);
 
@@ -1832,8 +2067,12 @@ function startTournament() {
   try {
     currentTournament = createTournament(selectedFighterId);
     currentBattle = null;
+    currentPlayerBattle = null;
     currentPlayerMatch = null;
     currentOpponentId = null;
+    currentBattleViewMode = "player";
+    currentAIReplayMatch = null;
+    currentAIReplayIndex = 0;
 
     resolveRandomNonPlayerMatches(0);
     loadCurrentPlayerBattle();
@@ -1854,8 +2093,12 @@ function continueTournament() {
 function resetTournament() {
   currentTournament = null;
   currentBattle = null;
+  currentPlayerBattle = null;
   currentPlayerMatch = null;
   currentOpponentId = null;
+  currentBattleViewMode = "player";
+  currentAIReplayMatch = null;
+  currentAIReplayIndex = 0;
   lastTurnSummaryLines = ["Start a tournament to begin."];
   renderTournament();
 }

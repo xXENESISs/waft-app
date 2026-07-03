@@ -15,6 +15,7 @@ const lastTurnLinesByMatchId = {};
 const pendingAnimationByMatchId = {};
 const pendingSummaryByMatchId = {};
 const summaryAnimationTokens = {};
+const resolvedReplayIndexByMatchId = {};
 
 const TYPEWRITER_CHAR_DELAY = 8;
 const TYPEWRITER_LINE_PAUSE = 180;
@@ -1072,6 +1073,29 @@ async function runOnlineShakeSequence(matchId, newLines, activeMatchOverride = n
 }
 
 
+function getResolvedReplayFrames(match) {
+  return Array.isArray(match?.battleReplay) ? match.battleReplay : [];
+}
+
+function getResolvedReplayIndex(match) {
+  const frames = getResolvedReplayFrames(match);
+  if (!match?.id || frames.length === 0) return 0;
+
+  const current = Number(resolvedReplayIndexByMatchId[match.id]);
+  if (!Number.isFinite(current)) return frames.length - 1;
+
+  return Math.max(0, Math.min(frames.length - 1, current));
+}
+
+function setResolvedReplayIndex(matchId, index) {
+  const found = findBracketMatchById(matchId);
+  const frames = getResolvedReplayFrames(found?.match);
+  if (!found?.match || frames.length === 0) return;
+
+  resolvedReplayIndexByMatchId[matchId] = Math.max(0, Math.min(frames.length - 1, index));
+  renderState();
+}
+
 function renderResolvedMatch(found) {
   const panel = getEl("combatPanel");
   const area = getEl("activeCombatArea");
@@ -1084,36 +1108,65 @@ function renderResolvedMatch(found) {
 
   const localActive = getLocalActiveMatch();
   const canReturn = localActive && localActive.matchId !== match.id;
+  const frames = getResolvedReplayFrames(match);
+  const hasReplay = frames.length > 0;
+  const replayIndex = hasReplay ? getResolvedReplayIndex(match) : 0;
+  const replayFrame = hasReplay ? frames[replayIndex] : null;
+  const replayBattle = replayFrame?.battle || null;
+  const atStart = !hasReplay || replayIndex <= 0;
+  const atEnd = !hasReplay || replayIndex >= frames.length - 1;
 
-  if (status) status.textContent = match.resolved ? "Viewing resolved combat." : "Viewing bracket match.";
+  if (status) status.textContent = hasReplay ? "Viewing resolved combat replay." : match.resolved ? "Viewing resolved combat." : "Viewing bracket match.";
   if (pill) pill.textContent = round.name + " · Match " + (matchIndex + 1);
 
   const winnerText = match.winner ? "Winner: " + match.winner.name : "Awaiting fighters";
-  const summaryText = lastTurnLinesByMatchId[match.id]?.length
-    ? lastTurnLinesByMatchId[match.id].join("\n")
+  const summaryLines = replayFrame?.summaryLines?.length
+    ? buildTurnSummary(replayFrame.summaryLines)
+    : lastTurnLinesByMatchId[match.id]?.length
+    ? lastTurnLinesByMatchId[match.id]
     : match.resolved
-    ? "Combat finished."
-    : "No turn summary available.";
-  const logText = match.battleLog?.length
-    ? match.battleLog.map((line, index) => `${index + 1}. ${formatBattleLogLine(line)}`).join("\n")
+    ? ["Combat finished."]
+    : ["No turn summary available."];
+  const summaryHeader = hasReplay
+    ? (replayFrame.label || "Turn") + " / " + (frames.length - 1)
+    : "Resolved combat";
+  const summaryText = [summaryHeader, ...summaryLines].join("\n");
+  const logSource = replayBattle?.log || match.battleLog || [];
+  const logText = logSource.length
+    ? logSource.map((line, index) => `${index + 1}. ${formatBattleLogLine(line)}`).join("\n")
     : "No combat log available yet.";
 
   area.innerHTML = `
     <div class="online-battle-panel">
-      ${renderOnlineBattleFighterCard(match.fighterA, null, "Fighter A")}
+      ${renderOnlineBattleFighterCard(match.fighterA, replayBattle?.fighterA || null, "Fighter A", replayBattle)}
 
       <div class="online-battle-center">
         <div class="online-match-title-card">
           <div class="online-title-top-row">
             <div>
               <div class="online-match-title">${escapeHtml(round.name)} · Match ${matchIndex + 1}</div>
-              <div class="online-match-subtitle">${escapeHtml(match.fighterA?.name || "TBD")} vs ${escapeHtml(match.fighterB?.name || "TBD")}</div>
+              <div class="online-match-subtitle">
+                ${escapeHtml(match.fighterA?.name || "TBD")} vs ${escapeHtml(match.fighterB?.name || "TBD")}
+                ${replayBattle ? `<br>Turn ${escapeHtml(String(replayBattle.turn))} · ${escapeHtml(replayBattle.biome ? replayBattle.biome.toUpperCase() : "-")} · Modified stat: ${escapeHtml(replayBattle.biomeStat ? replayBattle.biomeStat.toUpperCase() : "-")}` : ""}
+              </div>
             </div>
             ${canReturn ? `<button class="secondary-btn return-match-btn" id="returnToYourMatchBtn">Return to Your Match</button>` : ""}
           </div>
 
           <div class="resolved-banner ${match.resolved ? "resolved" : "pending"}">${escapeHtml(winnerText)}</div>
         </div>
+
+        ${hasReplay ? `
+          <div class="online-summary-panel">
+            <div class="online-summary-title">Replay Controls</div>
+            <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;">
+              <button class="secondary-btn" id="resolvedReplayStartBtn" ${atStart ? "disabled" : ""}>⏮ Start</button>
+              <button class="secondary-btn" id="resolvedReplayPrevBtn" ${atStart ? "disabled" : ""}>◀ Previous Turn</button>
+              <button class="secondary-btn" id="resolvedReplayNextBtn" ${atEnd ? "disabled" : ""}>Next Turn ▶</button>
+              <button class="secondary-btn" id="resolvedReplayEndBtn" ${atEnd ? "disabled" : ""}>Final ⏭</button>
+            </div>
+          </div>
+        ` : ""}
 
         <div class="online-summary-panel">
           <div class="online-summary-title">Turn Summary</div>
@@ -1126,17 +1179,20 @@ function renderResolvedMatch(found) {
         </div>
       </div>
 
-      ${renderOnlineBattleFighterCard(match.fighterB, null, "Fighter B")}
+      ${renderOnlineBattleFighterCard(match.fighterB, replayBattle?.fighterB || null, "Fighter B", replayBattle)}
     </div>
   `;
-
-  bindOnlineTournamentOctopusControls(area, activeMatch, canAct);
 
   getEl("returnToYourMatchBtn")?.addEventListener("click", () => {
     if (!localActive) return;
     viewedMatchId = localActive.matchId;
     renderState();
   });
+
+  getEl("resolvedReplayStartBtn")?.addEventListener("click", () => setResolvedReplayIndex(match.id, 0));
+  getEl("resolvedReplayPrevBtn")?.addEventListener("click", () => setResolvedReplayIndex(match.id, replayIndex - 1));
+  getEl("resolvedReplayNextBtn")?.addEventListener("click", () => setResolvedReplayIndex(match.id, replayIndex + 1));
+  getEl("resolvedReplayEndBtn")?.addEventListener("click", () => setResolvedReplayIndex(match.id, frames.length - 1));
 
   loadImagesInside(area);
   bindFlipButtonsInside(area);
@@ -1778,6 +1834,9 @@ function renderBracket() {
 
       card.addEventListener("click", () => {
         viewedMatchId = match.id;
+        if (match.resolved && Array.isArray(match.battleReplay) && resolvedReplayIndexByMatchId[match.id] === undefined) {
+          resolvedReplayIndexByMatchId[match.id] = 0;
+        }
         renderActiveCombat();
         renderBracket();
       });

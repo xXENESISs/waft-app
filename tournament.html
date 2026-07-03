@@ -1729,6 +1729,35 @@
     .sloth-modal-colony-current { color: #bbf7d0; }
     .sloth-modal-colony-boost { color: #fed7aa; }
 
+  
+
+    /* Sloth colony badge safety: keep ACTIVE/AMP labels from covering emoji/title. */
+    .sloth-colony-state {
+      display: block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sloth-modal-colony-head {
+      display: grid;
+      grid-template-columns: 1fr;
+      align-items: flex-start;
+      gap: 6px;
+    }
+
+    .sloth-modal-colony-title {
+      min-width: 0;
+    }
+
+    .sloth-modal-status {
+      width: fit-content;
+      max-width: 100%;
+      align-self: flex-start;
+      line-height: 1;
+      white-space: nowrap;
+    }
   </style>
 </head>
 

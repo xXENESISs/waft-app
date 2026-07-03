@@ -4942,20 +4942,26 @@ function endTurnProcessing(battle) {
   battle.fighterB.ancestralRetreatActive = false 
 }
 
+
+function shiftBiomeForNextTurnIfNeeded(battle) {
+  if (battle.finished) return;
+
+  const nextTurn = battle.turn + 1;
+
+  if (nextTurn > 1 && (nextTurn - 1) % BIOME_ROTATION_TURNS === 0) {
+    addLog(
+      battle,
+      `🌍 BIOME SHIFT! The battlefield changes for turn ${nextTurn}...`
+    );
+    applyRandomBiomeModifier(battle, "changed");
+  }
+}
+
 export function resolveTurn(battle, actionA, actionB) {
   if (battle.finished) return;
 
   clearTurnDefenseBuff(battle.fighterA);
   clearTurnDefenseBuff(battle.fighterB);
-
-  // 🔥 AÑADIDO CLAVE → EL CAMBIO SE ANUNCIA AL EMPEZAR EL TURNO
-  if (battle.turn > 1 && (battle.turn - 1) % BIOME_ROTATION_TURNS === 0) {
-    addLog(
-      battle,
-      `🌍 BIOME SHIFT! The battlefield changes...`
-    );
-    applyRandomBiomeModifier(battle, "changed");
-  }
 
   addLog(battle, `--- Turn ${battle.turn} ---`);
 
@@ -5017,6 +5023,8 @@ export function resolveTurn(battle, actionA, actionB) {
 
   logFighterState(battle, battle.fighterA);
   logFighterState(battle, battle.fighterB);
+
+  shiftBiomeForNextTurnIfNeeded(battle);
 
   battle.turn += 1;
 }
