@@ -127,6 +127,16 @@ function estimateHitChance(fighter, defender, action, battle) {
         const evasion = calculateEvasion(defender, battle);
         return calculateHitChanceFromValues(precision, evasion);
       }
+      if (specialId === "throat-bite") {
+        const precision = getPrecisionForAction(fighter, defender, "normal", battle);
+        const evasion = calculateEvasion(defender, battle);
+        return calculateHitChanceFromValues(precision, evasion);
+      }
+      if (specialId === "deadly-dive") {
+        const precision = getPrecisionForAction(fighter, defender, "precise", battle);
+        const evasion = calculateEvasion(defender, battle);
+        return calculateHitChanceFromValues(precision, evasion);
+      }
       if (specialId === "anubis-staff") {
         const precision = getEffectiveStat(fighter, "technique", battle, defender, "special");
         const evasion = calculateEvasion(defender, battle);
@@ -274,9 +284,21 @@ function scoreGeneralSpecial(fighter, defender, battle) {
       score += 50;
       if (defender.special && getSpecialCharge(defender) >= getSpecialRequirement(defender) - 1) score += 35;
       break;
-    case "deadly-dive":
-      score += battle?.biome === "mountain" ? 30 : 10;
+    case "throat-bite": {
+      const stacks = fighter.tigerStalkStacks || 0;
+      score += stacks >= 3 ? 80 : 25;
+      if (enemyHp < 0.45) score += 25;
+      if (hitChance < 55 && stacks > 0) score -= 35;
       break;
+    }
+    case "deadly-dive": {
+      const stacks = fighter.falconStacks || 0;
+      score += 25 + stacks * 12;
+      if (staminaRatio(defender) > 0.45) score += 25;
+      if (battle?.biome === "mountain") score += 20;
+      if (hitChance < 55 && stacks > 0) score -= 25;
+      break;
+    }
     case "phantom-current":
       score += 35;
       if (getEffectiveStat(defender, "speed", battle, fighter, "normal") > 75) score += 25;
@@ -573,18 +595,25 @@ function chooseGenericAnimalAction(fighter, defender, battle) {
       extra.normal = 18;
       extra.quick = 12;
       break;
-    case "hunting-inertia":
-      extra.precise = 25;
+    case "hunting-inertia": {
+      const stacks = fighter.falconStacks || 0;
+      extra.precise = 30 + stacks * 6;
       extra.quick = 18;
+      extra.explosive = staminaRatio(fighter) > 0.45 ? 10 + stacks * 4 : -8;
       break;
+    }
+    case "silent-stalk": {
+      const stacks = fighter.tigerStalkStacks || 0;
+      extra.precise = 22 + stacks * 8;
+      extra.normal = 12;
+      extra.explosive = stacks >= 2 && staminaRatio(fighter) > 0.45 ? 18 : 0;
+      break;
+    }
     case "ballistic-impulse":
       extra.explosive = 25;
       break;
     case "lethal-precision":
       extra.precise = 45;
-      break;
-    case "feline-instinct":
-      if (staminaRatio(defender) < 0.5) extra.quick = 25;
       break;
     default:
       break;

@@ -6,10 +6,10 @@ export const animals = {
 
     stats: {
       life: 72,
-      attack: 84,
+      attack: 88,
       defense: 76,
       resistance: 72,
-      technique: 79,
+      technique: 75,
       speed: 74,
       agility: 79,
       explosiveness: 64
@@ -22,17 +22,17 @@ export const animals = {
     },
 
     passive: {
-      id: "feline-instinct",
-      name: "Feline Instinct",
+      id: "silent-stalk",
+      name: "Silent Stalk",
       description:
-        "If the opponent is below 50% stamina: +10% speed, +10% precision and +25% explosive damage."
+        "If the Sumatran Tiger ends a turn without taking direct damage, it gains 1 Stalk stack, up to 4. Each stack grants +5% Attack, +10% Speed and +10% Explosiveness. Taking direct damage removes 1 Stalk stack. Missing an attack removes all Stalk stacks."
     },
 
     special: {
-      id: "lethal-bite",
-      name: "Lethal Bite",
+      id: "throat-bite",
+      name: "Throat Bite",
       description:
-        "Ignores 50% defense and applies Bleed (15 damage per turn for 2 turns).",
+        "With 0–2 Stalk stacks, ignores 50% Defense and applies Bleed for 2 turns. With 3 or more Stalk stacks, consumes all Stalk stacks, ignores 100% Defense and applies Deep Bleed for 2 turns.",
       chargeType: "offensive",
       chargeHits: 4
     }
@@ -89,8 +89,8 @@ export const animals = {
       resistance: 61,
       technique: 89,
       speed: 91,
-      agility: 98,
-      explosiveness: 47
+      agility: 100,
+      explosiveness: 45
     },
 
     biomes: {
@@ -110,9 +110,9 @@ export const animals = {
       id: "illusory-dance",
       name: "Illusory Dance",
       description:
-        "Reduces received damage by 50% this turn. If the opponent misses or uses Concentration, the user's next attack is guaranteed and gains +50% damage.",
+        "Reflects 50% of direct damage received this turn and only takes the remaining 50%. If the opponent misses or uses Concentration, Shima Enaga's next successful attack deals x3 total damage. Missing does not consume this buff.",
       chargeType: "reactive",
-      chargeHits: 4
+      chargeHits: 3
     }
   },
 
@@ -337,16 +337,16 @@ export const animals = {
       id: "hunting-inertia",
       name: "Hunting Inertia",
       description:
-        "Each successful hit grants +10% damage (max 3 stacks). Missing resets all stacks."
+        "Each successful attack grants 1 Hunting Inertia stack, up to 4. Each stack grants +5% damage and +10% Explosiveness. Missing an attack removes all stacks."
     },
 
     special: {
       id: "deadly-dive",
       name: "Deadly Dive",
       description:
-        "Reduces opponent accuracy to 25% this turn, then attacks with increased damage based on stacks and reduces precision and evasion.",
+        "The Falcon takes flight, capping the opponent's accuracy against it at 25% this turn, then dives. On hit, deals direct damage and reduces the opponent's stamina by 50% of the final damage dealt. The Falcon does not recover stamina from this effect. Does not consume Hunting Inertia stacks on hit. Missing removes all Hunting Inertia stacks.",
       chargeType: "offensive",
-      chargeHits: 5
+      chargeHits: 4
     }
   },
 
@@ -546,7 +546,7 @@ export const animals = {
 "pufferfish": {
   id: "pufferfish",
   name: "Pufferfish",
-  category: "fish",
+  category: "fish-and-marine-invertebrates",
 
   stats: {
     life: 93,

@@ -505,6 +505,53 @@ function getExtraResourceText(fighter) {
     return "Loot: " + (fighter.macaqueLoot || 0) + "\nChain: " + (fighter.macaqueHitChain || 0);
   }
 
+
+  if (fighter.passive?.id === "hunting-inertia") {
+    const stacks = fighter.falconStacks || 0;
+    return (
+      "Hunting Inertia: " +
+      stacks +
+      "/4" +
+      "\nDamage bonus: +" +
+      stacks * 5 +
+      "%" +
+      "\nExplosiveness bonus: +" +
+      stacks * 10 +
+      "%"
+    );
+  }
+
+  if (fighter.passive?.id === "silent-stalk") {
+    const stacks = fighter.tigerStalkStacks || 0;
+    return (
+      "Silent Stalk: " +
+      stacks +
+      "/4" +
+      "\nAttack bonus: +" +
+      stacks * 5 +
+      "%" +
+      "\nSpeed bonus: +" +
+      stacks * 10 +
+      "%" +
+      "\nExplosiveness bonus: +" +
+      stacks * 10 +
+      "%"
+    );
+  }
+
+  if (fighter.passive?.id === "inverted-inertia") {
+    return (
+      "Illusory Dance active: " +
+      (fighter.illusoryDanceActive ? "YES" : "NO") +
+      "\nNext successful attack x2: " +
+      (fighter.illusoryDanceBuffReady ? "YES" : "NO")
+    );
+  }
+
+  if (fighter.tempAccuracyLockTurns > 0) {
+    return "Accuracy capped at 25% this turn.";
+  }
+
   if (fighter.passive?.id === "suffocating-humidity") {
     const progress = fighter.iguanaProgress || {};
     const quickDone = progress.quick ? "YES" : "NO";

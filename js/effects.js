@@ -137,6 +137,20 @@ export function createBleedEffect(duration = 2, damage = 15) {
   };
 }
 
+export function createDeepBleedEffect(duration = 2, damage = 30) {
+  return {
+    id: "deep-bleed",
+    name: "Deep Bleed",
+    duration,
+    stackable: false,
+    allowsConcentration: true,
+    modifiers: {},
+    onTurnEnd(target, battle) {
+      applyEffectDamage(target, damage, battle, "Deep Bleed");
+    }
+  };
+}
+
 export function createPoisonEffect(duration = 3, damage = 10) {
   return {
     id: "poison",
@@ -338,9 +352,12 @@ export function createHuntingInertiaEffect() {
     duration: 99,
     stackable: true,
     allowsConcentration: true,
-    modifiers: {},
+    modifiers: {
+      damagePct: 0,
+      explosivenessPct: 0
+    },
     stacks: 0,
-    stackValues: [10, 20, 30]
+    stackValues: [5, 10, 15, 20]
   };
 }
 

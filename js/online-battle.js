@@ -773,6 +773,53 @@ function getExtraResourceText(fighter) {
     return "Loot: " + fighter.macaqueLoot + "\nChain: " + fighter.macaqueHitChain;
   }
 
+
+  if (fighter.passive && fighter.passive.id === "hunting-inertia") {
+    var falconStacks = fighter.falconStacks || 0;
+    return (
+      "Hunting Inertia: " +
+      falconStacks +
+      "/4" +
+      "\nDamage bonus: +" +
+      falconStacks * 5 +
+      "%" +
+      "\nExplosiveness bonus: +" +
+      falconStacks * 10 +
+      "%"
+    );
+  }
+
+  if (fighter.passive && fighter.passive.id === "silent-stalk") {
+    var tigerStacks = fighter.tigerStalkStacks || 0;
+    return (
+      "Silent Stalk: " +
+      tigerStacks +
+      "/4" +
+      "\nAttack bonus: +" +
+      tigerStacks * 5 +
+      "%" +
+      "\nSpeed bonus: +" +
+      tigerStacks * 10 +
+      "%" +
+      "\nExplosiveness bonus: +" +
+      tigerStacks * 10 +
+      "%"
+    );
+  }
+
+  if (fighter.passive && fighter.passive.id === "inverted-inertia") {
+    return (
+      "Illusory Dance active: " +
+      (fighter.illusoryDanceActive ? "YES" : "NO") +
+      "\nNext successful attack x2: " +
+      (fighter.illusoryDanceBuffReady ? "YES" : "NO")
+    );
+  }
+
+  if (fighter.tempAccuracyLockTurns > 0) {
+    return "Accuracy capped at 25% this turn.";
+  }
+
   if (fighter.passive && fighter.passive.id === "suffocating-humidity") {
     var quickDone = fighter.iguanaProgress && fighter.iguanaProgress.quick ? "YES" : "NO";
     var preciseDone = fighter.iguanaProgress && fighter.iguanaProgress.precise ? "YES" : "NO";
@@ -1612,6 +1659,7 @@ function buildTurnSummary(newLines) {
     filtered.push(line);
 
     const specialUseMatch =
+      line.match(/^(.+?) uses Throat Bite\b/) ||
       line.match(/^(.+?) uses Lethal Bite\b/) ||
       line.match(/^(.+?) uses Arctic Storm\b/) ||
       line.match(/^(.+?) uses Illusory Dance\b/) ||
@@ -1703,6 +1751,8 @@ function buildTurnSummary(newLines) {
       line.includes("Hunting Inertia rises") ||
       line.includes("Hunting Inertia grants") ||
       line.includes("Hunting Inertia resets") ||
+      line.includes("Silent Stalk") ||
+      line.includes("Throat Bite") ||
       line.includes("Marine Echo triggers") ||
       line.includes("Phantom Current") ||
       line.includes("Persistent Harassment") ||
@@ -1804,7 +1854,9 @@ function deriveTurnOutcome(summaryLines) {
   if (joined.includes("Ballistic Strike")) return "Special Triggered";
   if (joined.includes("Illusory Dance")) return "Special Triggered";
   if (joined.includes("Arctic Storm")) return "Special Triggered";
+  if (joined.includes("Throat Bite")) return "Special Triggered";
   if (joined.includes("Lethal Bite")) return "Special Triggered";
+  if (joined.includes("Silent Stalk")) return "Passive Triggered";
   if (joined.includes("Inmobile Stalk")) return "Passive Triggered";
   if (joined.includes("misses")) return "Miss";
   if (joined.includes("Battle effect activated")) return "Battlefield Changed";
@@ -1873,7 +1925,7 @@ async function runShakeSequence(newLines, player, enemy) {
       continue;
     }
 
-    match = line.match(/^(.+?) uses Lethal Bite, dealing (\d+) damage, ignoring 50% Defense and applying Bleed\.$/);
+    match = line.match(/^(.+?) uses (?:Throat Bite|Lethal Bite), dealing (\d+) damage.*\.$/);
     if (match) {
       events.push({
         actor: match[1],

@@ -3,6 +3,7 @@ import {
   addEffect,
   getStackedModifierPercent,
   createBleedEffect,
+  createDeepBleedEffect,
   createAgilityDownEffect,
   createBiteEffect,
   createFalconDebuffEffect,
@@ -114,6 +115,9 @@ export function createFighter(id) {
     residualNeurotoxinActive: false,
 
     arcticStormPermanentSpeed: false,
+
+    tigerStalkStacks: 0,
+    tigerTookDirectDamageThisTurn: false,
 
     illusoryDanceActive: false,
     illusoryDanceBuffReady: false,
@@ -1278,28 +1282,34 @@ function resetParasiticControlHits(attacker, battle, reason = "") {
 
 function getFalconDamageBonusPercent(attacker) {
   if (attacker.passive?.id !== "hunting-inertia") return 0;
-  return attacker.falconStacks * 10;
+  return (attacker.falconStacks || 0) * 5;
+}
+
+function getFalconExplosivenessBonusPercent(attacker) {
+  if (attacker.passive?.id !== "hunting-inertia") return 0;
+  return (attacker.falconStacks || 0) * 10;
 }
 
 function increaseFalconStacks(attacker, battle) {
   if (attacker.passive?.id !== "hunting-inertia") return;
 
-  const before = attacker.falconStacks;
-  attacker.falconStacks = Math.min(attacker.falconStacks + 1, 3);
+  const before = attacker.falconStacks || 0;
+  attacker.falconStacks = Math.min(before + 1, 4);
 
   if (attacker.falconStacks > before) {
-    const bonusPct = attacker.falconStacks * 10;
+    const damageBonusPct = attacker.falconStacks * 5;
+    const explosivenessBonusPct = attacker.falconStacks * 10;
 
     addLog(
       battle,
-      `${attacker.name}'s Hunting Inertia rises to ${attacker.falconStacks} stack(s) (+${bonusPct}% damage).`
+      `${attacker.name}'s Hunting Inertia rises to ${attacker.falconStacks}/4 (+${damageBonusPct}% damage, +${explosivenessBonusPct}% Explosiveness).`
     );
   }
 }
 
 function resetFalconStacks(attacker, battle, reason = "") {
   if (attacker.passive?.id !== "hunting-inertia") return;
-  if (attacker.falconStacks === 0) return;
+  if ((attacker.falconStacks || 0) === 0) return;
 
   attacker.falconStacks = 0;
 
@@ -1307,6 +1317,77 @@ function resetFalconStacks(attacker, battle, reason = "") {
     battle,
     `${attacker.name}'s Hunting Inertia resets${reason ? ` (${reason})` : ""}.`
   );
+}
+
+function getTigerStalkStacks(fighter) {
+  if (fighter.passive?.id !== "silent-stalk") return 0;
+  return Math.max(0, Math.min(4, fighter.tigerStalkStacks || 0));
+}
+
+function getTigerStalkStatBonusPercent(fighter, stat) {
+  const stacks = getTigerStalkStacks(fighter);
+  if (stacks <= 0) return 0;
+
+  if (stat === "attack") return stacks * 5;
+  if (stat === "speed" || stat === "explosiveness") return stacks * 10;
+
+  return 0;
+}
+
+function resetTigerStalkStacks(fighter, battle, reason = "") {
+  if (fighter.passive?.id !== "silent-stalk") return;
+  if ((fighter.tigerStalkStacks || 0) <= 0) return;
+
+  fighter.tigerStalkStacks = 0;
+
+  addLog(
+    battle,
+    `${fighter.name}'s Silent Stalk resets${reason ? ` (${reason})` : ""}.`
+  );
+}
+
+function consumeTigerStalkStacks(fighter, battle, reason = "Throat Bite") {
+  if (fighter.passive?.id !== "silent-stalk") return 0;
+
+  const consumed = getTigerStalkStacks(fighter);
+  if (consumed <= 0) return 0;
+
+  fighter.tigerStalkStacks = 0;
+
+  addLog(
+    battle,
+    `${fighter.name}'s Silent Stalk consumes ${consumed} Stalk stack${consumed === 1 ? "" : "s"} (${reason}).`
+  );
+
+  return consumed;
+}
+
+function handleTigerSilentStalkEndTurn(fighter, battle) {
+  if (fighter.passive?.id !== "silent-stalk") return;
+
+  const current = getTigerStalkStacks(fighter);
+
+  if (fighter.tigerTookDirectDamageThisTurn) {
+    if (current > 0) {
+      fighter.tigerStalkStacks = Math.max(0, current - 1);
+
+      addLog(
+        battle,
+        `${fighter.name}'s Silent Stalk is disrupted by direct damage (${current} → ${fighter.tigerStalkStacks}/4).`
+      );
+    }
+
+    return;
+  }
+
+  if (current < 4) {
+    fighter.tigerStalkStacks = current + 1;
+
+    addLog(
+      battle,
+      `${fighter.name}'s Silent Stalk gains 1 Stalk stack (${fighter.tigerStalkStacks}/4).`
+    );
+  }
 }
 
 function getMacaqueStealAmount(chainCount) {
@@ -1788,6 +1869,12 @@ export function getEffectiveStat(fighter, stat, battle, opponent = null, actionT
     if (stat === "explosiveness") value *= 1.2;
   }
 
+  const tigerStalkBonusPct = getTigerStalkStatBonusPercent(fighter, stat);
+
+  if (tigerStalkBonusPct > 0) {
+    value *= 1 + tigerStalkBonusPct / 100;
+  }
+
   if (stat === "attack") {
     const momentumBonusPct = getMomentumAttackBonusPercent(fighter);
 
@@ -1799,6 +1886,14 @@ export function getEffectiveStat(fighter, stat, battle, opponent = null, actionT
 
     if (falconBonusPct > 0) {
       value *= 1 + falconBonusPct / 100;
+    }
+  }
+
+  if (stat === "explosiveness") {
+    const falconExplosivenessBonusPct = getFalconExplosivenessBonusPercent(fighter);
+
+    if (falconExplosivenessBonusPct > 0) {
+      value *= 1 + falconExplosivenessBonusPct / 100;
     }
   }
 
@@ -1946,8 +2041,16 @@ function calculateDamageWithDefenseFactor(
 }
 
 export function applyDamage(defender, damage) {
-  defender.hp -= damage;
-  defender.damageTakenThisTurn += damage;
+  const finalDamage = Math.max(0, Math.round(damage));
+
+  if (finalDamage <= 0) return;
+
+  defender.hp -= finalDamage;
+  defender.damageTakenThisTurn += finalDamage;
+
+  if (defender.passive?.id === "silent-stalk") {
+    defender.tigerTookDirectDamageThisTurn = true;
+  }
 
   if (defender.hp <= 0) {
     defender.hp = 0;
@@ -2345,6 +2448,7 @@ export function getActionPriority(actionType, fighter = null) {
   if (actionType === "special") {
     if (fighter?.special?.id === "total-regeneration") return 8;
     if (fighter?.special?.id === "illusory-dance") return 6;
+    if (fighter?.special?.id === "deadly-dive") return 6;
     if (fighter?.special?.id === "marine-flash") return 7;
     if (fighter?.special?.id === "overinflation") return 9;
     if (fighter?.special?.id === "coconut-fortress") return 8;
@@ -2443,17 +2547,25 @@ function activateIllusoryDanceBuff(fighter, battle) {
   fighter.illusoryDanceBuffReady = true;
   addLog(
     battle,
-    `${fighter.name}'s Illusory Dance grants a guaranteed next attack with +50% damage.`
+    `${fighter.name}'s Illusory Dance prepares its next successful attack to deal 300% total damage.`
   );
 }
 
 function applyIllusoryDanceDefense(defender, damage, battle) {
   if (!defender.illusoryDanceActive) return damage;
 
-  const reducedDamage = Math.max(
-    Math.round(damage * 0.5),
-    Math.ceil(damage * 0.2)
-  );
+  const attacker = battle.fighterA === defender ? battle.fighterB : battle.fighterA;
+  const reducedDamage = Math.max(0, Math.round(damage * 0.5));
+  const reflectedDamage = Math.max(1, Math.round(damage * 0.5));
+
+  if (attacker?.alive && reflectedDamage > 0) {
+    applyDamage(attacker, reflectedDamage);
+
+    addLog(
+      battle,
+      `${defender.name}'s Illusory Dance reflects ${reflectedDamage} damage back to ${attacker.name}.`
+    );
+  }
 
   addLog(
     battle,
@@ -2501,8 +2613,8 @@ function handleReactiveChargeOnMiss(attacker, defender, battle) {
 
 function getNextAttackBuff(attacker) {
   return {
-    guaranteedHit: attacker.illusoryDanceBuffReady,
-    damagePct: attacker.illusoryDanceBuffReady ? 50 : 0
+    guaranteedHit: false,
+    damagePct: attacker.illusoryDanceBuffReady ? 200 : 0
   };
 }
 
@@ -2672,6 +2784,7 @@ export function performAttack(attacker, defender, actionType, battle) {
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
+    resetTigerStalkStacks(attacker, battle, "miss");
     resetMacaqueChain(attacker, battle, "miss");
     resetThreeToedSlothBacterialChain(attacker, battle, "miss");
 
@@ -2737,6 +2850,7 @@ export function performAttack(attacker, defender, actionType, battle) {
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
+    resetTigerStalkStacks(attacker, battle, "miss");
     resetMacaqueChain(attacker, battle, "miss");
     handleReactiveChargeOnMiss(attacker, defender, battle);
 
@@ -2856,7 +2970,7 @@ export function performAttack(attacker, defender, actionType, battle) {
     addLog(
       battle,
       attacker.name +
-        "'s Illusory Dance buff empowers the attack (+50% damage, guaranteed hit)."
+        "'s Illusory Dance buff empowers this successful attack (300% total damage)."
     );
 
     consumeNextAttackBuff(attacker);
@@ -2958,8 +3072,11 @@ function performTigerSpecial(attacker, defender, battle) {
   attacker.overinflationUsedThisTurn = false;
 
   const nextAttackBuff = getNextAttackBuff(attacker);
+  const stalkStacks = getTigerStalkStacks(attacker);
+  const empoweredBite = stalkStacks >= 3;
+  const defenseFactor = empoweredBite ? 0 : 0.5;
 
-  const precision = calculatePrecisePrecision(attacker, defender, battle);
+  const precision = calculateNormalPrecision(attacker, defender, battle);
   const evasion = calculateEvasion(defender, battle);
   let hitChance = calculateHitChanceFromValues(precision, evasion);
 
@@ -2970,13 +3087,14 @@ function performTigerSpecial(attacker, defender, battle) {
   if (!hit) {
     addLog(
       battle,
-      attacker.name + " uses Lethal Bite but misses " + defender.name + "."
+      attacker.name + " uses Throat Bite but misses " + defender.name + "."
     );
 
     consumeSpecialCharge(attacker);
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
+    resetTigerStalkStacks(attacker, battle, "miss");
     resetMacaqueChain(attacker, battle, "miss");
     handleReactiveChargeOnMiss(attacker, defender, battle);
     return;
@@ -2986,7 +3104,7 @@ function performTigerSpecial(attacker, defender, battle) {
     attacker,
     defender,
     battle,
-    0.5,
+    defenseFactor,
     "special"
   );
 
@@ -2998,7 +3116,7 @@ function performTigerSpecial(attacker, defender, battle) {
     addLog(
       battle,
       attacker.name +
-        "'s Illusory Dance buff empowers the attack (+50% damage, guaranteed hit)."
+        "'s Illusory Dance buff empowers this successful attack (300% total damage)."
     );
 
     consumeNextAttackBuff(attacker);
@@ -3012,34 +3130,46 @@ function performTigerSpecial(attacker, defender, battle) {
   applyDamage(defender, damage);
   applyDirectHitRecoil(attacker, defender, battle, damage);
 
+  const defenseText = empoweredBite ? "100% Defense" : "50% Defense";
+
   if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
     addLog(
       battle,
-      attacker.name + "'s Lethal Bite fails to apply Bleed."
+      attacker.name + "'s Throat Bite fails to apply " + (empoweredBite ? "Deep Bleed" : "Bleed") + "."
     );
 
     addLog(
       battle,
       attacker.name +
-        " uses Lethal Bite, dealing " +
+        " uses Throat Bite, dealing " +
         damage +
-        " damage, ignoring 50% Defense."
+        " damage and ignoring " +
+        defenseText +
+        "."
     );
   } else {
-    addEffect(defender, createBleedEffect(2, 15), battle);
+    if (empoweredBite) {
+      addEffect(defender, createDeepBleedEffect(2, 30), battle);
+    } else {
+      addEffect(defender, createBleedEffect(2, 15), battle);
+    }
 
     addLog(
       battle,
       attacker.name +
-        " uses Lethal Bite, dealing " +
+        " uses Throat Bite, dealing " +
         damage +
-        " damage, ignoring 50% Defense and applying Bleed."
+        " damage, ignoring " +
+        defenseText +
+        " and applying " +
+        (empoweredBite ? "Deep Bleed" : "Bleed") +
+        "."
     );
   }
 
   addLog(
     battle,
-    "Lethal Bite calc -> Attack: " +
+    "Throat Bite calc -> Attack: " +
       damageInfo.attackValue +
       " | Effective Defense: " +
       damageInfo.defenseValue +
@@ -3047,6 +3177,10 @@ function performTigerSpecial(attacker, defender, battle) {
       damageInfo.multiplier +
       "%."
   );
+
+  if (empoweredBite) {
+    consumeTigerStalkStacks(attacker, battle, "Throat Bite");
+  }
 
   increaseMomentum(attacker, battle);
   increaseParasiticControlHits(attacker, defender, battle);
@@ -3077,6 +3211,7 @@ function performHoneyBadgerSpecial(attacker, defender, battle) {
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
+    resetTigerStalkStacks(attacker, battle, "miss");
     resetMacaqueChain(attacker, battle, "miss");
     handleReactiveChargeOnMiss(attacker, defender, battle);
     return;
@@ -3194,7 +3329,7 @@ function performShimaEnagaSpecial(attacker, battle) {
   addLog(
     battle,
     attacker.name +
-      " uses Illusory Dance. Incoming damage is reduced by 50% this turn (minimum 20% damage taken)."
+      " uses Illusory Dance. This turn, it reflects 50% of direct damage received and only takes the remaining 50%."
   );
 
   resetMomentum(attacker, battle, "special");
@@ -3258,6 +3393,7 @@ function performMantisShrimpSpecial(attacker, defender, battle) {
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
+    resetTigerStalkStacks(attacker, battle, "miss");
     resetMacaqueChain(attacker, battle, "miss");
     handleReactiveChargeOnMiss(attacker, defender, battle);
     consumeSpecialCharge(attacker);
@@ -3497,6 +3633,7 @@ function performDungBeetleSpecial(attacker, defender, battle) {
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
+    resetTigerStalkStacks(attacker, battle, "miss");
     resetMacaqueChain(attacker, battle, "miss");
     handleReactiveChargeOnMiss(attacker, defender, battle);
     consumeSpecialCharge(attacker);
@@ -3601,6 +3738,7 @@ function performCaimanSpecial(attacker, defender, battle) {
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
+    resetTigerStalkStacks(attacker, battle, "miss");
     resetMacaqueChain(attacker, battle, "miss");
     handleReactiveChargeOnMiss(attacker, defender, battle);
     return;
@@ -3654,6 +3792,7 @@ function performFennecSpecial(attacker, defender, battle) {
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
+    resetTigerStalkStacks(attacker, battle, "miss");
     resetMacaqueChain(attacker, battle, "miss");
     handleReactiveChargeOnMiss(attacker, defender, battle);
 
@@ -3834,6 +3973,7 @@ function performEmeraldWaspSpecial(attacker, defender, battle) {
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
+    resetTigerStalkStacks(attacker, battle, "miss");
     resetMacaqueChain(attacker, battle, "miss");
     handleReactiveChargeOnMiss(attacker, defender, battle);
     consumeSpecialCharge(attacker);
@@ -3983,9 +4123,12 @@ function performFalconSpecial(attacker, defender, battle) {
   attacker.concentratedLastTurn = false;
   attacker.overinflationUsedThisTurn = false;
 
-  const stacks = attacker.falconStacks;
-
   defender.tempAccuracyLockTurns = 1;
+
+  addLog(
+    battle,
+    attacker.name + " takes flight. " + defender.name + "'s accuracy against it is capped at 25% this turn."
+  );
 
   const precision = calculatePrecisePrecision(attacker, defender, battle);
   const evasion = calculateEvasion(defender, battle);
@@ -4014,12 +4157,7 @@ function performFalconSpecial(attacker, defender, battle) {
     "special"
   );
 
-  let multiplier = 1.5;
-  if (stacks === 1) multiplier = 1.6;
-  if (stacks === 2) multiplier = 1.7;
-  if (stacks >= 3) multiplier = 1.8;
-
-  let damage = Math.max(1, Math.round(damageInfo.damage * multiplier));
+  let damage = damageInfo.damage;
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
@@ -4029,38 +4167,38 @@ function performFalconSpecial(attacker, defender, battle) {
   applyDamage(defender, damage);
   applyDirectHitRecoil(attacker, defender, battle, damage);
 
-  if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
-    addLog(
-      battle,
-      attacker.name + "'s Deadly Dive fails to reduce Technique and Agility."
-    );
+  const staminaLoss = Math.min(defender.stamina, Math.max(0, Math.round(damage * 0.5)));
 
-    addLog(
-      battle,
-      attacker.name +
-        " uses Deadly Dive (" +
-        multiplier +
-        "x), dealing " +
-        damage +
-        " damage."
-    );
-  } else {
-    addEffect(defender, createFalconDebuffEffect(2, 25), battle);
-
-    addLog(
-      battle,
-      attacker.name +
-        " uses Deadly Dive (" +
-        multiplier +
-        "x), dealing " +
-        damage +
-        " damage and reducing " +
-        defender.name +
-        "'s Technique and Agility by 25% for 2 turns."
-    );
+  if (staminaLoss > 0) {
+    spendStamina(defender, staminaLoss, battle);
   }
 
-  attacker.falconStacks = 0;
+  addLog(
+    battle,
+    attacker.name +
+      " uses Deadly Dive, dealing " +
+      damage +
+      " damage and reducing " +
+      defender.name +
+      "'s stamina by " +
+      staminaLoss +
+      "."
+  );
+
+  addLog(
+    battle,
+    "Deadly Dive calc -> Attack: " +
+      damageInfo.attackValue +
+      " | Defense: " +
+      damageInfo.defenseValue +
+      " | Multiplier: " +
+      damageInfo.multiplier +
+      "%."
+  );
+
+  increaseMomentum(attacker, battle);
+  increaseParasiticControlHits(attacker, defender, battle);
+  increaseMacaqueChain(attacker, defender, battle);
   consumeSpecialCharge(attacker);
 }
 
@@ -4216,6 +4354,7 @@ function performFireSalamanderSpecial(attacker, defender, battle) {
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
+    resetTigerStalkStacks(attacker, battle, "miss");
     resetMacaqueChain(attacker, battle, "miss");
     handleReactiveChargeOnMiss(attacker, defender, battle);
     return;
@@ -4599,6 +4738,7 @@ function performThreeToedSlothAncestralMicroecosystem(attacker, defender, battle
     resetMomentum(attacker, battle, "miss");
     resetParasiticControlHits(attacker, battle, "miss");
     resetFalconStacks(attacker, battle, "miss");
+    resetTigerStalkStacks(attacker, battle, "miss");
     resetMacaqueChain(attacker, battle, "miss");
     handleReactiveChargeOnMiss(attacker, defender, battle);
     consumeSpecialCharge(attacker);
@@ -4673,6 +4813,7 @@ function performSpecialAction(attacker, defender, battle) {
 
   switch (attacker.special.id) {
     case "lethal-bite":
+    case "throat-bite":
       performTigerSpecial(attacker, defender, battle);
       break;
     case "mutilation":
@@ -4772,13 +4913,15 @@ function processEndTurnPassives(fighter, opponent, battle) {
 
   handleThreeToedSlothAlgaeEndTurn(fighter, battle);
   tickThreeToedSlothMicroecosystem(fighter, battle);
+  handleTigerSilentStalkEndTurn(fighter, battle);
 
-    handleDarwinsLarvalGestation(fighter, battle);
+  handleDarwinsLarvalGestation(fighter, battle);
 }
 
 function advanceTurnDamageMemory(fighter) {
   fighter.damageTakenLastTurn = fighter.damageTakenThisTurn;
   fighter.damageTakenThisTurn = 0;
+  fighter.tigerTookDirectDamageThisTurn = false;
 
   if (fighter.tempAccuracyLockTurns > 0) {
     fighter.tempAccuracyLockTurns -= 1;
