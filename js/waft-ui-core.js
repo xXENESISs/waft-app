@@ -40,8 +40,11 @@ function isImportantSummaryLine(line) {
     line.includes("Modified stat") ||
     line.includes(" uses ") ||
     line.includes(" hits ") ||
+    line.includes("lands on") ||
+    line.includes("total damage") ||
     line.includes("(CRITICAL)") ||
     line.includes("misses") ||
+    line.includes("converts the miss") ||
     line.includes("gains effect") ||
     line.includes("reduces") ||
     line.includes("Battle effect activated") ||
@@ -107,6 +110,12 @@ function isImportantSummaryLine(line) {
     line.includes("Costal Eversion") ||
     line.includes("Ribbed Guard") ||
     line.includes("Costal Toxin") ||
+    line.includes("Tentacle Storm") ||
+    line.includes("Coconut Fortress") ||
+    line.includes("Coconut Shell") ||
+    line.includes("Perfect Camouflage") ||
+    line.includes("Ink Sea") ||
+    line.includes("Predatory Pressure") ||
     line.includes("Caudal Autotomy") ||
     line.includes("Scaled Retreat") ||
     line.includes("detached tail") ||
