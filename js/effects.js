@@ -151,6 +151,23 @@ export function createDeepBleedEffect(duration = 2, damage = 30) {
   };
 }
 
+
+export function createCostalToxinEffect(duration = 99, sourceSlot = null) {
+  return {
+    id: "costal-toxin",
+    name: "Costal Toxin",
+    duration,
+    stackable: false,
+    allowsConcentration: true,
+    sourceSlot,
+    modifiers: {
+      speedPct: -10,
+      agilityPct: -10,
+      techniquePct: -10
+    }
+  };
+}
+
 export function createPoisonEffect(duration = 3, damage = 10) {
   return {
     id: "poison",

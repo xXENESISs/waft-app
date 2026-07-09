@@ -1,4 +1,47 @@
 import { animals } from "./animals.js";
+
+import {
+  getSharedImageCandidates,
+  buildSharedTurnSummary,
+  deriveSharedTurnOutcome,
+  formatSharedBattleLogLine,
+  setupSwapFightersButton,
+  isSharedThreeToedSlothFighter,
+  getSharedSlothActiveColonies,
+  isSharedSlothDormant,
+  sharedSlothHasColony,
+  getSharedSlothBacterialBonusForHitLevel,
+  getSharedSlothBacterialNextHitBonus,
+  getSharedSlothBacterialFollowingHitBonus,
+  getSharedSlothBacterialProgressText,
+  getSharedThreeToedSlothStatusText,
+  getSharedSlothColonyCurrentEffectText,
+  getSharedSlothMiniStateLabel,
+  getSharedSlothFullStateLabel,
+  renderSharedSlothColonyChip,
+  renderSharedSlothEcosystemMiniPanel,
+  renderSharedSlothColonyDetailCard,
+  renderSharedSlothEcosystemModalDom,
+  updateSharedSlothEcosystemButtonDom,
+  isSharedCoconutOctopusFighter,
+  getSharedCoconutOctopusFormText,
+  getSharedCoconutOctopusSpecialChoiceText,
+  getSharedCoconutOctopusFormChargeMax,
+  getSharedCoconutOctopusFormCharge,
+  getSharedCoconutOctopusCurrentCharge,
+  getSharedCoconutOctopusCurrentChargeMax,
+  getSharedCoconutOctopusChargeLine,
+  getSharedCoconutOctopusStatusText,
+  getSharedCoconutOctopusFormDefinitionForPreview,
+  getSharedCoconutOctopusPreviewStatsHtml,
+  renderSharedCoconutOctopusFormPreviewDom,
+  updateSharedCoconutOctopusPanelDom,
+  renderSharedOnlineTournamentOctopusPanel,
+  updateSharedLarvalCommandButtonDom,
+  getSharedLarvalDraftTotal,
+  getSharedCurrentLarvae,
+  renderSharedLarvalCommandModalDom
+} from "./waft-ui-core.js";
 import { setupFighterSelector } from "./fighter-selector.js";
 
 let socket = null;
@@ -43,37 +86,31 @@ const SLOTH_COLONIES = [
 ];
 
 function isThreeToedSlothFighter(fighter) {
-  return fighter && fighter.id === "three-toed-sloth";
+  return isSharedThreeToedSlothFighter(fighter);
 }
 
 function getSlothActiveColonies(fighter) {
-  return Array.isArray(fighter?.slothActiveColonies) ? fighter.slothActiveColonies : [];
+  return getSharedSlothActiveColonies(fighter);
 }
 
 function isSlothDormantInBattle(fighter, battle) {
-  return isThreeToedSlothFighter(fighter) && battle && (battle.biome === "arctic" || battle.biome === "desert");
+  return isSharedSlothDormant(fighter, battle, { compact: true });
 }
 
 function slothHasColony(fighter, colonyId) {
-  return getSlothActiveColonies(fighter).includes(colonyId);
+  return sharedSlothHasColony(fighter, colonyId);
 }
 
 function getSlothBacterialBonusForHitLevel(hitLevel) {
-  if (hitLevel <= 1) return 0;
-  if (hitLevel === 2) return 25;
-  if (hitLevel === 3) return 50;
-  if (hitLevel === 4) return 75;
-  return 100;
+  return getSharedSlothBacterialBonusForHitLevel(hitLevel);
 }
 
 function getSlothBacterialNextHitBonus(fighter) {
-  const current = Math.max(0, Math.min(5, fighter?.slothBacterialChain || 0));
-  return getSlothBacterialBonusForHitLevel(Math.min(5, current + 1));
+  return getSharedSlothBacterialNextHitBonus(fighter);
 }
 
 function getSlothBacterialProgressText(fighter) {
-  const chain = Math.max(0, Math.min(5, fighter?.slothBacterialChain || 0));
-  return "Chain: " + chain + "/5 · Next hit +" + getSlothBacterialNextHitBonus(fighter) + "% · peak resets";
+  return getSharedSlothBacterialProgressText(fighter);
 }
 
 function renderSlothColonyChip(fighter, colony, battle) {
@@ -102,19 +139,19 @@ function renderSlothEcosystemMiniPanel(fighter, battle) {
 }
 
 function getCoconutOctopusFormChargeMax(formId) {
-  return animals["coconut-octopus"]?.octopusForms?.[formId]?.special?.chargeHits || 0;
+  return getSharedCoconutOctopusFormChargeMax(formId);
 }
 function getCoconutOctopusFormCharge(fighter, formId) {
-  return fighter?.octopusSpecialCharges?.[formId] || 0;
+  return getSharedCoconutOctopusFormCharge(fighter, formId);
 }
 function getCoconutOctopusCurrentCharge(fighter) {
-  return getCoconutOctopusFormCharge(fighter, fighter?.octopusForm || "base");
+  return getSharedCoconutOctopusCurrentCharge(fighter);
 }
 function getCoconutOctopusCurrentChargeMax(fighter) {
-  return getCoconutOctopusFormChargeMax(fighter?.octopusForm || "base");
+  return getSharedCoconutOctopusCurrentChargeMax(fighter);
 }
 function getCoconutOctopusChargeLine(fighter) {
-  return ["base", "offensive", "defensive", "evasive"].map(id => (OCTOPUS_FORM_LABELS[id] || id) + " " + getCoconutOctopusFormCharge(fighter, id) + "/" + getCoconutOctopusFormChargeMax(id)).join(" · ");
+  return getSharedCoconutOctopusChargeLine(fighter);
 }
 
 
@@ -135,52 +172,11 @@ function delay(ms) {
 }
 
 function buildTurnSummary(newLines) {
-  const summary = [];
-
-  for (const line of newLines || []) {
-    if (!line) continue;
-    if (line.includes("calc →")) continue;
-    if (line.startsWith("Damage calc")) continue;
-    if (line.startsWith("Critical calc")) continue;
-    if (line.includes("→ HP:")) continue;
-    if (line.startsWith("--- Turn")) continue;
-    if (line.includes("gains effect: Neurotoxic Injection")) continue;
-
-    if (
-      line.includes("Honey Badger has fallen below") &&
-      line.includes("fatigue")
-    ) {
-      summary.push(
-        "Honey Badger's Savage Endurance ignores fatigue: no stat reduction is applied."
-      );
-      continue;
-    }
-
-    if (
-      line.includes("enters Savage Endurance") &&
-      line.includes("below 25% HP")
-    ) {
-      summary.push(
-        "Honey Badger enters Savage Endurance: below 25% HP, it becomes immune to critical hits and gains +20% Attack and +20% Explosiveness."
-      );
-      continue;
-    }
-
-    summary.push(line);
-  }
-
-  return summary.length > 0 ? summary : ["No major events this turn."];
+  return buildSharedTurnSummary(newLines);
 }
 
 function formatBattleLogLine(line) {
-  if (
-    line.includes("Honey Badger has fallen below") &&
-    line.includes("fatigue")
-  ) {
-    return "Honey Badger's Savage Endurance ignores fatigue: no stat reduction is applied.";
-  }
-
-  return line;
+  return formatSharedBattleLogLine(line);
 }
 
 async function typeTurnSummaryForMatch(matchId, lines) {
@@ -220,44 +216,19 @@ async function typeTurnSummaryForMatch(matchId, lines) {
 
 
 function isCoconutOctopusFighter(fighter) {
-  return fighter && fighter.id === "coconut-octopus";
+  return isSharedCoconutOctopusFighter(fighter);
 }
 
 function getCoconutOctopusFormText(fighter) {
-  if (!isCoconutOctopusFighter(fighter)) return "";
-  const form = fighter.octopusForm || "base";
-  return OCTOPUS_FORM_LABELS[form] || form;
+  return getSharedCoconutOctopusFormText(fighter);
 }
 
 function getCoconutOctopusStatusText(fighter) {
-  if (!isCoconutOctopusFighter(fighter)) return "";
-
-  const lines = [
-    "Form: " + getCoconutOctopusFormText(fighter),
-    "Adaptation charges: " + (fighter.octopusAdaptationCharges ?? 0) + "/8",
-    "First transformation: " + (fighter.octopusFreeTransformationAvailable ? "FREE" : "USED"),
-    "Special charges: " + getCoconutOctopusChargeLine(fighter)
-  ];
-
-  if ((fighter.octopusForm || "base") === "base") {
-    lines.push("Perfect Adaptation: choose option when using Special");
-  }
-  if ((fighter.octopusForm || "base") === "offensive") {
-    lines.push("Predatory Pressure: " + ((fighter.octopusPredatoryPressureStacks || 0) * 5) + "% Attack reduction");
-  }
-  if ((fighter.octopusForm || "base") === "defensive") {
-    lines.push("Coconut Shell: 10 fixed damage on direct hit");
-    lines.push("Fortress active: " + (fighter.coconutFortressActive ? "YES" : "NO"));
-  }
-  if ((fighter.octopusForm || "base") === "evasive") {
-    lines.push("Perfect Camouflage: +15 HP / +15 Stamina when enemy misses");
-  }
-
-  return lines.join("\n");
+  return getSharedCoconutOctopusStatusText(fighter);
 }
 
 function getCoconutOctopusFormDefinitionForPreview(formId) {
-  return animals["coconut-octopus"]?.octopusForms?.[formId] || null;
+  return getSharedCoconutOctopusFormDefinitionForPreview(formId);
 }
 
 function getCoconutOctopusPreviewStatsHtml(form) {
@@ -325,10 +296,38 @@ function getImageCandidates(id, animal) {
     "giant-asian-mantis": ["./images/animals/arthropods/asian-giant-mantis.png"],
     "darwins-frog": ["./images/animals/amphibians/darwins-frog.png"],
     "coconut-octopus": ["./images/animals/fish/coconut-octopus.png"],
-    "three-toed-sloth": ["./images/animals/mammals/three-toed-sloth.png"]
+    "three-toed-sloth": ["./images/animals/mammals/three-toed-sloth.png"],
+    "iberian-ribbed-newt": [
+      "./images/animals/amphibians/iberian-ribbed-newt.png",
+      "./images/animals/amphibians/iberian-ribbed-newt.jpg",
+      "./images/animals/amphibians/iberian-ribbed-newt.jpeg",
+      "./images/animals/amphibians/iberian-ribbed-newt.webp",
+      "./images/animals/amphibians/gallipato.png",
+      "./images/animals/amphibians/gallipato.jpg",
+      "./images/animals/amphibians/gallipato.jpeg",
+      "./images/animals/amphibians/gallipato.webp",
+      "./images/animals/amphibians/gallipato-iberico.png",
+      "./images/animals/amphibians/gallipato-iberico.jpg",
+      "./images/animals/amphibians/gallipato-iberico.jpeg",
+      "./images/animals/amphibians/gallipato-iberico.webp"
+    ],
+    "iberian-skink": [
+      "./images/animals/reptiles/iberian-skink.png",
+      "./images/animals/reptiles/iberian-skink.jpg",
+      "./images/animals/reptiles/iberian-skink.jpeg",
+      "./images/animals/reptiles/iberian-skink.webp",
+      "./images/animals/reptiles/eslizon-iberico.png",
+      "./images/animals/reptiles/eslizon-iberico.jpg",
+      "./images/animals/reptiles/eslizon-iberico.jpeg",
+      "./images/animals/reptiles/eslizon-iberico.webp",
+      "./images/animals/reptiles/eslizon.png",
+      "./images/animals/reptiles/eslizon.jpg",
+      "./images/animals/reptiles/eslizon.jpeg",
+      "./images/animals/reptiles/eslizon.webp"
+    ]
   };
 
-  return [direct, ...(legacy[id] ?? [])];
+  return getSharedImageCandidates(id, animal, legacy);
 }
 
 function loadFighterImage(imgEl, fighterId) {
@@ -543,8 +542,30 @@ function getExtraResourceText(fighter) {
     return (
       "Illusory Dance active: " +
       (fighter.illusoryDanceActive ? "YES" : "NO") +
-      "\nNext successful attack x2: " +
+      "\nNext successful attack x3: " +
       (fighter.illusoryDanceBuffReady ? "YES" : "NO")
+    );
+  }
+
+  if (fighter.passive?.id === "ribbed-guard") {
+    return (
+      "Ribbed Guard: offensive actions cost +" +
+      (fighter.costalEversionActive ? "10" : "5") +
+      " stamina" +
+      "\nCostal Eversion: " +
+      (fighter.costalEversionActive ? "ACTIVE (" + (fighter.costalEversionTurns || 0) + " turn(s) left)" : "NO") +
+      "\nWhile active: -50% damage, 25% reflect, Costal Toxin"
+    );
+  }
+
+
+  if (fighter.passive?.id === "scaled-retreat") {
+    return (
+      "Scaled Retreat: Concentration HP x2 if hit" +
+      "\nCaudal Autotomy: " +
+      (fighter.caudalAutotomyActive ? "ACTIVE (" + (fighter.caudalAutotomyTurns || 0) + " turn(s) left)" : "NO") +
+      "\nTail HP: " +
+      ((fighter.caudalAutotomyActive && (fighter.caudalAutotomyTailHp || 0) > 0) ? (fighter.caudalAutotomyTailHp + "/" + (fighter.caudalAutotomyMaxTailHp || 90)) : "inactive")
     );
   }
 
@@ -1514,44 +1535,23 @@ function getLarvalModalActiveMatch() {
 }
 
 function getLarvalDraftTotal() {
-  return (
-    (larvalDraftCommand.attack || 0) +
-    (larvalDraftCommand.defense || 0) +
-    (larvalDraftCommand.sacrifice || 0)
-  );
+  return getSharedLarvalDraftTotal(larvalDraftCommand);
 }
 
 function getCurrentPlayerLarvaeForModal() {
   const activeMatch = getLarvalModalActiveMatch();
-  const { fighter } = getLocalFighterInActiveMatch(activeMatch);
-  return fighter?.darwinsLarvae || 0;
+  const { fighter } = activeMatch ? getLocalFighterInActiveMatch(activeMatch) : { fighter: null };
+  return getSharedCurrentLarvae(fighter, false);
 }
 
 function renderLarvalCommandModal() {
-  const larvae = getCurrentPlayerLarvaeForModal();
-  const totalUsed = getLarvalDraftTotal();
-  const conserved = Math.max(0, larvae - totalUsed);
-
-  setText("larvalAvailableText", "Larvae available: " + larvae + "/5");
-  setText("larvalAttackValue", larvalDraftCommand.attack || 0);
-  setText("larvalDefenseValue", larvalDraftCommand.defense || 0);
-  setText("larvalSacrificeValue", larvalDraftCommand.sacrifice || 0);
-  setText("larvalConserveValue", conserved);
-
-  const attackMinus = getEl("larvalAttackMinus");
-  const attackPlus = getEl("larvalAttackPlus");
-  const defenseMinus = getEl("larvalDefenseMinus");
-  const defensePlus = getEl("larvalDefensePlus");
-  const sacrificeMinus = getEl("larvalSacrificeMinus");
-  const sacrificePlus = getEl("larvalSacrificePlus");
-
-  if (attackMinus) attackMinus.disabled = (larvalDraftCommand.attack || 0) <= 0;
-  if (defenseMinus) defenseMinus.disabled = (larvalDraftCommand.defense || 0) <= 0;
-  if (sacrificeMinus) sacrificeMinus.disabled = (larvalDraftCommand.sacrifice || 0) <= 0;
-
-  if (attackPlus) attackPlus.disabled = totalUsed >= larvae;
-  if (defensePlus) defensePlus.disabled = totalUsed >= larvae || (larvalDraftCommand.defense || 0) >= 2;
-  if (sacrificePlus) sacrificePlus.disabled = totalUsed >= larvae;
+  const activeMatch = getLarvalModalActiveMatch();
+  const { fighter } = activeMatch ? getLocalFighterInActiveMatch(activeMatch) : { fighter: null };
+  renderSharedLarvalCommandModalDom({
+    fighter,
+    draft: larvalDraftCommand,
+    previewMode: false
+  });
 }
 
 function openLarvalCommandModal(activeMatch) {

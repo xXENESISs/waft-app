@@ -1,4 +1,47 @@
 import { animals } from "./animals.js";
+
+import {
+  getSharedImageCandidates,
+  buildSharedTurnSummary,
+  deriveSharedTurnOutcome,
+  formatSharedBattleLogLine,
+  setupSwapFightersButton,
+  isSharedThreeToedSlothFighter,
+  getSharedSlothActiveColonies,
+  isSharedSlothDormant,
+  sharedSlothHasColony,
+  getSharedSlothBacterialBonusForHitLevel,
+  getSharedSlothBacterialNextHitBonus,
+  getSharedSlothBacterialFollowingHitBonus,
+  getSharedSlothBacterialProgressText,
+  getSharedThreeToedSlothStatusText,
+  getSharedSlothColonyCurrentEffectText,
+  getSharedSlothMiniStateLabel,
+  getSharedSlothFullStateLabel,
+  renderSharedSlothColonyChip,
+  renderSharedSlothEcosystemMiniPanel,
+  renderSharedSlothColonyDetailCard,
+  renderSharedSlothEcosystemModalDom,
+  updateSharedSlothEcosystemButtonDom,
+  isSharedCoconutOctopusFighter,
+  getSharedCoconutOctopusFormText,
+  getSharedCoconutOctopusSpecialChoiceText,
+  getSharedCoconutOctopusFormChargeMax,
+  getSharedCoconutOctopusFormCharge,
+  getSharedCoconutOctopusCurrentCharge,
+  getSharedCoconutOctopusCurrentChargeMax,
+  getSharedCoconutOctopusChargeLine,
+  getSharedCoconutOctopusStatusText,
+  getSharedCoconutOctopusFormDefinitionForPreview,
+  getSharedCoconutOctopusPreviewStatsHtml,
+  renderSharedCoconutOctopusFormPreviewDom,
+  updateSharedCoconutOctopusPanelDom,
+  renderSharedOnlineTournamentOctopusPanel,
+  updateSharedLarvalCommandButtonDom,
+  getSharedLarvalDraftTotal,
+  getSharedCurrentLarvae,
+  renderSharedLarvalCommandModalDom
+} from "./waft-ui-core.js";
 import { setupLinkedFighterSelectors } from "./fighter-selector.js";
 import {
   createBattle,
@@ -113,154 +156,52 @@ const SLOTH_COLONY_BY_ID = Object.fromEntries(
 );
 
 function isThreeToedSlothFighter(fighter) {
-  return fighter && fighter.id === "three-toed-sloth";
+  return isSharedThreeToedSlothFighter(fighter);
 }
 
 function getSlothActiveColonies(fighter) {
-  if (!isThreeToedSlothFighter(fighter)) return [];
-
-  return Array.isArray(fighter.slothActiveColonies)
-    ? fighter.slothActiveColonies
-    : [];
+  return getSharedSlothActiveColonies(fighter);
 }
 
 function isSlothDormantInCurrentBiome(fighter) {
-  if (!isThreeToedSlothFighter(fighter)) return false;
-  if (fighter.slothMicroecosystemActive) return false;
-
-  return currentBattle && (currentBattle.biome === "arctic" || currentBattle.biome === "desert");
+  return isSharedSlothDormant(fighter, currentBattle);
 }
 
 function slothHasColony(fighter, colonyId) {
-  return getSlothActiveColonies(fighter).includes(colonyId);
+  return sharedSlothHasColony(fighter, colonyId);
 }
 
 function getSlothBacterialBonusForHitLevel(hitLevel) {
-  const level = Math.max(1, Math.min(5, hitLevel || 1));
-
-  switch (level) {
-    case 2:
-      return 25;
-    case 3:
-      return 50;
-    case 4:
-      return 75;
-    case 5:
-      return 100;
-    default:
-      return 0;
-  }
+  return getSharedSlothBacterialBonusForHitLevel(hitLevel);
 }
 
 function getSlothBacterialNextHitBonus(fighter) {
-  const chain = Math.max(0, Math.min(5, fighter.slothBacterialChain || 0));
-  return getSlothBacterialBonusForHitLevel(Math.min(5, chain + 1));
+  return getSharedSlothBacterialNextHitBonus(fighter);
 }
 
 function getSlothBacterialFollowingHitBonus(fighter) {
-  const current = Math.max(0, Math.min(5, fighter.slothBacterialChain || 0));
-  const progressGain = slothHasColony(fighter, "lichens") ? 2 : 1;
-  const afterNextHit = Math.min(5, current + progressGain);
-
-  if (Math.min(5, current + 1) >= 5) return 0;
-
-  return getSlothBacterialBonusForHitLevel(Math.min(5, afterNextHit + 1));
+  return getSharedSlothBacterialFollowingHitBonus(fighter);
 }
 
 function getSlothBacterialProgressText(fighter) {
-  const chain = Math.max(0, Math.min(5, fighter.slothBacterialChain || 0));
-  const nextHitBonus = getSlothBacterialNextHitBonus(fighter);
-  const followingBonus = getSlothBacterialFollowingHitBonus(fighter);
-
-  return (
-    "Chain: " +
-    chain +
-    "/5 · Next hit +" +
-    nextHitBonus +
-    "% · Following +" +
-    followingBonus +
-    "% · peak resets"
-  );
+  return getSharedSlothBacterialProgressText(fighter);
 }
 
 function getThreeToedSlothStatusText(fighter) {
-  if (!isThreeToedSlothFighter(fighter)) return "";
-
-  const colonies = getSlothActiveColonies(fighter);
-  const colonyText = colonies.length > 0
-    ? colonies.map((colonyId) => SLOTH_COLONY_BY_ID[colonyId]?.label || colonyId).join(", ")
-    : "None";
-
-  const lines = [
-    "Living Ecosystem: " +
-      (fighter.slothMicroecosystemActive
-        ? "MICROECOSYSTEM"
-        : isSlothDormantInCurrentBiome(fighter)
-          ? "DORMANT"
-          : "ACTIVE"),
-    "Active colonies: " + colonyText,
-    getSlothBacterialProgressText(fighter)
-  ];
-
-  if (slothHasColony(fighter, "lichens")) {
-    lines.push(
-      fighter.slothMicroecosystemActive
-        ? "Lichens: empowering all colonies."
-        : "Lichens: advancing the other colony faster."
-    );
-  }
-
-  if (fighter.slothMicroecosystemActive) {
-    lines.push(
-      "Microecosystem Ancestral: " +
-        (fighter.slothMicroecosystemTurns || 0) +
-        " turn(s) left"
-    );
-  }
-
-  if (isSlothDormantInCurrentBiome(fighter)) {
-    lines.push("Arctic/Desert dormancy: no colonies and no Microecosystem.");
-  }
-
-  return lines.join("\n");
+  return getSharedThreeToedSlothStatusText(fighter, currentBattle);
 }
 
 function getSlothColonyCurrentEffectText(fighter, colony) {
-  const active = slothHasColony(fighter, colony.id);
-  const lichensActive = slothHasColony(fighter, "lichens");
-  const micro = Boolean(fighter.slothMicroecosystemActive);
-
-  if (colony.id === "bacteria") {
-    return getSlothBacterialProgressText(fighter);
-  }
-
-  if (colony.id === "lichens") {
-    if (!active) return colony.shortEffect;
-    return micro
-      ? "Empowering Algae, Fungi, Bacteria and Mites."
-      : "Doubling the other active colony.";
-  }
-
-  if (active && lichensActive) {
-    return colony.amplified;
-  }
-
-  return colony.shortEffect;
+  return getSharedSlothColonyCurrentEffectText(fighter, colony);
 }
 
 
 function getSlothMiniStateLabel(active, boosted, dormant) {
-  if (active && boosted) return "AMP";
-  if (active) return "ACTIVE";
-  if (dormant) return "LETARGO";
-  return "DORMANT";
+  return getSharedSlothMiniStateLabel(active, boosted, dormant);
 }
 
 function getSlothFullStateLabel(active, boosted, dormant) {
-  if (active && boosted) return "AMPLIFIED";
-  if (active) return "ACTIVE";
-  if (dormant) return "LETARGO";
-  return "DORMANT";
+  return getSharedSlothFullStateLabel(active, boosted, dormant);
 }
 
 function renderSlothColonyChip(fighter, colony, compact = false) {
@@ -394,28 +335,7 @@ function renderSlothEcosystemModal(fighterOverride = null) {
 }
 
 function updateSlothEcosystemButton(player) {
-  const btn = document.getElementById("slothEcosystemBtn");
-  const titleEl = document.getElementById("btn-sloth-title");
-  const descEl = document.getElementById("btn-sloth-desc");
-
-  if (!btn || !titleEl || !descEl) return;
-
-  if (!player || !isThreeToedSlothFighter(player)) {
-    btn.style.display = "none";
-    return;
-  }
-
-  const dormant = isSlothDormantInCurrentBiome(player);
-  const micro = Boolean(player.slothMicroecosystemActive);
-  const activeCount = getSlothActiveColonies(player).length;
-
-  btn.style.display = "block";
-  titleEl.textContent = "Living Ecosystem";
-  descEl.textContent = micro
-    ? "All colonies active. " + (player.slothMicroecosystemTurns || 0) + " turn(s) left."
-    : dormant
-      ? "Ecosystem in letargo. View blocked colonies."
-      : activeCount + "/5 colonies active. Open full colony panel.";
+  return updateSharedSlothEcosystemButtonDom(player, currentBattle);
 }
 
 function openSlothEcosystemModal() {
@@ -495,21 +415,15 @@ function getBiomeRelation(fighter, biome) {
 
 
 function isCoconutOctopusFighter(fighter) {
-  return fighter && fighter.id === "coconut-octopus";
+  return isSharedCoconutOctopusFighter(fighter);
 }
 
 function getCoconutOctopusFormText(fighter) {
-  if (!isCoconutOctopusFighter(fighter)) return "";
-
-  const form = fighter.octopusForm || "base";
-  return OCTOPUS_FORM_LABELS[form] || form;
+  return getSharedCoconutOctopusFormText(fighter);
 }
 
 function getCoconutOctopusSpecialChoiceText(fighter) {
-  if (!isCoconutOctopusFighter(fighter)) return "";
-
-  const choice = fighter.octopusPerfectAdaptationChoice || "tentacle-storm";
-  return OCTOPUS_SPECIAL_CHOICE_LABELS[choice] || choice;
+  return getSharedCoconutOctopusSpecialChoiceText(fighter);
 }
 
 const OCTOPUS_FORM_ORDER = ["base", "offensive", "defensive", "evasive"];
@@ -522,77 +436,27 @@ const OCTOPUS_FORM_SHORT_LABELS = {
 };
 
 function getCoconutOctopusFormChargeMax(formId) {
-  const form = animals["coconut-octopus"]?.octopusForms?.[formId];
-  return form?.special?.chargeHits ?? 0;
+  return getSharedCoconutOctopusFormChargeMax(formId);
 }
 
 function getCoconutOctopusFormCharge(fighter, formId) {
-  if (!isCoconutOctopusFighter(fighter)) return 0;
-
-  if (fighter.octopusSpecialCharges && typeof fighter.octopusSpecialCharges[formId] === "number") {
-    return fighter.octopusSpecialCharges[formId];
-  }
-
-  const currentForm = fighter.octopusForm || "base";
-  if (currentForm === formId && typeof fighter.specialCharge === "number") {
-    return fighter.specialCharge;
-  }
-
-  return 0;
+  return getSharedCoconutOctopusFormCharge(fighter, formId);
 }
 
 function getCoconutOctopusCurrentCharge(fighter) {
-  if (!isCoconutOctopusFighter(fighter)) return fighter?.specialCharge ?? 0;
-  return getCoconutOctopusFormCharge(fighter, fighter.octopusForm || "base");
+  return getSharedCoconutOctopusCurrentCharge(fighter);
 }
 
 function getCoconutOctopusCurrentChargeMax(fighter) {
-  if (!isCoconutOctopusFighter(fighter)) return fighter?.special?.chargeHits ?? 0;
-  return getCoconutOctopusFormChargeMax(fighter.octopusForm || "base");
+  return getSharedCoconutOctopusCurrentChargeMax(fighter);
 }
 
 function getCoconutOctopusChargeLine(fighter) {
-  if (!isCoconutOctopusFighter(fighter)) return "";
-
-  return OCTOPUS_FORM_ORDER.map((formId) => {
-    return (
-      OCTOPUS_FORM_SHORT_LABELS[formId] +
-      " " +
-      getCoconutOctopusFormCharge(fighter, formId) +
-      "/" +
-      getCoconutOctopusFormChargeMax(formId)
-    );
-  }).join(" · ");
+  return getSharedCoconutOctopusChargeLine(fighter);
 }
 
 function getCoconutOctopusStatusText(fighter) {
-  if (!isCoconutOctopusFighter(fighter)) return "";
-
-  const lines = [
-    "Form: " + getCoconutOctopusFormText(fighter),
-    "Adaptation charges: " + (fighter.octopusAdaptationCharges ?? 0) + "/8",
-    "First transformation: " + (fighter.octopusFreeTransformationAvailable ? "FREE" : "USED"),
-    "Special charges: " + getCoconutOctopusChargeLine(fighter)
-  ];
-
-  if ((fighter.octopusForm || "base") === "base") {
-    lines.push("Perfect Adaptation: choose option when using Special");
-  }
-
-  if ((fighter.octopusForm || "base") === "offensive") {
-    lines.push("Predatory Pressure: " + ((fighter.octopusPredatoryPressureStacks || 0) * 5) + "% Attack reduction");
-  }
-
-  if ((fighter.octopusForm || "base") === "defensive") {
-    lines.push("Coconut Shell: 10 fixed damage on direct hit");
-    lines.push("Fortress active: " + (fighter.coconutFortressActive ? "YES" : "NO"));
-  }
-
-  if ((fighter.octopusForm || "base") === "evasive") {
-    lines.push("Perfect Camouflage: +15 HP / +15 Stamina when enemy misses");
-  }
-
-  return lines.join("\n");
+  return getSharedCoconutOctopusStatusText(fighter);
 }
 
 
@@ -643,9 +507,37 @@ function getImageCandidates(id, animal) {
     "darwins-frog": ["./images/animals/amphibians/darwins-frog.png"],
     "coconut-octopus": ["./images/animals/fish/coconut-octopus.png"],
     "three-toed-sloth": ["./images/animals/mammals/three-toed-sloth.png"],
+    "iberian-ribbed-newt": [
+      "./images/animals/amphibians/iberian-ribbed-newt.png",
+      "./images/animals/amphibians/iberian-ribbed-newt.jpg",
+      "./images/animals/amphibians/iberian-ribbed-newt.jpeg",
+      "./images/animals/amphibians/iberian-ribbed-newt.webp",
+      "./images/animals/amphibians/gallipato.png",
+      "./images/animals/amphibians/gallipato.jpg",
+      "./images/animals/amphibians/gallipato.jpeg",
+      "./images/animals/amphibians/gallipato.webp",
+      "./images/animals/amphibians/gallipato-iberico.png",
+      "./images/animals/amphibians/gallipato-iberico.jpg",
+      "./images/animals/amphibians/gallipato-iberico.jpeg",
+      "./images/animals/amphibians/gallipato-iberico.webp"
+    ],
+    "iberian-skink": [
+      "./images/animals/reptiles/iberian-skink.png",
+      "./images/animals/reptiles/iberian-skink.jpg",
+      "./images/animals/reptiles/iberian-skink.jpeg",
+      "./images/animals/reptiles/iberian-skink.webp",
+      "./images/animals/reptiles/eslizon-iberico.png",
+      "./images/animals/reptiles/eslizon-iberico.jpg",
+      "./images/animals/reptiles/eslizon-iberico.jpeg",
+      "./images/animals/reptiles/eslizon-iberico.webp",
+      "./images/animals/reptiles/eslizon.png",
+      "./images/animals/reptiles/eslizon.jpg",
+      "./images/animals/reptiles/eslizon.jpeg",
+      "./images/animals/reptiles/eslizon.webp"
+    ]
   };
 
-  return [direct, ...(legacy[id] ?? [])];
+  return getSharedImageCandidates(id, animal, legacy);
 }
 
 function loadFighterImage(imgEl, fighterId) {
@@ -811,8 +703,30 @@ function getExtraResourceText(fighter) {
     return (
       "Illusory Dance active: " +
       (fighter.illusoryDanceActive ? "YES" : "NO") +
-      "\nNext successful attack x2: " +
+      "\nNext successful attack x3: " +
       (fighter.illusoryDanceBuffReady ? "YES" : "NO")
+    );
+  }
+
+  if (fighter.passive && fighter.passive.id === "ribbed-guard") {
+    return (
+      "Ribbed Guard: offensive actions cost +" +
+      (fighter.costalEversionActive ? "10" : "5") +
+      " stamina" +
+      "\nCostal Eversion: " +
+      (fighter.costalEversionActive ? "ACTIVE (" + (fighter.costalEversionTurns || 0) + " turn(s) left)" : "NO") +
+      "\nWhile active: -50% damage, 25% reflect, Costal Toxin"
+    );
+  }
+
+
+  if (fighter.passive && fighter.passive.id === "scaled-retreat") {
+    return (
+      "Scaled Retreat: Concentration HP x2 if hit" +
+      "\nCaudal Autotomy: " +
+      (fighter.caudalAutotomyActive ? "ACTIVE (" + (fighter.caudalAutotomyTurns || 0) + " turn(s) left)" : "NO") +
+      "\nTail HP: " +
+      ((fighter.caudalAutotomyActive && (fighter.caudalAutotomyTailHp || 0) > 0) ? (fighter.caudalAutotomyTailHp + "/" + (fighter.caudalAutotomyMaxTailHp || 90)) : "inactive")
     );
   }
 
@@ -1265,33 +1179,12 @@ function updateSpecialButton(player) {
 }
 
 function updateLarvalCommandButton(player) {
-  const larvalBtn = document.getElementById("larvalCommandBtn");
-  const titleEl = document.getElementById("btn-larval-title");
-  const descEl = document.getElementById("btn-larval-desc");
-
-  if (!larvalBtn || !titleEl || !descEl) return;
-
-  if (!player || player.passive?.id !== "larval-gestation") {
-    larvalBtn.style.display = "none";
-    return;
-  }
-
-  const larvae = player.darwinsLarvae || 0;
-  const maxLarvae = player.darwinsMaxLarvae || 5;
-
-  larvalBtn.style.display = "block";
-  titleEl.textContent = "Larval Command";
-  descEl.textContent =
-    "Larvae: " +
-    larvae +
-    "/" +
-    maxLarvae +
-    ". Assign larvae to attack, defend or sacrifice.";
+  return updateSharedLarvalCommandButtonDom(player);
 }
 
 
 function getCoconutOctopusFormDefinitionForPreview(formId) {
-  return animals["coconut-octopus"]?.octopusForms?.[formId] || null;
+  return getSharedCoconutOctopusFormDefinitionForPreview(formId);
 }
 
 function getCoconutOctopusPreviewStatsHtml(form) {
@@ -1314,67 +1207,14 @@ function getCoconutOctopusPreviewStatsHtml(form) {
 }
 
 function renderCoconutOctopusFormPreview(player) {
-  const panel = document.getElementById("octopusFormPreviewPanel");
-  const titleEl = document.getElementById("octopusFormPreviewTitle");
-  const statsEl = document.getElementById("octopusFormPreviewStats");
-  const textEl = document.getElementById("octopusFormPreviewText");
-  const confirmBtn = document.getElementById("octopusConfirmFormBtn");
-
-  if (!panel || !titleEl || !statsEl || !textEl || !confirmBtn) return;
-
-  if (!player || player.id !== "coconut-octopus" || !pendingOctopusFormPreview) {
-    panel.style.display = "none";
-    return;
-  }
-
-  const form = getCoconutOctopusFormDefinitionForPreview(pendingOctopusFormPreview);
-  if (!form) {
-    panel.style.display = "none";
-    return;
-  }
-
-  const currentForm = player.octopusForm || "base";
-  const charges = player.octopusAdaptationCharges ?? 0;
-  const isCurrent = pendingOctopusFormPreview === currentForm;
-  const canPay = Boolean(player.octopusFreeTransformationAvailable) || charges > 0;
-  const blocked =
-    !currentBattle ||
-    currentBattle.finished ||
-    isAnimatingTurn ||
-    isWaitingForOpponentAction ||
-    isMultiplayer ||
-    isCurrent ||
-    !canPay;
-
-  panel.style.display = "block";
-  titleEl.textContent = form.name + (isCurrent ? " — Current Form" : " — Preview");
-  statsEl.innerHTML = getCoconutOctopusPreviewStatsHtml(form);
-  textEl.textContent =
-    "Passive — " +
-    (form.passive?.name || "None") +
-    "\n" +
-    (form.passive?.description || "No passive.") +
-    "\n\nSuper — " +
-    (form.special?.name || "None") +
-    "\n" +
-    "Charge: " +
-    getCoconutOctopusFormCharge(player, pendingOctopusFormPreview) +
-    "/" +
-    getCoconutOctopusFormChargeMax(pendingOctopusFormPreview) +
-    "\n" +
-    (form.special?.description || "No super.");
-
-  if (!currentBattle) {
-    confirmBtn.textContent = "Preview only — start battle to transform";
-  } else if (isCurrent) {
-    confirmBtn.textContent = "Already in this form";
-  } else if (player.octopusFreeTransformationAvailable) {
-    confirmBtn.textContent = "Confirm Free Transformation";
-  } else {
-    confirmBtn.textContent = "Confirm Form Change (-1 charge)";
-  }
-
-  confirmBtn.disabled = blocked;
+  return renderSharedCoconutOctopusFormPreviewDom({
+    player,
+    pendingFormId: pendingOctopusFormPreview,
+    currentBattle,
+    isBusy: isAnimatingTurn,
+    isWaiting: isWaitingForOpponentAction,
+    isMultiplayer
+  });
 }
 
 function previewPlayerCoconutOctopusForm(formId) {
@@ -1393,45 +1233,21 @@ function clearPlayerCoconutOctopusPreview() {
 }
 
 function updateCoconutOctopusPanel(player) {
-  const panel = document.getElementById("octopusAdaptationPanel");
-  const statusEl = document.getElementById("octopusAdaptationStatus");
-
-  if (!panel || !statusEl) return;
-
   if (!player || player.id !== "coconut-octopus") {
-    panel.style.display = "none";
-    return;
+    pendingOctopusFormPreview = null;
   }
 
-  panel.style.display = "block";
-
-  const form = player.octopusForm || "base";
-  const charges = player.octopusAdaptationCharges ?? 0;
-  const freeText = player.octopusFreeTransformationAvailable ? " · first transformation free" : "";
-
-  statusEl.textContent =
-    getCoconutOctopusFormText(player) +
-    " · adaptation " +
-    charges +
-    "/8" +
-    freeText +
-    "\nSpecial charges: " +
-    getCoconutOctopusChargeLine(player);
+  updateSharedCoconutOctopusPanelDom({
+    player,
+    pendingFormId: pendingOctopusFormPreview,
+    currentBattle,
+    isBusy: isAnimatingTurn,
+    isWaiting: isWaitingForOpponentAction
+  });
 
   if (pendingOctopusFormPreview && !getCoconutOctopusFormDefinitionForPreview(pendingOctopusFormPreview)) {
     pendingOctopusFormPreview = null;
   }
-
-  document.querySelectorAll(".octopus-form-btn").forEach((btn) => {
-    const targetForm = btn.dataset.octopusForm;
-    const isCurrent = targetForm === form;
-    const isPreview = targetForm === pendingOctopusFormPreview;
-
-    btn.classList.toggle("active", isCurrent);
-    btn.classList.toggle("preview", isPreview && !isCurrent);
-
-    btn.disabled = currentBattle ? currentBattle.finished : false;
-  });
 
   renderCoconutOctopusFormPreview(player);
 }
@@ -1643,232 +1459,11 @@ function chooseEnemyAction(fighter) {
 }
 
 function buildTurnSummary(newLines) {
-  const filtered = [];
-  const summary = [];
-
-  const fightersWhoUsedSpecial = new Set();
-
-  for (const line of newLines) {
-    if (line.includes("gains effect: Neurotoxic Injection")) continue;
-    if (line.includes("calc →")) continue;
-    if (line.startsWith("Damage calc")) continue;
-    if (line.startsWith("Critical calc")) continue;
-    if (line.includes("→ HP:")) continue;
-    if (line.startsWith("--- Turn")) continue;
-
-    filtered.push(line);
-
-    const specialUseMatch =
-      line.match(/^(.+?) uses Throat Bite\b/) ||
-      line.match(/^(.+?) uses Lethal Bite\b/) ||
-      line.match(/^(.+?) uses Arctic Storm\b/) ||
-      line.match(/^(.+?) uses Illusory Dance\b/) ||
-      line.match(/^(.+?) uses Ballistic Strike\b/) ||
-      line.match(/^(.+?) uses Dung Throw\b/) ||
-      line.match(/^(.+?) uses Death Roll\b/) ||
-      line.match(/^(.+?) uses Total Regeneration\b/) ||
-      line.match(/^(.+?) uses Nervous Disruption\b/) ||
-      line.match(/^(.+?) uses Deadly Dive\b/) ||
-      line.match(/^(.+?) uses Phantom Current\b/) ||
-      line.match(/^(.+?) uses Looting Burst\b/) ||
-      line.match(/^(.+?) uses Refresh\b/) ||
-      line.match(/^(.+?) uses Mutilation\b/) ||
-      line.match(/^(.+?) uses Anubis' Staff\b/) ||
-      line.match(/^(.+?) uses Ancestral Retreat\b/) ||
-      line.match(/^(.+?) uses Darwinian Expulsion\b/) ||
-      line.match(/^(.+?) uses Perfect Adaptation\b/) ||
-      line.match(/^(.+?) uses Tentacle Storm\b/) ||
-      line.match(/^(.+?) uses Coconut Fortress\b/) ||
-      line.match(/^(.+?) uses Ink Sea\b/) ||
-      line.match(/^(.+?) uses Neurotoxic Injection \(Tetrodotoxin\)\b/) ||
-      line.match(/^(.+?) uses Overinflation\b/) ||
-      line.match(/^(.+?) explodes\b/);
-
-    if (specialUseMatch) {
-      fightersWhoUsedSpecial.add(specialUseMatch[1]);
-    }
-  }
-
-  for (const line of filtered) {
-    if (
-      line.includes("Honey Badger has fallen below") &&
-      line.includes("fatigue")
-    ) {
-      summary.push(
-        "Honey Badger enters Savage Endurance: fatigue has no effect."
-      );
-      continue;
-    }
-
-    if (
-      line.includes("enters Savage Endurance") &&
-      line.includes("below 25% HP")
-    ) {
-      summary.push(
-        "Honey Badger enters Savage Endurance: below 25% HP, it becomes immune to critical hits and gains +20% Attack and +20% Explosiveness."
-      );
-      continue;
-    }
-
-    const cannotUseSpecialMatch = line.match(/^(.+?) cannot use Special Attack\.$/);
-
-    if (cannotUseSpecialMatch) {
-      const fighterName = cannotUseSpecialMatch[1];
-
-      if (fightersWhoUsedSpecial.has(fighterName)) {
-        continue;
-      }
-    }
-
-    const important =
-      line.includes("BIOME SHIFT") ||
-      line.includes("Biome changed") ||
-      line.includes("Modified stat") ||
-      line.includes(" uses ") ||
-      line.includes(" hits ") ||
-      line.includes("(CRITICAL)") ||
-      line.includes("misses") ||
-      line.includes("gains effect") ||
-      line.includes("reduces") ||
-      line.includes("Battle effect activated") ||
-      line.includes("Battle effect expired") ||
-      line.includes("suffers") ||
-      line.includes("restores") ||
-      line.includes("has expired") ||
-      line.includes("Special Attack is ready") ||
-      line.includes("has been defeated") ||
-      line.includes("tries to hit") ||
-      line.includes("Overinflation") ||
-      line.includes("takes 25 damage") ||
-      line.includes("spines") ||
-      line.includes("Illusory Dance") ||
-      line.includes("Hail begins") ||
-      line.includes("cannot use") ||
-      line.includes("Inverted Inertia") ||
-      line.includes("counterattacks") ||
-      line.includes("Momentum rises") ||
-      line.includes("Momentum resets") ||
-      line.includes("Hunting Inertia rises") ||
-      line.includes("Hunting Inertia grants") ||
-      line.includes("Hunting Inertia resets") ||
-      line.includes("Silent Stalk") ||
-      line.includes("Throat Bite") ||
-      line.includes("Marine Echo triggers") ||
-      line.includes("Phantom Current") ||
-      line.includes("Persistent Harassment") ||
-      line.includes("steals") ||
-      line.includes("stores loot") ||
-      line.includes("Looting Burst") ||
-      line.includes("fulfills Humidity requirement") ||
-      line.includes("activates Suffocating Humidity") ||
-      line.includes("Suffocating Humidity restores") ||
-      line.includes("Refresh") ||
-      line.includes("Mutilation") ||
-      line.includes("Neurotoxic Injection (Tetrodotoxin)") ||
-      line.includes("Tetrodotoxin") ||
-      line.includes("explodes") ||
-      line.includes("Immobile Stalk") ||
-      line.includes("Ancestral Retreat") ||
-      line.includes("Thoth's Mirage") ||
-      line.includes("Oasis") ||
-      line.includes("Anubis' Staff") ||
-      line.includes("hit chance is capped") ||
-      line.includes("burning oasis") ||
-      line.includes("desert answers the mirage") ||
-      line.includes("empty heat") ||
-      line.includes("attack finds only mirage") ||
-      line.includes("swallows the strike") ||
-      line.includes("shimmering air") ||
-      line.includes("strikes an illusion") ||
-      line.includes("false image") ||
-      line.includes("real Fennec is already gone") ||
-      line.includes("The Oasis bends the horizon") ||
-      line.includes("Heat distortion deceives the senses") ||
-      line.includes("Decapitation") ||
-      line.includes("Raptorial Chain") ||
-      line.includes("Raptorial Defense Down") ||
-      line.includes("severed head") ||
-      line.includes("raptorial blades") ||
-      line.includes("reflects") ||
-
-      // Darwin's Frog / Larval system
-      line.includes("Darwinian Expulsion") ||
-      line.includes("Larval Command") ||
-      line.includes("commands its larvae") ||
-      line.includes("Larval Sacrifice") ||
-      line.includes("Larval Defense") ||
-      line.includes("Larval Attack") ||
-      line.includes("conserves") && line.includes("larva") ||
-      line.includes("larvae") ||
-      line.includes("larva") ||
-      line.includes("overflowing larva") ||
-      line.includes("maximum larvae") ||
-      line.includes("blocks all the incoming direct damage") ||
-      line.includes("blocks half of the incoming direct damage") ||
-      line.includes("blocks secondary effects and status changes") ||
-      line.includes("fails to apply") ||
-      line.includes("fails to reduce") ||
-      line.includes("fails to take control") ||
-      line.includes("fails to open") ||
-      line.includes("fails to drain") ||
-      line.includes("Tetrodotoxin effects");
-
-    if (important) {
-      summary.push(line);
-    }
-  }
-
-  return summary.length > 0 ? summary : ["No major events this turn."];
+  return buildSharedTurnSummary(newLines, { importantOnly: true });
 }
 
 function deriveTurnOutcome(summaryLines) {
-  const joined = summaryLines.join(" ");
-
-  if (joined.includes("has been defeated")) return "Defeat";
-  if (joined.includes("(CRITICAL)")) return "Critical Hit";
-  if (joined.includes("Perfect Adaptation")) return "Special Triggered";
-  if (joined.includes("Tentacle Storm")) return "Special Triggered";
-  if (joined.includes("Coconut Fortress")) return "Special Triggered";
-  if (joined.includes("Ink Sea")) return "Special Triggered";
-  if (joined.includes("Predatory Pressure")) return "Passive Triggered";
-  if (joined.includes("Perfect Camouflage")) return "Passive Triggered";
-  if (joined.includes("Microecosystem Ancestral")) return "Special Triggered";
-  if (joined.includes("Ancestral Explosive Strike")) return "Special Triggered";
-  if (joined.includes("Colony")) return "Passive Triggered";
-  if (joined.includes("Mutilation")) return "Special Triggered";
-  if (joined.includes("Neurotoxic Injection (Tetrodotoxin)")) return "Special Triggered";
-  if (joined.includes("Overinflation")) return "Special Triggered";
-  if (joined.includes("explodes")) return "Special Triggered";
-  if (joined.includes("Refresh")) return "Special Triggered";
-  if (joined.includes("Looting Burst")) return "Special Triggered";
-  if (joined.includes("Phantom Current")) return "Special Triggered";
-  if (joined.includes("Deadly Dive")) return "Special Triggered";
-  if (joined.includes("Nervous Disruption")) return "Special Triggered";
-  if (joined.includes("Total Regeneration")) return "Special Triggered";
-  if (joined.includes("Death Roll")) return "Special Triggered";
-  if (joined.includes("Ancestral Retreat")) return "Special Triggered";
-  if (joined.includes("Anubis' Staff")) return "Special Triggered";
-  if (joined.includes("Thoth's Mirage")) return "Passive Triggered";
-  if (joined.includes("Oasis")) return "Oasis Active";
-  if (joined.includes("Dung Throw")) return "Special Triggered";
-  if (joined.includes("Ballistic Strike")) return "Special Triggered";
-  if (joined.includes("Illusory Dance")) return "Special Triggered";
-  if (joined.includes("Arctic Storm")) return "Special Triggered";
-  if (joined.includes("Throat Bite")) return "Special Triggered";
-  if (joined.includes("Lethal Bite")) return "Special Triggered";
-  if (joined.includes("Silent Stalk")) return "Passive Triggered";
-  if (joined.includes("Inmobile Stalk")) return "Passive Triggered";
-  if (joined.includes("misses")) return "Miss";
-  if (joined.includes("Battle effect activated")) return "Battlefield Changed";
-  if (joined.includes("restores 20 Life and 20 Stamina")) return "Concentration";
-  if (joined.includes("gains effect")) return "Effect Applied";
-  if (joined.includes("suffers")) return "Damage / Effect Tick";
-  if (joined.includes("activates Suffocating Humidity")) return "Humidity Activated";
-  if (joined.includes("cannot use")) return "Action Blocked";
-  if (joined.includes("Decapitation")) return "Execution";
-  if (joined.includes("Raptorial Chain")) return "Special Triggered"; 
-
-  return "Resolved";
+  return deriveSharedTurnOutcome(summaryLines);
 }
 
 function clearAnimationClasses() {
@@ -2376,65 +1971,25 @@ let larvalDraftCommand = {
 let larvalPreviewMode = false;
 
 function getLarvalDraftTotal() {
-  return (
-    larvalDraftCommand.attack +
-    larvalDraftCommand.defense +
-    larvalDraftCommand.sacrifice
-  );
+  return getSharedLarvalDraftTotal(larvalDraftCommand);
 }
 
 function getCurrentPlayerLarvae() {
   if (!currentBattle) {
-    return preBattlePreviewPlayer?.passive?.id === "larval-gestation"
-      ? preBattlePreviewPlayer.darwinsMaxLarvae || 5
-      : 0;
+    return getSharedCurrentLarvae(preBattlePreviewPlayer, true);
   }
 
   const { player } = getBattleFighters();
-
-  return player.darwinsLarvae || 0;
+  return getSharedCurrentLarvae(player, false);
 }
 
 function renderLarvalCommandModal() {
-  const larvae = getCurrentPlayerLarvae();
-  const totalUsed = getLarvalDraftTotal();
-  const conserved = Math.max(0, larvae - totalUsed);
-
-  document.getElementById("larvalAvailableText").textContent =
-    "Larvae available: " + larvae + "/5";
-
-  document.getElementById("larvalAttackValue").textContent = larvalDraftCommand.attack;
-  document.getElementById("larvalDefenseValue").textContent = larvalDraftCommand.defense;
-  document.getElementById("larvalSacrificeValue").textContent = larvalDraftCommand.sacrifice;
-  document.getElementById("larvalConserveValue").textContent = conserved;
-
-  document.getElementById("larvalAttackMinus").disabled = larvalDraftCommand.attack <= 0;
-  document.getElementById("larvalDefenseMinus").disabled = larvalDraftCommand.defense <= 0;
-  document.getElementById("larvalSacrificeMinus").disabled = larvalDraftCommand.sacrifice <= 0;
-
-  document.getElementById("larvalAttackPlus").disabled = totalUsed >= larvae;
-  document.getElementById("larvalDefensePlus").disabled =
-    totalUsed >= larvae || larvalDraftCommand.defense >= 2;
-  document.getElementById("larvalSacrificePlus").disabled = totalUsed >= larvae;
-
-  const clearBtn = document.getElementById("larvalClearBtn");
-  const confirmBtn = document.getElementById("larvalConfirmBtn");
-
-  if (larvalPreviewMode) {
-    document.getElementById("larvalAvailableText").textContent =
-      "Preview: larvae can be assigned once they exist in battle. Simulate up to " + larvae + "/5.";
-    if (clearBtn) clearBtn.textContent = "Reset Preview";
-    if (confirmBtn) {
-      confirmBtn.textContent = "Preview only";
-      confirmBtn.disabled = true;
-    }
-  } else {
-    if (clearBtn) clearBtn.textContent = "Clear";
-    if (confirmBtn) {
-      confirmBtn.textContent = "Confirm Command";
-      confirmBtn.disabled = false;
-    }
-  }
+  const player = currentBattle ? getBattleFighters().player : preBattlePreviewPlayer;
+  renderSharedLarvalCommandModalDom({
+    fighter: player,
+    draft: larvalDraftCommand,
+    previewMode: Boolean(larvalPreviewMode)
+  });
 }
 
 async function openLarvalCommandPrompt() {

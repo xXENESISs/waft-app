@@ -4,6 +4,7 @@ import {
   getStackedModifierPercent,
   createBleedEffect,
   createDeepBleedEffect,
+  createCostalToxinEffect,
   createAgilityDownEffect,
   createBiteEffect,
   createFalconDebuffEffect,
@@ -133,6 +134,18 @@ export function createFighter(id) {
 
     falconStacks: 0,
     tempAccuracyLockTurns: 0,
+
+    costalEversionActive: false,
+    costalEversionTurns: 0,
+    costalEversionActivatedTurn: null,
+
+    caudalAutotomyActive: false,
+    caudalAutotomyTurns: 0,
+    caudalAutotomyActivatedTurn: null,
+    caudalAutotomyTailHp: 0,
+    caudalAutotomyMaxTailHp: 90,
+    caudalAutotomyBlockedLastDirectHit: false,
+    scaledRetreatBonusAppliedThisTurn: false,
 
     phantomCurrentActive: false,
 
@@ -366,6 +379,304 @@ function createOasisEffect(duration, sourceId) {
     sourceId: sourceId
   };
 }
+
+function hasActiveCaudalAutotomyTail(fighter) {
+  return Boolean(
+    fighter &&
+      fighter.caudalAutotomyActive &&
+      (fighter.caudalAutotomyTailHp || 0) > 0
+  );
+}
+
+function resetCaudalAutotomyBlockMarker(fighter) {
+  if (!fighter) return;
+  fighter.caudalAutotomyBlockedLastDirectHit = false;
+  fighter.caudalAutotomyLastBlock = null;
+}
+
+function caudalAutotomyForcesDirectHit(defender) {
+  return hasActiveCaudalAutotomyTail(defender);
+}
+
+function isIberianRibbedNewt(fighter) {
+  return fighter && fighter.id === "iberian-ribbed-newt";
+}
+
+function getBattleSide(battle, fighter) {
+  if (!battle || !fighter) return null;
+  if (battle.fighterA === fighter) return "A";
+  if (battle.fighterB === fighter) return "B";
+  return fighter.id || null;
+}
+
+function isOffensiveActionTargeting(actionType, fighter) {
+  if (["normal", "quick", "precise", "explosive"].includes(actionType)) return true;
+  if (actionType === "special") {
+    return fighter?.special?.chargeType === "offensive";
+  }
+  return false;
+}
+
+function getRibbedGuardExtraStaminaCost(opponent) {
+  if (opponent?.passive?.id !== "ribbed-guard") return 0;
+  return opponent.costalEversionActive ? 10 : 5;
+}
+
+function removeCostalToxinFromTarget(target, sourceSlot, battle) {
+  if (!target?.effects) return;
+
+  const before = target.effects.length;
+  target.effects = target.effects.filter((effect) => {
+    return !(effect.id === "costal-toxin" && effect.sourceSlot === sourceSlot);
+  });
+
+  if (battle && target.effects.length < before) {
+    addLog(
+      battle,
+      "Costal Toxin from Costal Eversion fades from " + target.name + "."
+    );
+  }
+}
+
+function applyCostalToxin(attacker, defender, battle) {
+  if (!attacker?.alive || !defender?.costalEversionActive) return;
+
+  const sourceSlot = getBattleSide(battle, defender);
+  addEffect(attacker, createCostalToxinEffect(99, sourceSlot), battle);
+
+  addLog(
+    battle,
+    attacker.name +
+      " is affected by Costal Toxin: -10% Speed, Agility and Technique until " +
+      defender.name +
+      "'s Costal Eversion ends."
+  );
+}
+
+function applyCostalEversionDefense(defender, attacker, damage, battle) {
+  if (!defender.costalEversionActive) return damage;
+
+  const originalDamage = Math.max(0, Math.round(damage));
+  const reducedDamage = Math.max(0, Math.round(originalDamage * 0.5));
+  const reflectedDamage = originalDamage > 0
+    ? Math.max(1, Math.round(originalDamage * 0.25))
+    : 0;
+
+  if (attacker?.alive && reflectedDamage > 0) {
+    applyDamage(attacker, reflectedDamage);
+
+    addLog(
+      battle,
+      defender.name +
+        "'s Costal Eversion reflects " +
+        reflectedDamage +
+        " damage back to " +
+        attacker.name +
+        "."
+    );
+  }
+
+  applyCostalToxin(attacker, defender, battle);
+
+  addLog(
+    battle,
+    defender.name +
+      "'s Costal Eversion reduces incoming damage from " +
+      originalDamage +
+      " to " +
+      reducedDamage +
+      "."
+  );
+
+  return reducedDamage;
+}
+
+function handleCostalEversionEndTurn(fighter, opponent, battle) {
+  if (!fighter.costalEversionActive) return;
+
+  if (fighter.costalEversionActivatedTurn !== battle.turn) {
+    const hpBefore = fighter.hp;
+    restoreHp(fighter, 25);
+    const healed = fighter.hp - hpBefore;
+
+    addLog(
+      battle,
+      fighter.name +
+        "'s Costal Eversion restores " +
+        healed +
+        " HP."
+    );
+  }
+
+  fighter.costalEversionTurns = Math.max(0, (fighter.costalEversionTurns || 0) - 1);
+
+  if (fighter.costalEversionTurns > 0) {
+    addLog(
+      battle,
+      fighter.name +
+        "'s Costal Eversion remains active for " +
+        fighter.costalEversionTurns +
+        " more turn" +
+        (fighter.costalEversionTurns === 1 ? "" : "s") +
+        "."
+    );
+    return;
+  }
+
+  fighter.costalEversionActive = false;
+  fighter.costalEversionActivatedTurn = null;
+
+  removeCostalToxinFromTarget(opponent, getBattleSide(battle, fighter), battle);
+
+  addLog(
+    battle,
+    fighter.name + "'s Costal Eversion ends. Its ribs withdraw beneath the skin."
+  );
+}
+
+
+function applyCaudalAutotomyDefense(defender, attacker, damage, battle) {
+  resetCaudalAutotomyBlockMarker(defender);
+
+  if (!hasActiveCaudalAutotomyTail(defender)) {
+    return damage;
+  }
+
+  const originalDamage = Math.max(0, Math.round(damage));
+
+  if (originalDamage <= 0) {
+    return damage;
+  }
+
+  const tailHpBefore = defender.caudalAutotomyTailHp;
+  const absorbedDamage = Math.min(tailHpBefore, originalDamage);
+  defender.caudalAutotomyTailHp = Math.max(0, tailHpBefore - originalDamage);
+  defender.caudalAutotomyBlockedLastDirectHit = true;
+  defender.caudalAutotomyLastBlock = {
+    originalDamage,
+    absorbedDamage,
+    tailHpBefore,
+    tailHpAfter: defender.caudalAutotomyTailHp,
+    tailMaxHp: defender.caudalAutotomyMaxTailHp,
+    destroyed: defender.caudalAutotomyTailHp <= 0
+  };
+
+  return 0;
+}
+
+function logCaudalAutotomyTailBlock(defender, attacker, battle, actionName, critical = false) {
+  const block = defender.caudalAutotomyLastBlock;
+
+  if (!defender.caudalAutotomyBlockedLastDirectHit || !block) return;
+
+  addLog(
+    battle,
+    attacker.name +
+      " hits " +
+      defender.name +
+      "'s detached tail with " +
+      actionName +
+      " for " +
+      block.originalDamage +
+      " damage" +
+      (critical ? " (CRITICAL)" : "") +
+      "."
+  );
+
+  if (block.destroyed) {
+    addLog(
+      battle,
+      defender.name +
+        "'s detached tail blocks " +
+        block.absorbedDamage +
+        " damage and is destroyed."
+    );
+    return;
+  }
+
+  addLog(
+    battle,
+    defender.name +
+      "'s detached tail blocks " +
+      block.absorbedDamage +
+      " damage (Tail HP: " +
+      block.tailHpAfter +
+      "/" +
+      block.tailMaxHp +
+      ")."
+  );
+}
+
+function handleScaledRetreatBonus(attacker, defender, battle) {
+  if (!defender?.alive) return;
+  if (defender.passive?.id !== "scaled-retreat") return;
+  if (!defender.concentrationActive) return;
+  if (defender.scaledRetreatBonusAppliedThisTurn) return;
+
+  const hpBefore = defender.hp;
+  restoreHp(defender, 20);
+  const healed = defender.hp - hpBefore;
+  defender.scaledRetreatBonusAppliedThisTurn = true;
+
+  if (healed > 0) {
+    addLog(
+      battle,
+      defender.name +
+        "'s Scaled Retreat doubles the HP recovery from Concentration, restoring " +
+        healed +
+        " extra HP."
+    );
+  } else {
+    addLog(
+      battle,
+      defender.name +
+        "'s Scaled Retreat triggers, but its HP is already full."
+    );
+  }
+}
+
+function handleCaudalAutotomyEndTurn(fighter, battle) {
+  if (!fighter.caudalAutotomyActive) return;
+
+  const hpBefore = fighter.hp;
+  restoreHp(fighter, 30);
+  const healed = fighter.hp - hpBefore;
+
+  fighter.caudalAutotomyTurns = Math.max(0, (fighter.caudalAutotomyTurns || 0) - 1);
+
+  if (fighter.caudalAutotomyTurns > 0) {
+    const tailText = (fighter.caudalAutotomyTailHp || 0) > 0
+      ? "tail " + fighter.caudalAutotomyTailHp + "/" + fighter.caudalAutotomyMaxTailHp
+      : "tail destroyed";
+
+    addLog(
+      battle,
+      fighter.name +
+        "'s Caudal Autotomy restores " +
+        healed +
+        " HP (" +
+        fighter.caudalAutotomyTurns +
+        " turn" +
+        (fighter.caudalAutotomyTurns === 1 ? "" : "s") +
+        " left; " +
+        tailText +
+        ")."
+    );
+    return;
+  }
+
+  fighter.caudalAutotomyActive = false;
+  fighter.caudalAutotomyActivatedTurn = null;
+  fighter.caudalAutotomyTailHp = 0;
+  fighter.caudalAutotomyBlockedLastDirectHit = false;
+  fighter.caudalAutotomyLastBlock = null;
+
+  addLog(
+    battle,
+    fighter.name + "'s tail regenerates and Caudal Autotomy ends."
+  );
+}
+
 
 function isThreeToedSloth(fighter) {
   return fighter && fighter.id === "three-toed-sloth";
@@ -775,7 +1086,7 @@ export function transformCoconutOctopus(fighter, formId, battle = null) {
     };
   }
 
-  const allowedForms = ["offensive", "defensive", "evasive"];
+  const allowedForms = COCONUT_OCTOPUS_FORM_IDS;
 
   if (!allowedForms.includes(formId)) {
     return {
@@ -997,7 +1308,7 @@ function performCoconutTentacleStorm(attacker, defender, battle) {
   );
 
   for (let i = 1; i <= 8; i++) {
-    const hit = rollHit(50);
+    const hit = caudalAutotomyForcesDirectHit(defender) ? true : rollHit(30);
 
     if (!hit) {
       addLog(
@@ -1018,12 +1329,15 @@ function performCoconutTentacleStorm(attacker, defender, battle) {
     let damage = damageInfo.damage;
 
     damage = applyIllusoryDanceDefense(defender, damage, battle);
+    damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+    damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
     damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
     damage = applyCoconutFortressDefense(defender, damage, battle);
     damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
     applyDamage(defender, damage);
     applyDirectHitRecoil(attacker, defender, battle, damage);
+    handleScaledRetreatBonus(attacker, defender, battle);
 
     successfulHits += 1;
     totalDamage += damage;
@@ -1651,7 +1965,7 @@ function performMarineEcho(attacker, defender, battle) {
 
   hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
 
-  const hit = rollHit(hitChance);
+  const hit = caudalAutotomyForcesDirectHit(defender) ? true : rollHit(hitChance);
 
   if (!hit) {
     if (fennecOasisIsActive(battle, defender)) {
@@ -1684,10 +1998,13 @@ function performMarineEcho(attacker, defender, battle) {
 
   let damage = damageInfo.damage;
 
+  damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+  damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
   applyDirectHitRecoil(attacker, defender, battle, damage);
+    handleScaledRetreatBonus(attacker, defender, battle);
 
   addLog(
     battle,
@@ -1712,7 +2029,7 @@ function resolvePhantomCurrentStrike(fighter, opponent, battle) {
 
   hitChance = applyFennecOasisHitCap(fighter, opponent, battle, hitChance);
 
-  const hit = rollHit(hitChance);
+  const hit = caudalAutotomyForcesDirectHit(opponent) ? true : rollHit(hitChance);
 
   if (!hit) {
     if (fennecOasisIsActive(battle, opponent)) {
@@ -1747,6 +2064,8 @@ function resolvePhantomCurrentStrike(fighter, opponent, battle) {
   let damage = Math.max(1, Math.round(damageInfo.damage * 2));
 
   damage = applyIllusoryDanceDefense(opponent, damage, battle);
+  damage = applyCostalEversionDefense(opponent, fighter, damage, battle);
+  damage = applyCaudalAutotomyDefense(opponent, fighter, damage, battle);
   damage = applyAncestralRetreatDefense(opponent, fighter, damage, battle);
   damage = applyCoconutFortressDefense(opponent, damage, battle);
   damage = applyDarwinsLarvalDefense(opponent, fighter, damage, battle);
@@ -2070,13 +2389,17 @@ export function restoreStamina(fighter, amount, battle = null) {
 function getActionExtraStaminaCost(fighter, actionType, opponent) {
   if (!ACTIONS[actionType]) return 0;
 
-  if (["normal", "quick", "precise", "explosive"].includes(actionType)) {
+  let extraCost = 0;
+
+  if (isOffensiveActionTargeting(actionType, fighter)) {
     if (opponent?.passive?.id === "suffocating-humidity" && humidityIsActive(opponent)) {
-      return 5;
+      extraCost += 5;
     }
+
+    extraCost += getRibbedGuardExtraStaminaCost(opponent);
   }
 
-  return 0;
+  return extraCost;
 }
 
 export function spendStamina(fighter, amount, battle = null) {
@@ -2429,7 +2752,14 @@ export function canUseAction(fighter, actionType, battle = null) {
       if (fighter.slothMicroecosystemActive) return false;
     }
 
+    if (fighter.special.id === "costal-eversion" && fighter.hp <= 50) {
+      return false;
+    }
+
     if (fighter.parasiticControlActive || fighter.nervousDisruptionActive) return false;
+
+    const specialExtraCost = getFinalActionStaminaCost(fighter, actionType, opponent);
+    if (specialExtraCost > 0 && fighter.stamina < specialExtraCost) return false;
 
     if (isCoconutOctopus(fighter)) {
       syncCoconutOctopusDisplayedSpecialCharge(fighter);
@@ -2448,6 +2778,7 @@ export function getActionPriority(actionType, fighter = null) {
   if (actionType === "special") {
     if (fighter?.special?.id === "total-regeneration") return 8;
     if (fighter?.special?.id === "illusory-dance") return 6;
+    if (fighter?.special?.id === "costal-eversion") return 6;
     if (fighter?.special?.id === "deadly-dive") return 6;
     if (fighter?.special?.id === "marine-flash") return 7;
     if (fighter?.special?.id === "overinflation") return 9;
@@ -2698,6 +3029,10 @@ function handlePostHitPassive(attacker, defender, battle, wasCritical, actionTyp
     return;
   }
 
+  if (defender.caudalAutotomyBlockedLastDirectHit) {
+    return;
+  }
+
   if (attacker.passive?.id === "frozen-impact" && wasCritical) {
     const duration = battle.biome === "arctic" ? 4 : 2;
     addEffect(defender, createAgilityDownEffect(duration, 20), battle);
@@ -2754,6 +3089,21 @@ export function performAttack(attacker, defender, actionType, battle) {
         "."
     );
   }
+
+  if (getRibbedGuardExtraStaminaCost(defender) > 0) {
+    addLog(
+      battle,
+      defender.name +
+        "'s Ribbed Guard increases " +
+        attacker.name +
+        "'s " +
+        action.name +
+        " stamina cost to " +
+        finalStaminaCost +
+        "."
+    );
+  }
+
   attacker.concentratedLastTurn = false;
   attacker.overinflationUsedThisTurn = false;
 
@@ -2816,7 +3166,10 @@ export function performAttack(attacker, defender, actionType, battle) {
     isCircadianNight(battle);
 
   const hit =
-    nextAttackBuff.guaranteedHit || matamataAmbushReady || circadianNightGuaranteedHit
+    nextAttackBuff.guaranteedHit ||
+    matamataAmbushReady ||
+    circadianNightGuaranteedHit ||
+    caudalAutotomyForcesDirectHit(defender)
       ? true
       : rollHit(hitChance);
 
@@ -2996,6 +3349,8 @@ export function performAttack(attacker, defender, actionType, battle) {
   finalDamage = applyThreeToedSlothBacterialDamageBonus(attacker, finalDamage, battle);
   finalDamage = applyMatamataAmbushBonus(attacker, defender, finalDamage, battle);
   finalDamage = applyIllusoryDanceDefense(defender, finalDamage, battle);
+  finalDamage = applyCostalEversionDefense(defender, attacker, finalDamage, battle);
+  finalDamage = applyCaudalAutotomyDefense(defender, attacker, finalDamage, battle);
   finalDamage = applyAncestralRetreatDefense(defender, attacker, finalDamage, battle);
   finalDamage = applyCoconutFortressDefense(defender, finalDamage, battle);
   finalDamage = applyDarwinsLarvalDefense(defender, attacker, finalDamage, battle);
@@ -3003,19 +3358,25 @@ export function performAttack(attacker, defender, actionType, battle) {
   applyDamage(defender, finalDamage);
   applyDirectHitRecoil(attacker, defender, battle, finalDamage);
 
-  addLog(
-    battle,
-    attacker.name +
-      " hits " +
-      defender.name +
-      " with " +
-      action.name +
-      " for " +
-      finalDamage +
-      " damage" +
-      (critical ? " (CRITICAL)" : "") +
-      "."
-  );
+  if (defender.caudalAutotomyBlockedLastDirectHit && defender.caudalAutotomyLastBlock) {
+    logCaudalAutotomyTailBlock(defender, attacker, battle, action.name, critical);
+  } else {
+    addLog(
+      battle,
+      attacker.name +
+        " hits " +
+        defender.name +
+        " with " +
+        action.name +
+        " for " +
+        finalDamage +
+        " damage" +
+        (critical ? " (CRITICAL)" : "") +
+        "."
+    );
+  }
+
+  handleScaledRetreatBonus(attacker, defender, battle);
 
     if (tryMantisDecapitation(attacker, defender, battle)) {
     return {
@@ -3032,7 +3393,9 @@ export function performAttack(attacker, defender, actionType, battle) {
       "Critical calc -> Base damage: " +
         baseDamage +
         " | Critical multiplier: x1.5 | Final damage: " +
-        finalDamage +
+        (defender.caudalAutotomyBlockedLastDirectHit && defender.caudalAutotomyLastBlock
+          ? defender.caudalAutotomyLastBlock.originalDamage
+          : finalDamage) +
         "."
     );
   }
@@ -3082,7 +3445,7 @@ function performTigerSpecial(attacker, defender, battle) {
 
   hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
 
-  const hit = nextAttackBuff.guaranteedHit ? true : rollHit(hitChance);
+  const hit = nextAttackBuff.guaranteedHit || caudalAutotomyForcesDirectHit(defender) ? true : rollHit(hitChance);
 
   if (!hit) {
     addLog(
@@ -3123,12 +3486,15 @@ function performTigerSpecial(attacker, defender, battle) {
   }
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+  damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+  damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
   damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
   applyDirectHitRecoil(attacker, defender, battle, damage);
+    handleScaledRetreatBonus(attacker, defender, battle);
 
   const defenseText = empoweredBite ? "100% Defense" : "50% Defense";
 
@@ -3199,7 +3565,7 @@ function performHoneyBadgerSpecial(attacker, defender, battle) {
 
   hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
 
-  const hit = rollHit(hitChance);
+  const hit = caudalAutotomyForcesDirectHit(defender) ? true : rollHit(hitChance);
 
   if (!hit) {
     addLog(
@@ -3228,12 +3594,15 @@ function performHoneyBadgerSpecial(attacker, defender, battle) {
   let damage = damageInfo.damage;
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+  damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+  damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
   damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
   applyDirectHitRecoil(attacker, defender, battle, damage);
+    handleScaledRetreatBonus(attacker, defender, battle);
 
   if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
     addLog(
@@ -3321,6 +3690,83 @@ function performWalrusSpecial(attacker, battle) {
   consumeSpecialCharge(attacker);
 }
 
+function performCostalEversionSpecial(attacker, battle) {
+  attacker.concentratedLastTurn = false;
+  attacker.overinflationUsedThisTurn = false;
+
+  const sacrifice = 50;
+
+  if (attacker.hp <= sacrifice) {
+    addLog(
+      battle,
+      attacker.name + " cannot use Costal Eversion because the HP sacrifice would be fatal."
+    );
+    return;
+  }
+
+  attacker.hp = Math.max(0, attacker.hp - sacrifice);
+
+  attacker.costalEversionActive = true;
+  attacker.costalEversionTurns = 3;
+  attacker.costalEversionActivatedTurn = battle.turn;
+
+  addLog(
+    battle,
+    attacker.name +
+      " uses Costal Eversion, losing " +
+      sacrifice +
+      " HP and exposing its toxin-covered ribs for 3 turns."
+  );
+
+  addLog(
+    battle,
+    attacker.name +
+      "'s Costal Eversion reduces direct damage by 50%, reflects 25% of original direct damage, applies Costal Toxin to direct attackers, and restores 25 HP at the end of the next 2 active turns."
+  );
+
+  resetMomentum(attacker, battle, "special");
+  resetParasiticControlHits(attacker, battle, "special");
+  resetFalconStacks(attacker, battle, "special");
+  resetMacaqueChain(attacker, battle, "special");
+  consumeSpecialCharge(attacker);
+}
+
+function performCaudalAutotomySpecial(attacker, battle) {
+  attacker.concentratedLastTurn = false;
+  attacker.overinflationUsedThisTurn = false;
+
+  const sacrifice = 90;
+  attacker.hp = Math.max(0, attacker.hp - sacrifice);
+  attacker.damageTakenThisTurn += sacrifice;
+
+  attacker.caudalAutotomyActive = true;
+  attacker.caudalAutotomyTurns = 3;
+  attacker.caudalAutotomyActivatedTurn = battle.turn;
+  attacker.caudalAutotomyTailHp = 90;
+  attacker.caudalAutotomyMaxTailHp = 90;
+  attacker.caudalAutotomyBlockedLastDirectHit = false;
+  attacker.caudalAutotomyLastBlock = null;
+
+  addLog(
+    battle,
+    attacker.name +
+      " uses Caudal Autotomy, losing " +
+      sacrifice +
+      " HP and creating a detached tail with 90 HP for 3 turns."
+  );
+
+  if (attacker.hp <= 0) {
+    attacker.alive = false;
+  }
+
+  resetMomentum(attacker, battle, "special");
+  resetParasiticControlHits(attacker, battle, "special");
+  resetFalconStacks(attacker, battle, "special");
+  resetMacaqueChain(attacker, battle, "special");
+  consumeSpecialCharge(attacker);
+}
+
+
 function performShimaEnagaSpecial(attacker, battle) {
   attacker.concentratedLastTurn = false;
   attacker.overinflationUsedThisTurn = false;
@@ -3349,7 +3795,7 @@ function performMantisShrimpSpecial(attacker, defender, battle) {
 
   hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
 
-  const hit = rollHit(hitChance);
+  const hit = caudalAutotomyForcesDirectHit(defender) ? true : rollHit(hitChance);
 
   const damageInfo = calculateDamageWithDefenseFactor(
     attacker,
@@ -3365,6 +3811,8 @@ function performMantisShrimpSpecial(attacker, defender, battle) {
     let partialDamageToEnemy = Math.max(1, Math.round(specialBaseDamage * 0.25));
     const selfDamage = Math.max(1, Math.round(specialBaseDamage * 0.5));
 
+    partialDamageToEnemy = applyCostalEversionDefense(defender, attacker, partialDamageToEnemy, battle);
+    partialDamageToEnemy = applyCaudalAutotomyDefense(defender, attacker, partialDamageToEnemy, battle);
     partialDamageToEnemy = applyCoconutFortressDefense(defender, partialDamageToEnemy, battle);
     partialDamageToEnemy = applyDarwinsLarvalDefense(
       defender,
@@ -3409,12 +3857,15 @@ function performMantisShrimpSpecial(attacker, defender, battle) {
   }
 
   finalDamage = applyIllusoryDanceDefense(defender, finalDamage, battle);
+  finalDamage = applyCostalEversionDefense(defender, attacker, finalDamage, battle);
+  finalDamage = applyCaudalAutotomyDefense(defender, attacker, finalDamage, battle);
   finalDamage = applyAncestralRetreatDefense(defender, attacker, finalDamage, battle);
   finalDamage = applyCoconutFortressDefense(defender, finalDamage, battle);
   finalDamage = applyDarwinsLarvalDefense(defender, attacker, finalDamage, battle);
 
   applyDamage(defender, finalDamage);
   applyDirectHitRecoil(attacker, defender, battle, finalDamage);
+  handleScaledRetreatBonus(attacker, defender, battle);
 
   addLog(
     battle,
@@ -3456,7 +3907,7 @@ function performGiantAsianMantisSpecial(attacker, defender, battle) {
 
     hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
 
-    const hit = rollHit(hitChance);
+    const hit = caudalAutotomyForcesDirectHit(defender) ? true : rollHit(hitChance);
 
     if (!hit) {
       addLog(
@@ -3488,6 +3939,8 @@ function performGiantAsianMantisSpecial(attacker, defender, battle) {
     let damage = Math.max(1, Math.round(damageInfo.damage * 0.5));
 
     damage = applyIllusoryDanceDefense(defender, damage, battle);
+    damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+    damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
     damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
     damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
@@ -3622,7 +4075,7 @@ function performDungBeetleSpecial(attacker, defender, battle) {
 
   hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
 
-  const hit = rollHit(hitChance);
+  const hit = caudalAutotomyForcesDirectHit(defender) ? true : rollHit(hitChance);
 
   if (!hit) {
     addLog(
@@ -3651,12 +4104,15 @@ function performDungBeetleSpecial(attacker, defender, battle) {
   let damage = Math.max(1, Math.round(damageInfo.damage * 0.5));
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+  damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+  damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
   damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
   applyDirectHitRecoil(attacker, defender, battle, damage);
+    handleScaledRetreatBonus(attacker, defender, battle);
 
   if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
     addLog(
@@ -3703,6 +4159,8 @@ function performCaimanSpecial(attacker, defender, battle) {
     let damage = Math.max(1, Math.round(attackValue * 2));
 
     damage = applyIllusoryDanceDefense(defender, damage, battle);
+    damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+    damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
     damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
     damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
@@ -3726,7 +4184,7 @@ function performCaimanSpecial(attacker, defender, battle) {
 
   hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
 
-  const hit = rollHit(hitChance);
+  const hit = caudalAutotomyForcesDirectHit(defender) ? true : rollHit(hitChance);
 
   if (!hit) {
     addLog(
@@ -3755,12 +4213,15 @@ function performCaimanSpecial(attacker, defender, battle) {
   let damage = damageInfo.damage;
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+  damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+  damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
   damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
   applyDirectHitRecoil(attacker, defender, battle, damage);
+    handleScaledRetreatBonus(attacker, defender, battle);
 
   addLog(
     battle,
@@ -3780,7 +4241,7 @@ function performFennecSpecial(attacker, defender, battle) {
 
   hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
 
-  const hit = rollHit(hitChance);
+  const hit = caudalAutotomyForcesDirectHit(defender) ? true : rollHit(hitChance);
 
   if (!hit) {
     addLog(
@@ -3810,6 +4271,8 @@ function performFennecSpecial(attacker, defender, battle) {
   let damage = Math.max(1, Math.round(damageInfo.damage * 2));
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+  damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+  damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
   damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
@@ -3962,7 +4425,7 @@ function performEmeraldWaspSpecial(attacker, defender, battle) {
 
   hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
 
-  const hit = rollHit(hitChance);
+  const hit = caudalAutotomyForcesDirectHit(defender) ? true : rollHit(hitChance);
 
   if (!hit) {
     addLog(
@@ -3991,12 +4454,15 @@ function performEmeraldWaspSpecial(attacker, defender, battle) {
   let damage = damageInfo.damage;
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+  damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+  damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
   damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
   applyDirectHitRecoil(attacker, defender, battle, damage);
+    handleScaledRetreatBonus(attacker, defender, battle);
 
   if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
     addLog(
@@ -4093,6 +4559,8 @@ function performDarwinsFrogSpecial(attacker, defender, battle) {
     let overflowDamage = damagePerLarva * overflowLarvae;
 
     overflowDamage = applyIllusoryDanceDefense(defender, overflowDamage, battle);
+    overflowDamage = applyCostalEversionDefense(defender, attacker, overflowDamage, battle);
+    overflowDamage = applyCaudalAutotomyDefense(defender, attacker, overflowDamage, battle);
     overflowDamage = applyAncestralRetreatDefense(defender, attacker, overflowDamage, battle);
     overflowDamage = applyCoconutFortressDefense(defender, overflowDamage, battle);
     overflowDamage = applyDarwinsLarvalDefense(defender, attacker, overflowDamage, battle);
@@ -4136,7 +4604,7 @@ function performFalconSpecial(attacker, defender, battle) {
 
   hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
 
-  const hit = rollHit(hitChance);
+  const hit = caudalAutotomyForcesDirectHit(defender) ? true : rollHit(hitChance);
 
   if (!hit) {
     addLog(
@@ -4160,12 +4628,15 @@ function performFalconSpecial(attacker, defender, battle) {
   let damage = damageInfo.damage;
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+  damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+  damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
   damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
   applyDirectHitRecoil(attacker, defender, battle, damage);
+    handleScaledRetreatBonus(attacker, defender, battle);
 
   const staminaLoss = Math.min(defender.stamina, Math.max(0, Math.round(damage * 0.5)));
 
@@ -4234,10 +4705,13 @@ function performMacaqueSpecial(attacker, defender, battle) {
     return;
   }
 
+  damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+  damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
   applyDirectHitRecoil(attacker, defender, battle, damage);
+    handleScaledRetreatBonus(attacker, defender, battle);
 
   addLog(
     battle,
@@ -4339,7 +4813,7 @@ function performFireSalamanderSpecial(attacker, defender, battle) {
 
   hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
 
-  const hit = rollHit(hitChance);
+  const hit = caudalAutotomyForcesDirectHit(defender) ? true : rollHit(hitChance);
 
   if (!hit) {
     addLog(
@@ -4371,12 +4845,15 @@ function performFireSalamanderSpecial(attacker, defender, battle) {
   let damage = damageInfo.damage;
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+  damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+  damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
   damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
   applyDirectHitRecoil(attacker, defender, battle, damage);
+    handleScaledRetreatBonus(attacker, defender, battle);
 
   if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
     addLog(
@@ -4476,6 +4953,8 @@ function performEurasianEagleOwlSpecial(attacker, defender, battle) {
   let damage = damageInfo.damage;
 
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+  damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+  damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
   damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
@@ -4727,7 +5206,7 @@ function performThreeToedSlothAncestralMicroecosystem(attacker, defender, battle
 
   hitChance = applyFennecOasisHitCap(attacker, defender, battle, hitChance);
 
-  const hit = rollHit(hitChance);
+  const hit = caudalAutotomyForcesDirectHit(defender) ? true : rollHit(hitChance);
 
   if (!hit) {
     addLog(
@@ -4770,12 +5249,15 @@ function performThreeToedSlothAncestralMicroecosystem(attacker, defender, battle
 
   damage = applyThreeToedSlothBacterialDamageBonus(attacker, damage, battle);
   damage = applyIllusoryDanceDefense(defender, damage, battle);
+  damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+  damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
   damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
   damage = applyCoconutFortressDefense(defender, damage, battle);
   damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
 
   applyDamage(defender, damage);
   applyDirectHitRecoil(attacker, defender, battle, damage);
+    handleScaledRetreatBonus(attacker, defender, battle);
 
   addLog(
     battle,
@@ -4824,6 +5306,12 @@ function performSpecialAction(attacker, defender, battle) {
       break;
     case "illusory-dance":
       performShimaEnagaSpecial(attacker, battle);
+      break;
+    case "costal-eversion":
+      performCostalEversionSpecial(attacker, battle);
+      break;
+    case "caudal-autotomy":
+      performCaudalAutotomySpecial(attacker, battle);
       break;
     case "marine-flash":
       performMantisShrimpSpecial(attacker, defender, battle);
@@ -4914,6 +5402,8 @@ function processEndTurnPassives(fighter, opponent, battle) {
   handleThreeToedSlothAlgaeEndTurn(fighter, battle);
   tickThreeToedSlothMicroecosystem(fighter, battle);
   handleTigerSilentStalkEndTurn(fighter, battle);
+  handleCostalEversionEndTurn(fighter, opponent, battle);
+  handleCaudalAutotomyEndTurn(fighter, battle);
 
   handleDarwinsLarvalGestation(fighter, battle);
 }
@@ -4980,6 +5470,22 @@ export function performAction(attacker, defender, actionType, battle) {
   }
 
   if (actionType === "special") {
+    const finalStaminaCost = getFinalActionStaminaCost(attacker, actionType, defender);
+
+    if (finalStaminaCost > 0) {
+      spendStamina(attacker, finalStaminaCost, battle);
+
+      addLog(
+        battle,
+        attacker.name +
+          " spends " +
+          finalStaminaCost +
+          " stamina to use Special Attack against " +
+          defender.name +
+          "."
+      );
+    }
+
     performSpecialAction(attacker, defender, battle);
     consumeOneTurnControlState(attacker, battle);
     return;
@@ -5034,6 +5540,22 @@ function logFighterState(battle, fighter) {
     return;
   }
 
+  if (fighter.special?.id === "costal-eversion") {
+    addLog(
+      battle,
+      `${fighter.name} → HP: ${fighter.hp}/${fighter.maxHp} (${hpPercent}%) | Stamina: ${fighter.stamina}/${fighter.maxStamina} (${staminaPercent}%) | Special Charge: ${fighter.specialCharge}/${fighter.special?.chargeHits ?? 0} | Costal Eversion: ${fighter.costalEversionActive ? fighter.costalEversionTurns + " turn(s)" : "inactive"}.`
+    );
+    return;
+  }
+
+  if (fighter.special?.id === "caudal-autotomy") {
+    addLog(
+      battle,
+      `${fighter.name} → HP: ${fighter.hp}/${fighter.maxHp} (${hpPercent}%) | Stamina: ${fighter.stamina}/${fighter.maxStamina} (${staminaPercent}%) | Special Charge: ${fighter.specialCharge}/${fighter.special?.chargeHits ?? 0} | Caudal Autotomy: ${fighter.caudalAutotomyActive ? fighter.caudalAutotomyTurns + " turn(s), Tail " + fighter.caudalAutotomyTailHp + "/" + fighter.caudalAutotomyMaxTailHp : "inactive"}.`
+    );
+    return;
+  }
+
   addLog(
     battle,
     `${fighter.name} → HP: ${fighter.hp}/${fighter.maxHp} (${hpPercent}%) | Stamina: ${fighter.stamina}/${fighter.maxStamina} (${staminaPercent}%) | Special Charge: ${fighter.specialCharge}/${fighter.special?.chargeHits ?? 0}.`
@@ -5043,6 +5565,8 @@ function logFighterState(battle, fighter) {
 function clearTurnDefenseBuff(fighter) {
   fighter.concentrationActive = false;
   fighter.illusoryDanceActive = false;
+  fighter.scaledRetreatBonusAppliedThisTurn = false;
+  fighter.caudalAutotomyBlockedLastDirectHit = false;
 }
 
 function endTurnProcessing(battle) {

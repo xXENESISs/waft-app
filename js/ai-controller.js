@@ -181,6 +181,17 @@ function getBestAttackAction(fighter, defender, battle, extraScores = {}) {
 
     let score = expected;
 
+    if (defender?.costalEversionActive) {
+      score -= 35;
+      if (action === "explosive") score -= 12;
+    }
+
+    if (defender?.caudalAutotomyActive && (defender.caudalAutotomyTailHp || 0) > 0) {
+      const tailHp = defender.caudalAutotomyTailHp || 0;
+      if (damage >= tailHp) score += 12;
+      else score -= 25;
+    }
+
     if (hitChance >= 75) score += 8;
     if (hitChance < 45) score -= 18;
     if (action === "normal" && staminaRatio(fighter) < 0.35) score += 10;
@@ -245,6 +256,7 @@ function scoreGeneralSpecial(fighter, defender, battle) {
   if (finisher) score += 55;
   if (hitChance < 45) score -= 45;
   if (hitChance > 75) score += 15;
+  if (defender?.costalEversionActive && fighter.special?.chargeType === "offensive") score -= 45;
 
   switch (specialId) {
     case "death-roll":
@@ -271,6 +283,22 @@ function scoreGeneralSpecial(fighter, defender, battle) {
     case "illusory-dance":
       score = enemyLooksDangerous(defender, fighter, battle) ? 95 : 45;
       if (ownHp < 0.45) score += 25;
+      break;
+    case "costal-eversion":
+      score = enemyLooksDangerous(defender, fighter, battle) ? 95 : 55;
+      if (fighter.hp <= 50) score = -999;
+      else if (ownHp < 0.2) score -= 70;
+      else if (ownHp < 0.35) score -= 25;
+      if (ownHp > 0.65 && staminaRatio(defender) > 0.35) score += 20;
+      if (fighter.costalEversionActive) score = -999;
+      break;
+    case "caudal-autotomy":
+      score = enemyLooksDangerous(defender, fighter, battle) ? 90 : 50;
+      if (fighter.hp <= 120) score = -999;
+      else if (ownHp < 0.3) score -= 60;
+      else if (ownHp < 0.45) score -= 20;
+      if (fighter.caudalAutotomyActive) score = -999;
+      if (staminaRatio(fighter) < 0.35) score += 15;
       break;
     case "marine-flash":
       score += hitChance >= 65 ? 45 : -55;
@@ -609,6 +637,19 @@ function chooseGenericAnimalAction(fighter, defender, battle) {
       extra.explosive = stacks >= 2 && staminaRatio(fighter) > 0.45 ? 18 : 0;
       break;
     }
+    case "ribbed-guard":
+      extra.precise = 25;
+      extra.explosive = staminaRatio(fighter) > 0.55 ? 12 : -8;
+      if (fighter.costalEversionActive) {
+        extra.normal = 15;
+        extra.precise = 20;
+      }
+      break;
+    case "scaled-retreat":
+      extra.precise = 18;
+      extra.normal = 14;
+      extra.explosive = staminaRatio(fighter) > 0.5 ? 10 : -8;
+      break;
     case "ballistic-impulse":
       extra.explosive = 25;
       break;

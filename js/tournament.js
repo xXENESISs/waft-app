@@ -1,4 +1,47 @@
 import { animals } from "./animals.js";
+
+import {
+  getSharedImageCandidates,
+  buildSharedTurnSummary,
+  deriveSharedTurnOutcome,
+  formatSharedBattleLogLine,
+  setupSwapFightersButton,
+  isSharedThreeToedSlothFighter,
+  getSharedSlothActiveColonies,
+  isSharedSlothDormant,
+  sharedSlothHasColony,
+  getSharedSlothBacterialBonusForHitLevel,
+  getSharedSlothBacterialNextHitBonus,
+  getSharedSlothBacterialFollowingHitBonus,
+  getSharedSlothBacterialProgressText,
+  getSharedThreeToedSlothStatusText,
+  getSharedSlothColonyCurrentEffectText,
+  getSharedSlothMiniStateLabel,
+  getSharedSlothFullStateLabel,
+  renderSharedSlothColonyChip,
+  renderSharedSlothEcosystemMiniPanel,
+  renderSharedSlothColonyDetailCard,
+  renderSharedSlothEcosystemModalDom,
+  updateSharedSlothEcosystemButtonDom,
+  isSharedCoconutOctopusFighter,
+  getSharedCoconutOctopusFormText,
+  getSharedCoconutOctopusSpecialChoiceText,
+  getSharedCoconutOctopusFormChargeMax,
+  getSharedCoconutOctopusFormCharge,
+  getSharedCoconutOctopusCurrentCharge,
+  getSharedCoconutOctopusCurrentChargeMax,
+  getSharedCoconutOctopusChargeLine,
+  getSharedCoconutOctopusStatusText,
+  getSharedCoconutOctopusFormDefinitionForPreview,
+  getSharedCoconutOctopusPreviewStatsHtml,
+  renderSharedCoconutOctopusFormPreviewDom,
+  updateSharedCoconutOctopusPanelDom,
+  renderSharedOnlineTournamentOctopusPanel,
+  updateSharedLarvalCommandButtonDom,
+  getSharedLarvalDraftTotal,
+  getSharedCurrentLarvae,
+  renderSharedLarvalCommandModalDom
+} from "./waft-ui-core.js";
 import { setupFighterSelector } from "./fighter-selector.js";
 import {
   createBattle,
@@ -68,43 +111,19 @@ function getAnimalName(fighterId) {
 
 
 function isCoconutOctopusFighter(fighter) {
-  return fighter && fighter.id === "coconut-octopus";
+  return isSharedCoconutOctopusFighter(fighter);
 }
 
 function getCoconutOctopusFormText(fighter) {
-  if (!isCoconutOctopusFighter(fighter)) return "";
-  const form = fighter.octopusForm || "base";
-  return OCTOPUS_FORM_LABELS[form] || form;
+  return getSharedCoconutOctopusFormText(fighter);
 }
 
 function getCoconutOctopusStatusText(fighter) {
-  if (!isCoconutOctopusFighter(fighter)) return "";
-
-  const lines = [
-    "Form: " + getCoconutOctopusFormText(fighter),
-    "Adaptation charges: " + (fighter.octopusAdaptationCharges ?? 0) + "/8",
-    "First transformation: " + (fighter.octopusFreeTransformationAvailable ? "FREE" : "USED")
-  ];
-
-  if ((fighter.octopusForm || "base") === "base") {
-    lines.push("Perfect Adaptation: choose option when using Special");
-  }
-  if ((fighter.octopusForm || "base") === "offensive") {
-    lines.push("Predatory Pressure: " + ((fighter.octopusPredatoryPressureStacks || 0) * 5) + "% Attack reduction");
-  }
-  if ((fighter.octopusForm || "base") === "defensive") {
-    lines.push("Coconut Shell: 10 fixed damage on direct hit");
-    lines.push("Fortress active: " + (fighter.coconutFortressActive ? "YES" : "NO"));
-  }
-  if ((fighter.octopusForm || "base") === "evasive") {
-    lines.push("Perfect Camouflage: +15 HP / +15 Stamina when enemy misses");
-  }
-
-  return lines.join("\n");
+  return getSharedCoconutOctopusStatusText(fighter);
 }
 
 function getCoconutOctopusFormDefinitionForPreview(formId) {
-  return animals["coconut-octopus"]?.octopusForms?.[formId] || null;
+  return getSharedCoconutOctopusFormDefinitionForPreview(formId);
 }
 
 function getCoconutOctopusPreviewStatsHtml(form) {
@@ -373,10 +392,38 @@ function getImageCandidates(id, animal) {
     fennec: ["./images/animals/mammals/fennec.png"],
     "giant-asian-mantis": ["./images/animals/arthropods/asian-giant-mantis.png"],
     "darwins-frog": ["./images/animals/amphibians/darwins-frog.png"],
-    "coconut-octopus": ["./images/animals/fish/coconut-octopus.png"]
+    "coconut-octopus": ["./images/animals/fish/coconut-octopus.png"],
+    "iberian-ribbed-newt": [
+      "./images/animals/amphibians/iberian-ribbed-newt.png",
+      "./images/animals/amphibians/iberian-ribbed-newt.jpg",
+      "./images/animals/amphibians/iberian-ribbed-newt.jpeg",
+      "./images/animals/amphibians/iberian-ribbed-newt.webp",
+      "./images/animals/amphibians/gallipato.png",
+      "./images/animals/amphibians/gallipato.jpg",
+      "./images/animals/amphibians/gallipato.jpeg",
+      "./images/animals/amphibians/gallipato.webp",
+      "./images/animals/amphibians/gallipato-iberico.png",
+      "./images/animals/amphibians/gallipato-iberico.jpg",
+      "./images/animals/amphibians/gallipato-iberico.jpeg",
+      "./images/animals/amphibians/gallipato-iberico.webp"
+    ],
+    "iberian-skink": [
+      "./images/animals/reptiles/iberian-skink.png",
+      "./images/animals/reptiles/iberian-skink.jpg",
+      "./images/animals/reptiles/iberian-skink.jpeg",
+      "./images/animals/reptiles/iberian-skink.webp",
+      "./images/animals/reptiles/eslizon-iberico.png",
+      "./images/animals/reptiles/eslizon-iberico.jpg",
+      "./images/animals/reptiles/eslizon-iberico.jpeg",
+      "./images/animals/reptiles/eslizon-iberico.webp",
+      "./images/animals/reptiles/eslizon.png",
+      "./images/animals/reptiles/eslizon.jpg",
+      "./images/animals/reptiles/eslizon.jpeg",
+      "./images/animals/reptiles/eslizon.webp"
+    ]
   };
 
-  return [direct, ...(legacy[id] ?? [])];
+  return getSharedImageCandidates(id, animal, legacy);
 }
 
 function loadFighterImage(imgEl, fighterId) {
@@ -932,8 +979,30 @@ function getExtraResourceText(fighter) {
     return (
       "Illusory Dance active: " +
       (fighter.illusoryDanceActive ? "YES" : "NO") +
-      "\nNext successful attack x2: " +
+      "\nNext successful attack x3: " +
       (fighter.illusoryDanceBuffReady ? "YES" : "NO")
+    );
+  }
+
+  if (fighter.passive && fighter.passive.id === "ribbed-guard") {
+    return (
+      "Ribbed Guard: offensive actions cost +" +
+      (fighter.costalEversionActive ? "10" : "5") +
+      " stamina" +
+      "\nCostal Eversion: " +
+      (fighter.costalEversionActive ? "ACTIVE (" + (fighter.costalEversionTurns || 0) + " turn(s) left)" : "NO") +
+      "\nWhile active: -50% damage, 25% reflect, Costal Toxin"
+    );
+  }
+
+
+  if (fighter.passive && fighter.passive.id === "scaled-retreat") {
+    return (
+      "Scaled Retreat: Concentration HP x2 if hit" +
+      "\nCaudal Autotomy: " +
+      (fighter.caudalAutotomyActive ? "ACTIVE (" + (fighter.caudalAutotomyTurns || 0) + " turn(s) left)" : "NO") +
+      "\nTail HP: " +
+      ((fighter.caudalAutotomyActive && (fighter.caudalAutotomyTailHp || 0) > 0) ? (fighter.caudalAutotomyTailHp + "/" + (fighter.caudalAutotomyMaxTailHp || 90)) : "inactive")
     );
   }
 
@@ -1268,26 +1337,7 @@ function renderSpecialButton(player) {
 }
 
 function renderLarvalCommandButton(player) {
-  const larvalBtn = document.getElementById("larvalCommandBtn");
-  const titleEl = document.getElementById("btn-larval-title");
-  const descEl = document.getElementById("btn-larval-desc");
-
-  if (!player || player.passive?.id !== "larval-gestation") {
-    larvalBtn.style.display = "none";
-    return;
-  }
-
-  const larvae = player.darwinsLarvae || 0;
-  const maxLarvae = player.darwinsMaxLarvae || 5;
-
-  larvalBtn.style.display = "block";
-  titleEl.textContent = "Larval Command";
-  descEl.textContent =
-    "Larvae: " +
-    larvae +
-    "/" +
-    maxLarvae +
-    ". Assign larvae to attack, defend or sacrifice.";
+  return updateSharedLarvalCommandButtonDom(player);
 }
 
 function renderActionButtons() {
@@ -1573,51 +1623,11 @@ function renderTournamentInfo() {
 }
 
 function buildTurnSummary(newLines) {
-  const summary = [];
-
-  for (const line of newLines) {
-    if (line.includes("calc →")) continue;
-    if (line.startsWith("Damage calc")) continue;
-    if (line.startsWith("Critical calc")) continue;
-    if (line.includes("→ HP:")) continue;
-    if (line.startsWith("--- Turn")) continue;
-    if (line.includes("gains effect: Neurotoxic Injection")) continue;
-
-    if (
-      line.includes("Honey Badger has fallen below") &&
-      line.includes("fatigue")
-    ) {
-      summary.push(
-        "Honey Badger's Savage Endurance ignores fatigue: no stat reduction is applied."
-      );
-      continue;
-    }
-
-    if (
-      line.includes("enters Savage Endurance") &&
-      line.includes("below 25% HP")
-    ) {
-      summary.push(
-        "Honey Badger enters Savage Endurance: below 25% HP, it becomes immune to critical hits and gains +20% Attack and +20% Explosiveness."
-      );
-      continue;
-    }
-
-    summary.push(line);
-  }
-
-  return summary.length > 0 ? summary : ["No major events this turn."];
+  return buildSharedTurnSummary(newLines);
 }
 
 function formatBattleLogLine(line) {
-  if (
-    line.includes("Honey Badger has fallen below") &&
-    line.includes("fatigue")
-  ) {
-    return "Honey Badger's Savage Endurance ignores fatigue: no stat reduction is applied.";
-  }
-
-  return line;
+  return formatSharedBattleLogLine(line);
 }
 
 function renderAIReplayControls() {
@@ -1800,26 +1810,12 @@ function processFinishedPlayerMatch() {
 
 
 function renderCoconutOctopusFormPreview(player) {
-  const panel = document.getElementById("octopusFormPreviewPanel");
-  const titleEl = document.getElementById("octopusFormPreviewTitle");
-  const statsEl = document.getElementById("octopusFormPreviewStats");
-  const textEl = document.getElementById("octopusFormPreviewText");
-  const confirmBtn = document.getElementById("octopusConfirmFormBtn");
-  if (!panel || !titleEl || !statsEl || !textEl || !confirmBtn) return;
-  if (!player || player.id !== "coconut-octopus" || !pendingOctopusFormPreview) { panel.style.display = "none"; return; }
-  const form = getCoconutOctopusFormDefinitionForPreview(pendingOctopusFormPreview);
-  if (!form) { panel.style.display = "none"; return; }
-  const currentForm = player.octopusForm || "base";
-  const charges = player.octopusAdaptationCharges ?? 0;
-  const isCurrent = pendingOctopusFormPreview === currentForm;
-  const canPay = Boolean(player.octopusFreeTransformationAvailable) || charges > 0;
-  const blocked = !currentBattle || currentBattle.finished || isResolvingTurn || isCurrent || !canPay;
-  panel.style.display = "block";
-  titleEl.textContent = form.name + (isCurrent ? " — Current Form" : " — Preview");
-  statsEl.innerHTML = getCoconutOctopusPreviewStatsHtml(form);
-  textEl.textContent = "Passive — " + (form.passive?.name || "None") + "\n" + (form.passive?.description || "No passive.") + "\n\nSuper — " + (form.special?.name || "None") + "\n" + (form.special?.description || "No super.");
-  confirmBtn.textContent = isCurrent ? "Already in this form" : player.octopusFreeTransformationAvailable ? "Confirm Free Transformation" : "Confirm Form Change (-1 charge)";
-  confirmBtn.disabled = blocked;
+  return renderSharedCoconutOctopusFormPreviewDom({
+    player,
+    pendingFormId: pendingOctopusFormPreview,
+    currentBattle,
+    isBusy: isResolvingTurn
+  });
 }
 
 function previewPlayerCoconutOctopusForm(formId) {
@@ -1837,21 +1833,17 @@ function clearPlayerCoconutOctopusPreview() {
 }
 
 function updateCoconutOctopusPanel(player) {
-  const panel = document.getElementById("octopusAdaptationPanel");
-  const statusEl = document.getElementById("octopusAdaptationStatus");
-  if (!panel || !statusEl) return;
-  if (!player || player.id !== "coconut-octopus") { panel.style.display = "none"; pendingOctopusFormPreview = null; return; }
-  panel.style.display = "block";
-  const form = player.octopusForm || "base";
-  const charges = player.octopusAdaptationCharges ?? 0;
-  const freeText = player.octopusFreeTransformationAvailable ? " · first transformation free" : "";
-  statusEl.textContent = getCoconutOctopusFormText(player) + " · charges " + charges + "/8" + freeText;
-  document.querySelectorAll(".octopus-form-btn").forEach((btn) => {
-    const targetForm = btn.dataset.octopusForm;
-    btn.classList.toggle("active", targetForm === form);
-    btn.classList.toggle("preview", targetForm === pendingOctopusFormPreview && targetForm !== form);
-    btn.disabled = !currentBattle || currentBattle.finished || isResolvingTurn;
+  if (!player || player.id !== "coconut-octopus") {
+    pendingOctopusFormPreview = null;
+  }
+
+  updateSharedCoconutOctopusPanelDom({
+    player,
+    pendingFormId: pendingOctopusFormPreview,
+    currentBattle,
+    isBusy: isResolvingTurn
   });
+
   renderCoconutOctopusFormPreview(player);
 }
 
@@ -1947,41 +1939,21 @@ async function playTurn(playerAction) {
 }
 
 function getLarvalDraftTotal() {
-  return (
-    larvalDraftCommand.attack +
-    larvalDraftCommand.defense +
-    larvalDraftCommand.sacrifice
-  );
+  return getSharedLarvalDraftTotal(larvalDraftCommand);
 }
 
 function getCurrentPlayerLarvae() {
   const { player } = getBattleFighters();
-  if (!player) return 0;
-
-  return player.darwinsLarvae || 0;
+  return getSharedCurrentLarvae(player, false);
 }
 
 function renderLarvalCommandModal() {
-  const larvae = getCurrentPlayerLarvae();
-  const totalUsed = getLarvalDraftTotal();
-  const conserved = Math.max(0, larvae - totalUsed);
-
-  document.getElementById("larvalAvailableText").textContent =
-    "Larvae available: " + larvae + "/5";
-
-  document.getElementById("larvalAttackValue").textContent = larvalDraftCommand.attack;
-  document.getElementById("larvalDefenseValue").textContent = larvalDraftCommand.defense;
-  document.getElementById("larvalSacrificeValue").textContent = larvalDraftCommand.sacrifice;
-  document.getElementById("larvalConserveValue").textContent = conserved;
-
-  document.getElementById("larvalAttackMinus").disabled = larvalDraftCommand.attack <= 0;
-  document.getElementById("larvalDefenseMinus").disabled = larvalDraftCommand.defense <= 0;
-  document.getElementById("larvalSacrificeMinus").disabled = larvalDraftCommand.sacrifice <= 0;
-
-  document.getElementById("larvalAttackPlus").disabled = totalUsed >= larvae;
-  document.getElementById("larvalDefensePlus").disabled =
-    totalUsed >= larvae || larvalDraftCommand.defense >= 2;
-  document.getElementById("larvalSacrificePlus").disabled = totalUsed >= larvae;
+  const { player } = getBattleFighters();
+  renderSharedLarvalCommandModalDom({
+    fighter: player,
+    draft: larvalDraftCommand,
+    previewMode: false
+  });
 }
 
 function openLarvalCommandModal() {

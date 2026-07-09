@@ -945,7 +945,7 @@ export const animals = {
     id: "cephalopod-adaptation",
     name: "Cephalopod Adaptation",
     description:
-      "The Coconut Octopus has 8 adaptation charges per combat. During the Stand Phase, it can transform into Offensive, Defensive or Evasive Form without consuming its action or turn. The first transformation does not consume a charge. Leaving a form removes that form's passive stacks."
+      "The Coconut Octopus has 8 adaptation charges per combat. During the Stand Phase, it can transform into Offensive, Defensive, Evasive or Base Form without consuming its action or turn. The first transformation does not consume a charge. Leaving a form removes that form's passive stacks."
   },
 
   special: {
@@ -967,7 +967,7 @@ export const animals = {
         lines: [
           "8 adaptation charges per combat.",
           "First transformation is free.",
-          "Transformation happens before the action and does not consume the turn.",
+          "Transformation happens before the action and does not consume the turn. Returning to Base Form is also a transformation.",
           "Leaving a form clears that form's accumulated stacks."
         ]
       },
@@ -975,10 +975,10 @@ export const animals = {
         icon: "⚔️",
         title: "Offensive Form",
         lines: [
-          "Attack 120 / Technique 55 / Explosiveness 120.",
+          "Attack 100 / Defense 20 / Technique 25 / Agility 20 / Explosiveness 150.",
           "Low defense and low agility.",
           "Predatory Pressure: successful hits reduce enemy Attack by 5%, up to 40%.",
-          "Special: Tentacle Storm — 8 independent hits at 50% accuracy."
+          "Special: Tentacle Storm — 8 independent hits at 30% accuracy."
         ]
       },
       {
@@ -1028,7 +1028,7 @@ export const animals = {
         id: "cephalopod-adaptation",
         name: "Cephalopod Adaptation",
         description:
-          "The Coconut Octopus has 8 adaptation charges per combat. During the Stand Phase, it can transform into Offensive, Defensive or Evasive Form without consuming its action or turn. The first transformation does not consume a charge. Leaving a form removes that form's passive stacks."
+          "The Coconut Octopus has 8 adaptation charges per combat. During the Stand Phase, it can transform into Offensive, Defensive, Evasive or Base Form without consuming its action or turn. The first transformation does not consume a charge. Leaving a form removes that form's passive stacks."
       },
       special: {
         id: "perfect-adaptation",
@@ -1046,11 +1046,11 @@ export const animals = {
       stats: {
         life: 70,
         attack: 100,
-        defense: 40,
+        defense: 20,
         resistance: 70,
-        technique: 45,
+        technique: 25,
         speed: 85,
-        agility: 40,
+        agility: 20,
         explosiveness: 150
       },
       passive: {
@@ -1063,7 +1063,7 @@ export const animals = {
         id: "tentacle-storm",
         name: "Tentacle Storm",
         description:
-          "The Coconut Octopus strikes with all eight arms: 8 independent hits, each with 50% accuracy. Each hit uses current Attack and Explosiveness. Charges separately from the other forms.",
+          "The Coconut Octopus strikes with all eight arms: 8 independent hits, each with 30% accuracy. Each hit uses current Attack and Explosiveness. Charges separately from the other forms.",
         chargeType: "offensive",
         chargeHits: 6
       }
@@ -1129,4 +1129,85 @@ export const animals = {
   }
 },
 
+
+"iberian-ribbed-newt": {
+  id: "iberian-ribbed-newt",
+  name: "Iberian Ribbed Newt",
+  scientificName: "Pleurodeles waltl",
+  category: "amphibians",
+
+  stats: {
+    life: 93,
+    attack: 65,
+    defense: 92,
+    resistance: 82,
+    speed: 56,
+    agility: 54,
+    technique: 79,
+    explosiveness: 79
+  },
+
+  biomes: {
+    favorable: ["forest", "jungle"],
+    neutral: ["mountain", "desert"],
+    unfavorable: ["marine", "arctic"]
+  },
+
+  passive: {
+    id: "ribbed-guard",
+    name: "Ribbed Guard",
+    description:
+      "Offensive actions targeting the Iberian Ribbed Newt cost 5 extra Stamina. While Costal Eversion is active, offensive actions targeting it cost 10 extra Stamina total."
+  },
+
+  special: {
+    id: "costal-eversion",
+    name: "Costal Eversion",
+    description:
+      "Defensive special. The Iberian Ribbed Newt loses 50 HP and exposes its toxin-covered ribs for 3 turns, including the activation turn. While active, it receives 50% less damage, reflects 25% of the original incoming direct damage, and direct attackers suffer Costal Toxin until Costal Eversion ends. At the end of the next 2 active turns, it restores 25 HP.",
+    chargeType: "defensive",
+    chargeHits: 4
+  }
+},
+
+
+"iberian-skink": {
+  id: "iberian-skink",
+  name: "Iberian Skink",
+  scientificName: "Chalcides bedriagai",
+  category: "reptiles",
+
+  stats: {
+    life: 88,
+    attack: 66,
+    defense: 90,
+    resistance: 84,
+    speed: 68,
+    agility: 62,
+    technique: 72,
+    explosiveness: 70
+  },
+
+  biomes: {
+    favorable: ["desert", "forest"],
+    neutral: ["mountain", "marine"],
+    unfavorable: ["jungle", "arctic"]
+  },
+
+  passive: {
+    id: "scaled-retreat",
+    name: "Scaled Retreat",
+    description:
+      "If the opponent uses an offensive action while the Iberian Skink uses Concentration and the attack hits, the Iberian Skink restores double HP from Concentration. Stamina restored by Concentration is not doubled."
+  },
+
+  special: {
+    id: "caudal-autotomy",
+    name: "Caudal Autotomy",
+    description:
+      "Defensive special. The Iberian Skink sheds its tail, immediately loses 90 HP, and creates a detached tail with 90 HP for 3 turns, including the activation turn. While the tail is active, direct attacks targeting the Iberian Skink hit the tail instead. At the end of each active turn, the Iberian Skink restores 30 HP. After the third turn, the tail regenerates and disappears.",
+    chargeType: "defensive",
+    chargeHits: 4
+  }
+},
 }
