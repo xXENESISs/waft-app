@@ -370,6 +370,18 @@ function scoreGeneralSpecial(fighter, defender, battle) {
         if (Array.isArray(fighter.slothActiveColonies) && fighter.slothActiveColonies.includes("bacteria")) score += 15;
       }
       break;
+    case "chain-reaction": {
+      const hydroquinone = fighter.bombardierHydroquinone || 0;
+      const peroxide = fighter.bombardierPeroxide || 0;
+      const reactionAttack = 80 + hydroquinone * 5;
+      const reactionTechnique = 80 + peroxide * 5;
+      score = 78 + hydroquinone * 14 + peroxide * 10;
+      if (reactionTechnique >= 90) score += 18;
+      if (enemyHp < 0.45) score += 35;
+      if ((defender?.hp || 0) <= reactionAttack * 1.25) score += 45;
+      if (hydroquinone === 0 && peroxide === 0 && enemyHp > 0.35) score -= 25;
+      break;
+    }
     case "perfect-adaptation":
     case "tentacle-storm":
     case "coconut-fortress":
@@ -603,6 +615,57 @@ function chooseCoconutOctopusAction(fighter, defender, battle) {
   });
 }
 
+
+function chooseBombardierBeetleAction(fighter, defender, battle) {
+  const hydroquinone = fighter.bombardierHydroquinone || 0;
+  const peroxide = fighter.bombardierPeroxide || 0;
+  const specialScore = scoreGeneralSpecial(fighter, defender, battle);
+
+  fighter.bombardierValveHydroquinone = 0;
+  fighter.bombardierValvePeroxide = 0;
+
+  if (specialScore > 92) {
+    fighter.bombardierSelectedHydroquinone = null;
+    fighter.bombardierSelectedPeroxide = null;
+    return makeDecision("special", { reason: "Chain Reaction is primed." });
+  }
+
+  const enemySpecialNearlyReady = getSpecialCharge(defender) >= Math.max(0, getSpecialRequirement(defender) - 1);
+  const shouldVent = (enemyLooksDangerous(defender, fighter, battle) || enemySpecialNearlyReady || hpRatio(fighter) < 0.42) && (hydroquinone + peroxide) > 0;
+
+  if (shouldVent) {
+    fighter.bombardierValveHydroquinone = Math.min(hydroquinone, hpRatio(fighter) < 0.35 ? 3 : 2);
+    fighter.bombardierValvePeroxide = Math.min(peroxide, enemySpecialNearlyReady ? 3 : 1);
+  }
+
+  if (
+    canUseAction(fighter, "concentration", battle) &&
+    peroxide < 2 &&
+    hpRatio(fighter) > 0.32 &&
+    !isLikelyFinisher(fighter, defender, battle)
+  ) {
+    return makeDecision("concentration", { reason: "Build Hydrogen Peroxide for Reaction Chamber." });
+  }
+
+  const extra = {
+    precise: 18 + peroxide * 4,
+    explosive: hydroquinone >= 2 && staminaRatio(fighter) > 0.42 ? 24 : 8,
+    normal: hydroquinone < 3 ? 14 : 0
+  };
+
+  const bestAttack = getBestAttackAction(fighter, defender, battle, extra);
+
+  if (specialScore > 70 && (!bestAttack || specialScore > bestAttack.score + 20)) {
+    fighter.bombardierSelectedHydroquinone = null;
+    fighter.bombardierSelectedPeroxide = null;
+    fighter.bombardierValveHydroquinone = 0;
+    fighter.bombardierValvePeroxide = 0;
+    return makeDecision("special", { reason: "Use stored reactants before losing tempo." });
+  }
+
+  return makeDecision(bestAttack?.action || fallbackAction(fighter, battle), { reason: "Build reactants and pressure." });
+}
+
 function chooseGenericAnimalAction(fighter, defender, battle) {
   const specialScore = scoreGeneralSpecial(fighter, defender, battle);
 
@@ -649,6 +712,11 @@ function chooseGenericAnimalAction(fighter, defender, battle) {
       extra.precise = 18;
       extra.normal = 14;
       extra.explosive = staminaRatio(fighter) > 0.5 ? 10 : -8;
+      break;
+    case "reaction-chamber":
+      extra.normal = 14;
+      extra.precise = 18;
+      extra.explosive = staminaRatio(fighter) > 0.45 ? 16 : -6;
       break;
     case "ballistic-impulse":
       extra.explosive = 25;
@@ -708,6 +776,9 @@ export function chooseAIAction(battle, fighterOrKey, options = {}) {
       break;
     case "three-toed-sloth":
       decision = chooseThreeToedSlothAction(fighter, defender, battle);
+      break;
+    case "bombardier-beetle":
+      decision = chooseBombardierBeetleAction(fighter, defender, battle);
       break;
     case "iguana":
       decision = chooseIguanaAction(fighter, defender, battle);

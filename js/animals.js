@@ -1210,4 +1210,52 @@ export const animals = {
     chargeHits: 4
   }
 },
+
+
+"bombardier-beetle": {
+  id: "bombardier-beetle",
+  name: "European Bombardier Beetle",
+  scientificName: "Brachinus crepitans",
+  category: "arthropods-and-other-invertebrates",
+
+  stats: {
+    life: 83,
+    attack: 80,
+    defense: 84,
+    resistance: 72,
+    speed: 66,
+    agility: 65,
+    technique: 80,
+    explosiveness: 70
+  },
+
+  biomes: {
+    favorable: ["desert", "mountain"],
+    neutral: ["forest", "jungle"],
+    unfavorable: ["marine", "arctic"]
+  },
+
+  martialArt: {
+    name: "Kampfringen",
+    country: "Germany",
+    description:
+      "Historical German medieval grappling based on holds, body control, off-balancing and throws. Its close-range pressure lets the Bombardier Beetle keep contact while preparing the reactants inside its chemical chamber."
+  },
+
+  passive: {
+    id: "reaction-chamber",
+    name: "Reaction Chamber",
+    description:
+      "The European Bombardier Beetle stores two independent reactants: Hydroquinone 🔴 and Hydrogen Peroxide 🔵. Successful offensive hits generate 1 Hydroquinone 🔴. Concentration generates 1 Hydrogen Peroxide 🔵. It can store up to 3 charges of each reactant and can use Concentration on consecutive turns without the usual pause. From Reaction Chamber, it can spend stored reactants on Valve Release: 1 charge = 10%, 2 charges = 25%, 3 charges = 50%. 🔴 reduces the enemy Attack this turn; 🔵 reduces the enemy Technique this turn. Reactants can also be saved to empower Chain Reaction."
+  },
+
+  special: {
+    id: "chain-reaction",
+    name: "Chain Reaction",
+    description:
+      "Mixes chosen 🔴 Hydroquinone and 🔵 Hydrogen Peroxide from Reaction Chamber. Base: 80 Attack / 80 Technique. Each 🔴 adds +5 Attack; each 🔵 adds +5 Technique. Fires chained true-damage discharges until one Technique check fails.",
+    chargeType: "offensive",
+    chargeHits: 6
+  }
+}
 }

@@ -147,6 +147,15 @@ export function createFighter(id) {
     caudalAutotomyBlockedLastDirectHit: false,
     scaledRetreatBonusAppliedThisTurn: false,
 
+    bombardierHydroquinone: animal.id === "bombardier-beetle" ? 0 : null,
+    bombardierPeroxide: animal.id === "bombardier-beetle" ? 0 : null,
+    bombardierSelectedHydroquinone: animal.id === "bombardier-beetle" ? null : null,
+    bombardierSelectedPeroxide: animal.id === "bombardier-beetle" ? null : null,
+    bombardierValveHydroquinone: animal.id === "bombardier-beetle" ? 0 : null,
+    bombardierValvePeroxide: animal.id === "bombardier-beetle" ? 0 : null,
+    bombardierValveAttackReductionPct: 0,
+    bombardierValveTechniqueReductionPct: 0,
+
     phantomCurrentActive: false,
 
     macaqueHitChain: 0,
@@ -400,6 +409,180 @@ function caudalAutotomyForcesDirectHit(defender) {
 
 function isIberianRibbedNewt(fighter) {
   return fighter && fighter.id === "iberian-ribbed-newt";
+}
+
+function isBombardierBeetle(fighter) {
+  return fighter && fighter.id === "bombardier-beetle";
+}
+
+function clampBombardierCount(value, max = 3) {
+  return Math.max(0, Math.min(max, Math.round(Number(value) || 0)));
+}
+
+function getBombardierValveReductionPercent(count) {
+  switch (clampBombardierCount(count)) {
+    case 1:
+      return 10;
+    case 2:
+      return 25;
+    case 3:
+      return 50;
+    default:
+      return 0;
+  }
+}
+
+function getBombardierReactantValue(fighter, key) {
+  if (!isBombardierBeetle(fighter)) return 0;
+  return clampBombardierCount(fighter[key] || 0);
+}
+
+function gainBombardierReactant(fighter, reactant, battle) {
+  if (!isBombardierBeetle(fighter)) return;
+
+  const key = reactant === "peroxide" ? "bombardierPeroxide" : "bombardierHydroquinone";
+  const icon = reactant === "peroxide" ? "🔵" : "🔴";
+  const label = reactant === "peroxide" ? "Hydrogen Peroxide" : "Hydroquinone";
+  const before = getBombardierReactantValue(fighter, key);
+
+  if (before >= 3) return;
+
+  fighter[key] = Math.min(3, before + 1);
+
+  if (battle) {
+    addLog(
+      battle,
+      fighter.name +
+        " stores 1 " +
+        label +
+        " " +
+        icon +
+        " in its Reaction Chamber (" +
+        fighter[key] +
+        "/3)."
+    );
+  }
+}
+
+function gainBombardierHydroquinoneFromOffense(fighter, battle) {
+  gainBombardierReactant(fighter, "hydroquinone", battle);
+}
+
+function gainBombardierPeroxideFromConcentration(fighter, battle) {
+  gainBombardierReactant(fighter, "peroxide", battle);
+}
+
+function getBombardierSelectedChainReactants(fighter) {
+  const storedHydroquinone = getBombardierReactantValue(fighter, "bombardierHydroquinone");
+  const storedPeroxide = getBombardierReactantValue(fighter, "bombardierPeroxide");
+
+  const selectedHydroquinone = Number.isFinite(fighter?.bombardierSelectedHydroquinone)
+    ? clampBombardierCount(fighter.bombardierSelectedHydroquinone, storedHydroquinone)
+    : storedHydroquinone;
+
+  const selectedPeroxide = Number.isFinite(fighter?.bombardierSelectedPeroxide)
+    ? clampBombardierCount(fighter.bombardierSelectedPeroxide, storedPeroxide)
+    : storedPeroxide;
+
+  return {
+    hydroquinone: Math.min(storedHydroquinone, selectedHydroquinone),
+    peroxide: Math.min(storedPeroxide, selectedPeroxide)
+  };
+}
+
+function getBombardierChainReactionValues(fighter) {
+  const selected = getBombardierSelectedChainReactants(fighter);
+  const attackValue = 80 + selected.hydroquinone * 5;
+  const techniqueValue = 80 + selected.peroxide * 5;
+
+  return {
+    hydroquinone: selected.hydroquinone,
+    peroxide: selected.peroxide,
+    attackValue,
+    techniqueValue
+  };
+}
+
+function consumeBombardierReactants(fighter, hydroquinone, peroxide, battle) {
+  if (!isBombardierBeetle(fighter)) return { hydroquinone: 0, peroxide: 0 };
+
+  const storedHydroquinone = getBombardierReactantValue(fighter, "bombardierHydroquinone");
+  const storedPeroxide = getBombardierReactantValue(fighter, "bombardierPeroxide");
+  const spentHydroquinone = Math.min(storedHydroquinone, clampBombardierCount(hydroquinone, storedHydroquinone));
+  const spentPeroxide = Math.min(storedPeroxide, clampBombardierCount(peroxide, storedPeroxide));
+
+  fighter.bombardierHydroquinone = Math.max(0, storedHydroquinone - spentHydroquinone);
+  fighter.bombardierPeroxide = Math.max(0, storedPeroxide - spentPeroxide);
+
+  if (battle && (spentHydroquinone > 0 || spentPeroxide > 0)) {
+    addLog(
+      battle,
+      fighter.name +
+        " consumes reactants: 🔴 " +
+        spentHydroquinone +
+        "/3 and 🔵 " +
+        spentPeroxide +
+        "/3."
+    );
+  }
+
+  return { hydroquinone: spentHydroquinone, peroxide: spentPeroxide };
+}
+
+function getBombardierPlannedValveRelease(fighter) {
+  if (!isBombardierBeetle(fighter)) return { hydroquinone: 0, peroxide: 0 };
+
+  const storedHydroquinone = getBombardierReactantValue(fighter, "bombardierHydroquinone");
+  const storedPeroxide = getBombardierReactantValue(fighter, "bombardierPeroxide");
+
+  return {
+    hydroquinone: Math.min(storedHydroquinone, clampBombardierCount(fighter.bombardierValveHydroquinone || 0, storedHydroquinone)),
+    peroxide: Math.min(storedPeroxide, clampBombardierCount(fighter.bombardierValvePeroxide || 0, storedPeroxide))
+  };
+}
+
+function applyBombardierValveReleaseForTurn(fighter, opponent, battle) {
+  if (!isBombardierBeetle(fighter) || !opponent?.alive) return;
+
+  const planned = getBombardierPlannedValveRelease(fighter);
+
+  fighter.bombardierValveHydroquinone = 0;
+  fighter.bombardierValvePeroxide = 0;
+
+  if (planned.hydroquinone <= 0 && planned.peroxide <= 0) return;
+
+  const spent = consumeBombardierReactants(fighter, planned.hydroquinone, planned.peroxide, null);
+  const attackReduction = getBombardierValveReductionPercent(spent.hydroquinone);
+  const techniqueReduction = getBombardierValveReductionPercent(spent.peroxide);
+
+  if (attackReduction <= 0 && techniqueReduction <= 0) return;
+
+  opponent.bombardierValveAttackReductionPct = Math.max(
+    opponent.bombardierValveAttackReductionPct || 0,
+    attackReduction
+  );
+  opponent.bombardierValveTechniqueReductionPct = Math.max(
+    opponent.bombardierValveTechniqueReductionPct || 0,
+    techniqueReduction
+  );
+
+  const parts = [];
+  if (attackReduction > 0) parts.push("-" + attackReduction + "% Attack");
+  if (techniqueReduction > 0) parts.push("-" + techniqueReduction + "% Technique");
+
+  addLog(
+    battle,
+    fighter.name +
+      " opens its Reaction Chamber and releases 🔴 " +
+      spent.hydroquinone +
+      "/3 and 🔵 " +
+      spent.peroxide +
+      "/3. " +
+      opponent.name +
+      " suffers " +
+      parts.join(" and ") +
+      " this turn."
+  );
 }
 
 function getBattleSide(battle, fighter) {
@@ -2241,6 +2424,14 @@ export function getEffectiveStat(fighter, stat, battle, opponent = null, actionT
     }
   }
 
+  if (stat === "attack" && (fighter.bombardierValveAttackReductionPct || 0) > 0) {
+    value *= Math.max(0, 1 - fighter.bombardierValveAttackReductionPct / 100);
+  }
+
+  if (stat === "technique" && (fighter.bombardierValveTechniqueReductionPct || 0) > 0) {
+    value *= Math.max(0, 1 - fighter.bombardierValveTechniqueReductionPct / 100);
+  }
+
   return value;
 }
 
@@ -2718,7 +2909,7 @@ export function canUseAction(fighter, actionType, battle = null) {
   }
 
   if (actionType === "concentration") {
-    if (fighter.concentratedLastTurn) return false;
+    if (fighter.concentratedLastTurn && fighter.passive?.id !== "reaction-chamber") return false;
     if (!canConcentrateUnderEffects(fighter)) return false;
     if (fighter.parasiticControlActive || fighter.nervousDisruptionActive) return false;
   }
@@ -3017,6 +3208,8 @@ export function resolveConcentration(fighter, battle) {
     fighter.name +
       " uses Concentration, gains +10% Defense and Agility for the turn, restores 20 Life and 20 Stamina."
   );
+
+  gainBombardierPeroxideFromConcentration(fighter, battle);
 }
 
 function handlePostHitPassive(attacker, defender, battle, wasCritical, actionType = null) {
@@ -3064,6 +3257,10 @@ function handleChargeGain(attacker, defender, hit, battle) {
   }
 
   if (hit && defender.special?.chargeType === "defensive") {
+    gainSpecialCharge(defender, 1, battle);
+  }
+
+  if (hit && isBombardierBeetle(defender)) {
     gainSpecialCharge(defender, 1, battle);
   }
 }
@@ -3376,6 +3573,7 @@ export function performAttack(attacker, defender, actionType, battle) {
     );
   }
 
+  gainBombardierHydroquinoneFromOffense(attacker, battle);
   handleScaledRetreatBonus(attacker, defender, battle);
 
     if (tryMantisDecapitation(attacker, defender, battle)) {
@@ -5290,6 +5488,109 @@ function performThreeToedSlothAncestralMicroecosystem(attacker, defender, battle
   consumeSpecialCharge(attacker);
 }
 
+
+function performBombardierBeetleSpecial(attacker, defender, battle) {
+  attacker.concentratedLastTurn = false;
+  attacker.overinflationUsedThisTurn = false;
+
+  const reaction = getBombardierChainReactionValues(attacker);
+  consumeSpecialCharge(attacker);
+
+  addLog(
+    battle,
+    attacker.name +
+      " uses Chain Reaction, mixing 🔴 " +
+      reaction.hydroquinone +
+      "/3 Hydroquinone and 🔵 " +
+      reaction.peroxide +
+      "/3 Hydrogen Peroxide. Reaction Attack: " +
+      reaction.attackValue +
+      ", Reaction Technique: " +
+      reaction.techniqueValue +
+      "."
+  );
+
+  consumeBombardierReactants(attacker, reaction.hydroquinone, reaction.peroxide, battle);
+  attacker.bombardierSelectedHydroquinone = null;
+  attacker.bombardierSelectedPeroxide = null;
+
+  let discharge = 1;
+  let currentDamage = reaction.attackValue * 0.5;
+  let currentAccuracy = reaction.techniqueValue;
+  let successfulHits = 0;
+  let totalDamage = 0;
+
+  while (attacker.alive && defender.alive) {
+    const accuracy = Math.max(0, Math.min(100, Math.round(currentAccuracy)));
+    const hit = caudalAutotomyForcesDirectHit(defender) ? true : rollHit(accuracy);
+
+    if (!hit) {
+      addLog(
+        battle,
+        attacker.name +
+          "'s Chain Reaction discharge " +
+          discharge +
+          " misses " +
+          defender.name +
+          " (" +
+          accuracy +
+          "% Technique check). The chemical sequence ends."
+      );
+      break;
+    }
+
+    let damage = Math.max(1, Math.round(currentDamage));
+
+    damage = applyIllusoryDanceDefense(defender, damage, battle);
+    damage = applyCostalEversionDefense(defender, attacker, damage, battle);
+    damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
+    damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
+    damage = applyCoconutFortressDefense(defender, damage, battle);
+    damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
+
+    applyDamage(defender, damage);
+
+    if (defender.caudalAutotomyBlockedLastDirectHit && defender.caudalAutotomyLastBlock) {
+      logCaudalAutotomyTailBlock(defender, attacker, battle, "Chain Reaction discharge " + discharge, false);
+    } else {
+      addLog(
+        battle,
+        attacker.name +
+          "'s Chain Reaction discharge " +
+          discharge +
+          " hits " +
+          defender.name +
+          " for " +
+          damage +
+          " true damage (" +
+          accuracy +
+          "% Technique check)."
+      );
+    }
+
+    successfulHits += 1;
+    totalDamage += damage;
+
+    if (!defender.alive) break;
+
+    discharge += 1;
+    currentDamage += reaction.attackValue * 0.05;
+    currentAccuracy -= 10;
+  }
+
+  addLog(
+    battle,
+    attacker.name +
+      "'s Chain Reaction ends with " +
+      successfulHits +
+      " successful discharge" +
+      (successfulHits === 1 ? "" : "s") +
+      " and " +
+      totalDamage +
+      " total true damage."
+  );
+}
+
 function performSpecialAction(attacker, defender, battle) {
   if (!attacker.special) return;
 
@@ -5312,6 +5613,9 @@ function performSpecialAction(attacker, defender, battle) {
       break;
     case "caudal-autotomy":
       performCaudalAutotomySpecial(attacker, battle);
+      break;
+    case "chain-reaction":
+      performBombardierBeetleSpecial(attacker, defender, battle);
       break;
     case "marine-flash":
       performMantisShrimpSpecial(attacker, defender, battle);
@@ -5431,6 +5735,8 @@ function clearEndTurnTemporaryStates(fighter) {
   fighter.darwinsLarvalDefense = 0;
   fighter.darwinsLarvalBlocksEffects = false;
   fighter.coconutFortressActive = false;
+  fighter.bombardierValveAttackReductionPct = 0;
+  fighter.bombardierValveTechniqueReductionPct = 0;
 }
 
 export function performAction(attacker, defender, actionType, battle) {
@@ -5556,6 +5862,14 @@ function logFighterState(battle, fighter) {
     return;
   }
 
+  if (fighter.special?.id === "chain-reaction") {
+    addLog(
+      battle,
+      `${fighter.name} → HP: ${fighter.hp}/${fighter.maxHp} (${hpPercent}%) | Stamina: ${fighter.stamina}/${fighter.maxStamina} (${staminaPercent}%) | Special Charge: ${fighter.specialCharge}/${fighter.special?.chargeHits ?? 0} | Reaction Chamber: 🔴 ${fighter.bombardierHydroquinone || 0}/3 🔵 ${fighter.bombardierPeroxide || 0}/3.`
+    );
+    return;
+  }
+
   addLog(
     battle,
     `${fighter.name} → HP: ${fighter.hp}/${fighter.maxHp} (${hpPercent}%) | Stamina: ${fighter.stamina}/${fighter.maxStamina} (${staminaPercent}%) | Special Charge: ${fighter.specialCharge}/${fighter.special?.chargeHits ?? 0}.`
@@ -5567,6 +5881,8 @@ function clearTurnDefenseBuff(fighter) {
   fighter.illusoryDanceActive = false;
   fighter.scaledRetreatBonusAppliedThisTurn = false;
   fighter.caudalAutotomyBlockedLastDirectHit = false;
+  fighter.bombardierValveAttackReductionPct = 0;
+  fighter.bombardierValveTechniqueReductionPct = 0;
 }
 
 function endTurnProcessing(battle) {
@@ -5631,6 +5947,9 @@ export function resolveTurn(battle, actionA, actionB) {
   clearTurnDefenseBuff(battle.fighterB);
 
   addLog(battle, `--- Turn ${battle.turn} ---`);
+
+  applyBombardierValveReleaseForTurn(battle.fighterA, battle.fighterB, battle);
+  applyBombardierValveReleaseForTurn(battle.fighterB, battle.fighterA, battle);
 
   if (battle.fighterA.darwinsLarvalCommand) {
     performDarwinsLarvalCommand(battle.fighterA, battle.fighterB, battle);

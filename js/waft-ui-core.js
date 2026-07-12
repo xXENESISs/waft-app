@@ -116,6 +116,15 @@ function isImportantSummaryLine(line) {
     line.includes("Perfect Camouflage") ||
     line.includes("Ink Sea") ||
     line.includes("Predatory Pressure") ||
+    line.includes("Reaction Chamber") ||
+    line.includes("Valve Release") ||
+    line.includes("opens its Reaction Chamber") ||
+    line.includes("Hydroquinone") ||
+    line.includes("Hydrogen Peroxide") ||
+    line.includes("Chain Reaction") ||
+    line.includes("true damage") ||
+    line.includes("chemical sequence") ||
+    line.includes("stored reactants") ||
     line.includes("Caudal Autotomy") ||
     line.includes("Scaled Retreat") ||
     line.includes("detached tail") ||
@@ -394,6 +403,9 @@ export function deriveSharedTurnOutcome(summaryLines = []) {
   if (joined.includes("Tentacle Storm")) return "Special Triggered";
   if (joined.includes("Coconut Fortress")) return "Special Triggered";
   if (joined.includes("Ink Sea")) return "Special Triggered";
+  if (joined.includes("Chain Reaction")) return "Special Triggered";
+  if (joined.includes("Reaction Chamber")) return "Passive Triggered";
+  if (joined.includes("Hydroquinone") || joined.includes("Hydrogen Peroxide")) return "Passive Triggered";
   if (joined.includes("Predatory Pressure")) return "Passive Triggered";
   if (joined.includes("Perfect Camouflage")) return "Passive Triggered";
   if (joined.includes("Microecosystem Ancestral")) return "Special Triggered";
@@ -1188,6 +1200,8 @@ export function getSharedCurrentLarvae(fighter, previewMode = false) {
 }
 
 export function updateSharedLarvalCommandButtonDom(player, options = {}) {
+  updateSharedBombardierReactionChamberButtonDom(player);
+
   const larvalBtn = document.getElementById(options.buttonId || "larvalCommandBtn");
   const titleEl = document.getElementById(options.titleId || "btn-larval-title");
   const descEl = document.getElementById(options.descId || "btn-larval-desc");
@@ -1263,9 +1277,833 @@ export function renderSharedLarvalCommandModalDom(options = {}) {
   }
 }
 
+
+let sharedBombardierCurrentFighter = null;
+
+export function isSharedBombardierBeetleFighter(fighter) {
+  return Boolean(fighter && fighter.id === "bombardier-beetle");
+}
+
+function clampSharedBombardierCount(value, max = 3) {
+  return Math.max(0, Math.min(max, Math.round(Number(value) || 0)));
+}
+
+function getSharedBombardierValveReductionPercent(count) {
+  switch (clampSharedBombardierCount(count)) {
+    case 1:
+      return 10;
+    case 2:
+      return 25;
+    case 3:
+      return 50;
+    default:
+      return 0;
+  }
+}
+
+export function getSharedBombardierStoredReactants(fighter) {
+  if (!isSharedBombardierBeetleFighter(fighter)) {
+    return { hydroquinone: 0, peroxide: 0 };
+  }
+
+  return {
+    hydroquinone: clampSharedBombardierCount(fighter.bombardierHydroquinone || 0),
+    peroxide: clampSharedBombardierCount(fighter.bombardierPeroxide || 0)
+  };
+}
+
+export function getSharedBombardierValveRelease(fighter) {
+  const stored = getSharedBombardierStoredReactants(fighter);
+
+  return {
+    hydroquinone: Math.min(stored.hydroquinone, clampSharedBombardierCount(fighter?.bombardierValveHydroquinone || 0, stored.hydroquinone)),
+    peroxide: Math.min(stored.peroxide, clampSharedBombardierCount(fighter?.bombardierValvePeroxide || 0, stored.peroxide))
+  };
+}
+
+export function setSharedBombardierValveRelease(fighter, hydroquinone, peroxide) {
+  if (!isSharedBombardierBeetleFighter(fighter)) return;
+  const stored = getSharedBombardierStoredReactants(fighter);
+
+  fighter.bombardierValveHydroquinone = Math.max(0, Math.min(stored.hydroquinone, Math.round(hydroquinone || 0)));
+  fighter.bombardierValvePeroxide = Math.max(0, Math.min(stored.peroxide, Math.round(peroxide || 0)));
+}
+
+export function clearSharedBombardierValveRelease(fighter) {
+  if (!isSharedBombardierBeetleFighter(fighter)) return;
+  fighter.bombardierValveHydroquinone = 0;
+  fighter.bombardierValvePeroxide = 0;
+}
+
+export function fillSharedBombardierValveRelease(fighter) {
+  if (!isSharedBombardierBeetleFighter(fighter)) return;
+  const stored = getSharedBombardierStoredReactants(fighter);
+  fighter.bombardierValveHydroquinone = stored.hydroquinone;
+  fighter.bombardierValvePeroxide = stored.peroxide;
+}
+
+export function getSharedBombardierSelectedReactants(fighter) {
+  const stored = getSharedBombardierStoredReactants(fighter);
+  const valve = getSharedBombardierValveRelease(fighter);
+  const remainingHydroquinone = Math.max(0, stored.hydroquinone - valve.hydroquinone);
+  const remainingPeroxide = Math.max(0, stored.peroxide - valve.peroxide);
+
+  const selectedHydroquinone = Number.isFinite(fighter?.bombardierSelectedHydroquinone)
+    ? Math.max(0, Math.min(remainingHydroquinone, Math.round(fighter.bombardierSelectedHydroquinone)))
+    : remainingHydroquinone;
+
+  const selectedPeroxide = Number.isFinite(fighter?.bombardierSelectedPeroxide)
+    ? Math.max(0, Math.min(remainingPeroxide, Math.round(fighter.bombardierSelectedPeroxide)))
+    : remainingPeroxide;
+
+  return {
+    storedHydroquinone: stored.hydroquinone,
+    storedPeroxide: stored.peroxide,
+    remainingHydroquinone,
+    remainingPeroxide,
+    hydroquinone: selectedHydroquinone,
+    peroxide: selectedPeroxide
+  };
+}
+
+export function setSharedBombardierSelectedReactants(fighter, hydroquinone, peroxide) {
+  if (!isSharedBombardierBeetleFighter(fighter)) return;
+
+  const stored = getSharedBombardierStoredReactants(fighter);
+  const valve = getSharedBombardierValveRelease(fighter);
+
+  const rebalanceReactant = (storedValue, valveValue, requestedValue) => {
+    const requested = clampSharedBombardierCount(requestedValue, storedValue);
+    const currentRemaining = Math.max(0, storedValue - valveValue);
+    const neededFromValve = Math.max(0, requested - currentRemaining);
+    const newValve = Math.max(0, valveValue - neededFromValve);
+    const newRemaining = Math.max(0, storedValue - newValve);
+
+    return {
+      valve: newValve,
+      selected: Math.min(requested, newRemaining)
+    };
+  };
+
+  const hydroquinoneBalance = rebalanceReactant(
+    stored.hydroquinone,
+    valve.hydroquinone,
+    hydroquinone
+  );
+
+  const peroxideBalance = rebalanceReactant(
+    stored.peroxide,
+    valve.peroxide,
+    peroxide
+  );
+
+  fighter.bombardierValveHydroquinone = hydroquinoneBalance.valve;
+  fighter.bombardierValvePeroxide = peroxideBalance.valve;
+  fighter.bombardierSelectedHydroquinone = hydroquinoneBalance.selected;
+  fighter.bombardierSelectedPeroxide = peroxideBalance.selected;
+}
+
+export function clearSharedBombardierSelectedReactants(fighter) {
+  if (!isSharedBombardierBeetleFighter(fighter)) return;
+  fighter.bombardierSelectedHydroquinone = 0;
+  fighter.bombardierSelectedPeroxide = 0;
+}
+
+export function fillSharedBombardierSelectedReactants(fighter) {
+  if (!isSharedBombardierBeetleFighter(fighter)) return;
+  fighter.bombardierSelectedHydroquinone = null;
+  fighter.bombardierSelectedPeroxide = null;
+}
+
+export function getSharedBombardierReactionPreview(fighter) {
+  const stored = getSharedBombardierStoredReactants(fighter);
+  const valve = getSharedBombardierValveRelease(fighter);
+  const selected = getSharedBombardierSelectedReactants(fighter);
+  const attackValue = 80 + selected.hydroquinone * 5;
+  const techniqueValue = 80 + selected.peroxide * 5;
+  const firstDamage = Math.max(1, Math.round(attackValue * 0.5));
+  const growth = Math.max(1, Math.round(attackValue * 0.05));
+  const valveAttackReduction = getSharedBombardierValveReductionPercent(valve.hydroquinone);
+  const valveTechniqueReduction = getSharedBombardierValveReductionPercent(valve.peroxide);
+
+  return {
+    storedHydroquinone: stored.hydroquinone,
+    storedPeroxide: stored.peroxide,
+    valveHydroquinone: valve.hydroquinone,
+    valvePeroxide: valve.peroxide,
+    valveAttackReduction,
+    valveTechniqueReduction,
+    remainingHydroquinone: selected.remainingHydroquinone,
+    remainingPeroxide: selected.remainingPeroxide,
+    hydroquinone: selected.hydroquinone,
+    peroxide: selected.peroxide,
+    attackValue,
+    techniqueValue,
+    firstDamage,
+    growth,
+    charge: fighter?.specialCharge || 0,
+    requirement: fighter?.special?.chargeHits || 6
+  };
+}
+
+function getSharedBombardierOrbRow(icon, label, current, available, kind, scope, hint) {
+  const filled = Array.from({ length: 3 }, (_, index) => {
+    const active = index < current;
+    const availableOrb = index < available;
+    return `
+      <span class="bombardier-orb ${kind} ${active ? "active" : ""} ${availableOrb ? "available" : "empty"}">
+        <span class="bombardier-orb-shell"></span>
+        <span class="bombardier-orb-core"></span>
+        <span class="bombardier-orb-vent"></span>
+      </span>`;
+  }).join("");
+
+  return `
+    <div class="bombardier-reactant-unit ${kind}">
+      <div class="bombardier-reactant-label"><span>${icon}</span><strong>${escapeSharedHtml(label)}</strong></div>
+      <div class="bombardier-reactant-orbs">${filled}</div>
+      <div class="bombardier-reactant-count">${escapeSharedHtml(hint)} ${current}/${available}</div>
+      <div class="bombardier-reactant-controls">
+        <button type="button" data-bombardier-adjust="${scope}:${kind}" data-bombardier-delta="-1">−</button>
+        <button type="button" data-bombardier-adjust="${scope}:${kind}" data-bombardier-delta="1">+</button>
+      </div>
+    </div>
+  `;
+}
+
+function getSharedBombardierReservoirOrbs(icon, current, kind) {
+  return Array.from({ length: 3 }, (_, index) => {
+    const active = index < current;
+    return `
+      <span class="bombardier-reservoir-orb ${kind} ${active ? "active" : "empty"}">
+        <span class="bombardier-reservoir-shell"></span>
+        <span class="bombardier-reservoir-core"></span>
+        <span class="bombardier-reservoir-vent"></span>
+      </span>`;
+  }).join("");
+}
+
+function ensureSharedBombardierReactionChamberDom() {
+  if (typeof document === "undefined") return null;
+
+  let modal = document.getElementById("bombardierReactionChamberModal");
+
+  if (!modal) {
+    const style = document.createElement("style");
+    style.id = "bombardierReactionChamberStyles";
+    style.textContent = `
+
+      .bombardier-chamber-btn {
+        width: 100%;
+        min-height: 84px;
+        text-align: left;
+        border-radius: 18px;
+        border: 1px solid rgba(245,158,11,0.48);
+        background:
+          radial-gradient(circle at 12% 18%, rgba(248,113,113,.34), transparent 28%),
+          radial-gradient(circle at 88% 18%, rgba(96,165,250,.28), transparent 30%),
+          linear-gradient(135deg, rgba(31,17,10,.98), rgba(7,15,31,.98));
+        color: #fff;
+        padding: 12px 13px;
+        cursor: pointer;
+        box-shadow: inset 0 0 34px rgba(245,158,11,0.08), 0 12px 30px rgba(0,0,0,0.26);
+      }
+      .bombardier-chamber-btn[disabled] { opacity: 0.45; cursor: default; }
+      .bombardier-chamber-subtitle { font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: #fbbf24; margin-bottom: 4px; font-weight: 900; }
+      .bombardier-chamber-title { font-size: 16px; font-weight: 1000; letter-spacing: .02em; }
+      .bombardier-chamber-desc { margin-top: 6px; font-size: 11px; line-height: 1.25; color: rgba(255,255,255,.84); }
+      .bombardier-modal-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: radial-gradient(circle at 50% 50%, rgba(15,23,42,.60), rgba(2,6,23,.90));
+        backdrop-filter: blur(10px);
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+      }
+      .bombardier-modal-backdrop.open { display: flex; }
+      .bombardier-modal-card {
+        width: min(980px, 96vw);
+        max-height: 91vh;
+        overflow: auto;
+        border-radius: 30px;
+        border: 1px solid rgba(180,83,9,.72);
+        background:
+          radial-gradient(circle at 18% 12%, rgba(190,18,60,.22), transparent 28%),
+          radial-gradient(circle at 82% 12%, rgba(37,99,235,.22), transparent 28%),
+          radial-gradient(circle at 50% 30%, rgba(245,158,11,.12), transparent 26%),
+          linear-gradient(145deg, rgba(13,9,7,.99), rgba(5,10,22,.99));
+        box-shadow: 0 34px 92px rgba(0,0,0,.72), inset 0 0 86px rgba(245,158,11,.06);
+        color: #f8fafc;
+        scrollbar-color: rgba(251,191,36,.45) rgba(15,23,42,.35);
+      }
+      .bombardier-modal-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: flex-start;
+        padding: 22px 24px 14px;
+        border-bottom: 1px solid rgba(251,191,36,.16);
+      }
+      .bombardier-modal-kicker { font-size: 11px; color: #fbbf24; text-transform: uppercase; letter-spacing: .20em; font-weight: 1000; }
+      .bombardier-modal-title { margin-top: 4px; font-size: 31px; font-weight: 1000; letter-spacing: .01em; }
+      .bombardier-modal-subtitle { margin-top: 5px; font-size: 12px; color: #cbd5e1; line-height: 1.35; max-width: 680px; }
+      .bombardier-modal-close {
+        border: 1px solid rgba(255,255,255,.18);
+        background: rgba(255,255,255,.08);
+        color: #fff;
+        border-radius: 999px;
+        width: 38px;
+        height: 38px;
+        font-size: 18px;
+        cursor: pointer;
+      }
+      .bombardier-modal-body { padding: 20px 24px 24px; }
+      .bombardier-organ {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(210px,1fr) 230px minmax(210px,1fr);
+        gap: 18px;
+        align-items: center;
+        margin-bottom: 18px;
+        padding: 18px;
+        border-radius: 26px;
+        border: 1px solid rgba(251,191,36,.18);
+        background:
+          linear-gradient(90deg, rgba(127,29,29,.10), transparent 30%, transparent 70%, rgba(30,64,175,.10)),
+          rgba(2,6,23,.30);
+        overflow: hidden;
+      }
+      .bombardier-organ::before {
+        content: "";
+        position:absolute;
+        inset: 16px 14%;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(251,191,36,.12), transparent 58%);
+        filter: blur(10px);
+        pointer-events:none;
+      }
+      .bombardier-reservoir {
+        position: relative;
+        min-height: 148px;
+        border: 1px solid rgba(255,255,255,.12);
+        border-radius: 32px 32px 24px 24px;
+        padding: 15px;
+        overflow:hidden;
+        background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(15,23,42,.55));
+        box-shadow: inset 0 0 42px rgba(0,0,0,.38);
+      }
+      .bombardier-reservoir::before {
+        content: none;
+        display: none;
+      }
+      .bombardier-reservoir.red { box-shadow: inset 0 0 48px rgba(248,113,113,.16), 0 0 28px rgba(127,29,29,.10); }
+      .bombardier-reservoir.blue { box-shadow: inset 0 0 48px rgba(96,165,250,.16), 0 0 28px rgba(30,64,175,.10); }
+      .bombardier-reservoir-title { position:relative; z-index:1; display:flex; gap:8px; align-items:center; font-size: 15px; font-weight: 1000; letter-spacing:.02em; }
+      .bombardier-reservoir-sub { position:relative; z-index:1; margin-top: 7px; font-size: 12px; color:#cbd5e1; line-height:1.35; max-width: 280px; }
+      .bombardier-reservoir-orbs { position:relative; z-index:1; display:flex; gap:10px; margin-top: 16px; }
+      .bombardier-reservoir-orb {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        display: inline-block;
+        border: 1px solid rgba(255,255,255,.16);
+        background: rgba(2,6,23,.70);
+        box-shadow: inset 0 0 10px rgba(0,0,0,.45);
+      }
+      .bombardier-reservoir-orb.active.hydroquinone {
+        background: #dc2626;
+        border-color: rgba(248,113,113,.85);
+        box-shadow: 0 0 10px rgba(248,113,113,.25), inset 0 0 8px rgba(0,0,0,.25);
+      }
+      .bombardier-reservoir-orb.active.peroxide {
+        background: #2563eb;
+        border-color: rgba(96,165,250,.85);
+        box-shadow: 0 0 10px rgba(96,165,250,.25), inset 0 0 8px rgba(0,0,0,.25);
+      }
+      .bombardier-reservoir-orb.empty {
+        opacity: .35;
+      }
+      .bombardier-valve-stage {
+        position:relative;
+        min-height: 178px;
+        display:grid;
+        place-items:center;
+      }
+      .bombardier-pipe {
+        position:absolute;
+        top: 83px;
+        height: 15px;
+        width: 98px;
+        border-radius:999px;
+        background: linear-gradient(90deg, rgba(92,44,20,.92), rgba(251,191,36,.38));
+        border: 1px solid rgba(251,191,36,.20);
+        box-shadow: inset 0 0 12px rgba(0,0,0,.45), 0 0 18px rgba(245,158,11,.16);
+      }
+      .bombardier-pipe.left { left: -38px; }
+      .bombardier-pipe.right { right: -38px; transform: rotate(180deg); }
+      .bombardier-valve-core {
+        width: 152px;
+        height: 152px;
+        border-radius: 42% 42% 52% 52%;
+        position:relative;
+        border: 1px solid rgba(251,191,36,.48);
+        background:
+          radial-gradient(circle at 50% 54%, rgba(251,191,36,.58), transparent 29%),
+          radial-gradient(circle at 36% 34%, rgba(248,113,113,.32), transparent 30%),
+          radial-gradient(circle at 64% 34%, rgba(96,165,250,.30), transparent 30%),
+          linear-gradient(180deg, rgba(93,56,24,.98), rgba(25,17,11,.99));
+        box-shadow: inset 0 0 44px rgba(0,0,0,.52), 0 0 42px rgba(245,158,11,.18);
+      }
+      .bombardier-valve-core::before, .bombardier-valve-core::after {
+        content:"";
+        position:absolute;
+        width: 20px;
+        height: 78px;
+        top: 30px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, rgba(0,0,0,.40), rgba(251,191,36,.12));
+        border: 1px solid rgba(251,191,36,.25);
+      }
+      .bombardier-valve-core::before { left: 38px; transform: rotate(-12deg); }
+      .bombardier-valve-core::after { right: 38px; transform: rotate(12deg); }
+      .bombardier-core-label {
+        position:absolute;
+        left: 50%;
+        bottom: 13px;
+        transform: translateX(-50%);
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing:.13em;
+        color:#fef3c7;
+        opacity:.82;
+        font-weight:1000;
+      }
+      .bombardier-control-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .bombardier-control-card {
+        border: 1px solid rgba(255,255,255,.11);
+        border-radius: 20px;
+        background: linear-gradient(180deg, rgba(15,23,42,.72), rgba(2,6,23,.55));
+        padding: 14px;
+        box-shadow: inset 0 0 28px rgba(0,0,0,.20);
+      }
+      .bombardier-control-card.valve { border-color: rgba(251,191,36,.30); }
+      .bombardier-control-card.chain { border-color: rgba(96,165,250,.24); }
+      .bombardier-control-title { font-size: 15px; font-weight: 1000; letter-spacing:.02em; }
+      .bombardier-control-sub { margin-top: 4px; color:#cbd5e1; font-size: 12px; line-height:1.35; }
+      .bombardier-reactant-row { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+      .bombardier-reactant-unit {
+        border: 1px solid rgba(255,255,255,.10);
+        border-radius: 16px;
+        background: rgba(2,6,23,.42);
+        padding: 12px;
+      }
+      .bombardier-reactant-unit.hydroquinone { box-shadow: inset 0 0 26px rgba(248,113,113,.09); }
+      .bombardier-reactant-unit.peroxide { box-shadow: inset 0 0 26px rgba(96,165,250,.09); }
+      .bombardier-reactant-label { display:flex; gap:8px; align-items:center; font-size: 13px; margin-bottom: 10px; }
+      .bombardier-reactant-orbs { display:flex; gap:7px; margin-bottom: 10px; }
+      .bombardier-orb {
+        width: 25px;
+        height: 25px;
+        border-radius: 50%;
+        display: inline-block;
+        background: rgba(15,23,42,.95);
+        border: 1px solid rgba(255,255,255,.13);
+        opacity: .30;
+        box-shadow: inset 0 0 8px rgba(0,0,0,.42);
+      }
+      .bombardier-orb.available {
+        opacity: .55;
+      }
+      .bombardier-orb.empty {
+        opacity: .24;
+      }
+      .bombardier-orb.active.hydroquinone {
+        opacity: 1;
+        background: #dc2626;
+        border-color: rgba(248,113,113,.9);
+        box-shadow: 0 0 8px rgba(248,113,113,.25), inset 0 0 7px rgba(0,0,0,.28);
+      }
+      .bombardier-orb.active.peroxide {
+        opacity: 1;
+        background: #2563eb;
+        border-color: rgba(96,165,250,.9);
+        box-shadow: 0 0 8px rgba(96,165,250,.25), inset 0 0 7px rgba(0,0,0,.28);
+      }
+      .bombardier-reactant-count { color: #cbd5e1; font-size: 12px; margin-bottom: 10px; }
+      .bombardier-reactant-controls { display:flex; gap:8px; }
+      .bombardier-reactant-controls button, .bombardier-modal-actions button {
+        border: 1px solid rgba(255,255,255,.14);
+        background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.045));
+        color: #f8fafc;
+        border-radius: 12px;
+        min-height: 36px;
+        padding: 0 12px;
+        cursor: pointer;
+        font-weight: 900;
+      }
+      .bombardier-reactant-controls button:hover, .bombardier-modal-actions button:hover { border-color: rgba(251,191,36,.36); background: rgba(251,191,36,.12); }
+      .bombardier-reactant-controls button { flex:1; }
+      .bombardier-result-grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; margin-top: 12px; }
+      .bombardier-result-stat {
+        border: 1px solid rgba(255,255,255,.10);
+        background: rgba(2,6,23,.46);
+        border-radius: 14px;
+        padding: 10px;
+      }
+      .bombardier-result-stat span { display:block; font-size: 10px; color:#94a3b8; text-transform: uppercase; letter-spacing: .08em; }
+      .bombardier-result-stat strong { display:block; margin-top: 4px; font-size: 20px; }
+      .bombardier-modal-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top: 14px; }
+      .bombardier-modal-actions .primary { border-color: rgba(251,191,36,.38); background: linear-gradient(180deg, rgba(245,158,11,.20), rgba(146,64,14,.18)); }
+      .bombardier-modal-note { color: #cbd5e1; font-size: 12px; line-height: 1.45; margin-top: 14px; }
+      .bombardier-organ { grid-template-columns: minmax(240px,1fr) 170px minmax(240px,1fr); }
+      .bombardier-valve-stage { min-height: 150px; }
+      .bombardier-pipe { display: none; }
+      .bombardier-valve-core {
+        width: 136px;
+        height: 136px;
+        border-radius: 48%;
+        background:
+          radial-gradient(circle at 50% 48%, rgba(251,191,36,.68), transparent 30%),
+          radial-gradient(circle at 34% 34%, rgba(248,113,113,.24), transparent 28%),
+          radial-gradient(circle at 66% 34%, rgba(96,165,250,.22), transparent 28%),
+          linear-gradient(180deg, rgba(82,52,24,.98), rgba(19,14,9,.99));
+      }
+      .bombardier-valve-core::before, .bombardier-valve-core::after {
+        display: none;
+      }
+      .bombardier-core-label {
+        bottom: 18px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: rgba(2,6,23,.42);
+        border: 1px solid rgba(251,191,36,.18);
+      }
+      .bombardier-control-grid { align-items: stretch; }
+      .bombardier-control-card {
+        display: flex;
+        flex-direction: column;
+        min-height: 462px;
+      }
+      .bombardier-reactant-row { align-items: stretch; }
+      .bombardier-reactant-unit { display: flex; flex-direction: column; }
+      .bombardier-reactant-controls { margin-top: auto; }
+      .bombardier-control-card > .bombardier-modal-actions { margin-top: auto; }
+      .bombardier-chain-simple {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .bombardier-chain-charge, .bombardier-saved-mix {
+        border: 1px solid rgba(255,255,255,.10);
+        background:
+          radial-gradient(circle at 12% 28%, rgba(96,165,250,.12), transparent 36%),
+          rgba(2,6,23,.46);
+        border-radius: 14px;
+        padding: 12px;
+      }
+      .bombardier-chain-charge span, .bombardier-saved-mix span {
+        display:block;
+        font-size: 10px;
+        color:#94a3b8;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+      }
+      .bombardier-chain-charge strong {
+        display:block;
+        margin-top: 4px;
+        font-size: 24px;
+      }
+      .bombardier-saved-mix strong {
+        display:block;
+        margin-top: 8px;
+        font-size: 18px;
+        letter-spacing: .02em;
+      }
+      @media (max-width: 860px) {
+        .bombardier-organ, .bombardier-control-grid, .bombardier-reactant-row, .bombardier-result-grid { grid-template-columns: 1fr; }
+        .bombardier-pipe { display:none; }
+      }
+    `;
+    document.head.appendChild(style);
+
+    modal = document.createElement("div");
+    modal.id = "bombardierReactionChamberModal";
+    modal.className = "bombardier-modal-backdrop";
+    modal.innerHTML = `
+      <div class="bombardier-modal-card" role="dialog" aria-modal="true" aria-labelledby="bombardierReactionChamberTitle">
+        <div class="bombardier-modal-head">
+          <div>
+            <div class="bombardier-modal-kicker">Brachinus crepitans</div>
+            <div class="bombardier-modal-title" id="bombardierReactionChamberTitle">Reaction Chamber</div>
+            <div class="bombardier-modal-subtitle">Open the chemical valves: spend reactants now to weaken the enemy, or save them for Chain Reaction.</div>
+          </div>
+          <button type="button" class="bombardier-modal-close" data-bombardier-close="1">×</button>
+        </div>
+        <div class="bombardier-modal-body" id="bombardierReactionChamberBody"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.addEventListener("click", (event) => {
+      const openBtn = event.target.closest("[data-shared-bombardier-open]");
+      if (openBtn) {
+        event.preventDefault();
+        openSharedBombardierReactionChamberModal(sharedBombardierCurrentFighter);
+        return;
+      }
+
+      if (event.target.closest("[data-bombardier-close]")) {
+        closeSharedBombardierReactionChamberModal();
+        return;
+      }
+
+      const adjustBtn = event.target.closest("[data-bombardier-adjust]");
+      if (adjustBtn && sharedBombardierCurrentFighter) {
+        const [scope, kind] = String(adjustBtn.dataset.bombardierAdjust || "").split(":");
+        const delta = Number(adjustBtn.dataset.bombardierDelta || 0);
+
+        if (scope === "valve") {
+          const selected = getSharedBombardierValveRelease(sharedBombardierCurrentFighter);
+          setSharedBombardierValveRelease(
+            sharedBombardierCurrentFighter,
+            kind === "hydroquinone" ? selected.hydroquinone + delta : selected.hydroquinone,
+            kind === "peroxide" ? selected.peroxide + delta : selected.peroxide
+          );
+        }
+
+        if (scope === "chain") {
+          const selected = getSharedBombardierSelectedReactants(sharedBombardierCurrentFighter);
+          setSharedBombardierSelectedReactants(
+            sharedBombardierCurrentFighter,
+            kind === "hydroquinone" ? selected.hydroquinone + delta : selected.hydroquinone,
+            kind === "peroxide" ? selected.peroxide + delta : selected.peroxide
+          );
+        }
+
+        renderSharedBombardierReactionChamberModalDom(sharedBombardierCurrentFighter);
+        updateSharedBombardierReactionChamberButtonDom(sharedBombardierCurrentFighter);
+        return;
+      }
+
+      if (event.target.closest("[data-bombardier-valve-fill]") && sharedBombardierCurrentFighter) {
+        fillSharedBombardierValveRelease(sharedBombardierCurrentFighter);
+        renderSharedBombardierReactionChamberModalDom(sharedBombardierCurrentFighter);
+        updateSharedBombardierReactionChamberButtonDom(sharedBombardierCurrentFighter);
+        return;
+      }
+
+      if (event.target.closest("[data-bombardier-valve-clear]") && sharedBombardierCurrentFighter) {
+        clearSharedBombardierValveRelease(sharedBombardierCurrentFighter);
+        renderSharedBombardierReactionChamberModalDom(sharedBombardierCurrentFighter);
+        updateSharedBombardierReactionChamberButtonDom(sharedBombardierCurrentFighter);
+        return;
+      }
+
+      if (event.target.closest("[data-bombardier-chain-fill]") && sharedBombardierCurrentFighter) {
+        fillSharedBombardierSelectedReactants(sharedBombardierCurrentFighter);
+        renderSharedBombardierReactionChamberModalDom(sharedBombardierCurrentFighter);
+        updateSharedBombardierReactionChamberButtonDom(sharedBombardierCurrentFighter);
+        return;
+      }
+
+      if (event.target.closest("[data-bombardier-chain-clear]") && sharedBombardierCurrentFighter) {
+        clearSharedBombardierSelectedReactants(sharedBombardierCurrentFighter);
+        renderSharedBombardierReactionChamberModalDom(sharedBombardierCurrentFighter);
+        updateSharedBombardierReactionChamberButtonDom(sharedBombardierCurrentFighter);
+      }
+    });
+
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) closeSharedBombardierReactionChamberModal();
+    });
+  }
+
+  return modal;
+}
+
+export function renderSharedBombardierReactionChamberModalDom(fighter) {
+  if (!isSharedBombardierBeetleFighter(fighter)) return;
+
+  sharedBombardierCurrentFighter = fighter;
+  const modal = ensureSharedBombardierReactionChamberDom();
+  const body = modal?.querySelector("#bombardierReactionChamberBody");
+  if (!body) return;
+
+  const preview = getSharedBombardierReactionPreview(fighter);
+
+  body.innerHTML = `
+    <div class="bombardier-organ">
+      <div class="bombardier-reservoir red">
+        <div class="bombardier-reservoir-title">🔴 Hydroquinone reservoir</div>
+        <div class="bombardier-reservoir-sub">Abrasive fuel. Stored only when an offensive hit lands.</div>
+        <div class="bombardier-reservoir-orbs">${getSharedBombardierReservoirOrbs("🔴", preview.storedHydroquinone, "hydroquinone")}</div>
+      </div>
+
+      <div class="bombardier-valve-stage">
+        <div class="bombardier-valve-core"><div class="bombardier-core-label">valves</div></div>
+      </div>
+
+      <div class="bombardier-reservoir blue">
+        <div class="bombardier-reservoir-title">🔵 Hydrogen Peroxide reservoir</div>
+        <div class="bombardier-reservoir-sub">Pressure reagent. Stored through Concentration and released to cut Technique.</div>
+        <div class="bombardier-reservoir-orbs">${getSharedBombardierReservoirOrbs("🔵", preview.storedPeroxide, "peroxide")}</div>
+      </div>
+    </div>
+
+    <div class="bombardier-control-grid">
+      <div class="bombardier-control-card valve">
+        <div class="bombardier-control-title">Valve Release</div>
+        <div class="bombardier-control-sub">Spend reactants before the turn resolves. 1 charge = 10%, 2 = 25%, 3 = 50%. Effect lasts one turn.</div>
+        <div class="bombardier-reactant-row">
+          ${getSharedBombardierOrbRow("🔴", "Attack valve", preview.valveHydroquinone, preview.storedHydroquinone, "hydroquinone", "valve", "Release")}
+          ${getSharedBombardierOrbRow("🔵", "Technique valve", preview.valvePeroxide, preview.storedPeroxide, "peroxide", "valve", "Release")}
+        </div>
+        <div class="bombardier-result-grid">
+          <div class="bombardier-result-stat"><span>Enemy Attack</span><strong>-${preview.valveAttackReduction}%</strong></div>
+          <div class="bombardier-result-stat"><span>Enemy Technique</span><strong>-${preview.valveTechniqueReduction}%</strong></div>
+        </div>
+        <div class="bombardier-modal-actions">
+          <button class="primary" type="button" data-bombardier-valve-fill="1">Open all valves</button>
+          <button type="button" data-bombardier-valve-clear="1">Seal valves</button>
+        </div>
+      </div>
+
+      <div class="bombardier-control-card chain">
+        <div class="bombardier-control-title">Chain Reaction mix</div>
+        <div class="bombardier-control-sub">Choose how many remaining reactants are saved for the special. If untouched, it uses all remaining reactants.</div>
+        <div class="bombardier-reactant-row">
+          ${getSharedBombardierOrbRow("🔴", "Reaction Attack", preview.hydroquinone, preview.remainingHydroquinone, "hydroquinone", "chain", "Mix")}
+          ${getSharedBombardierOrbRow("🔵", "Reaction Technique", preview.peroxide, preview.remainingPeroxide, "peroxide", "chain", "Mix")}
+        </div>
+        <div class="bombardier-chain-simple">
+          <div class="bombardier-chain-charge">
+            <span>Chain charge</span>
+            <strong>${preview.charge}/${preview.requirement}</strong>
+          </div>
+          <div class="bombardier-saved-mix">
+            <span>Saved for Chain Reaction</span>
+            <strong>🔴 ${preview.hydroquinone}/${preview.remainingHydroquinone} · 🔵 ${preview.peroxide}/${preview.remainingPeroxide}</strong>
+          </div>
+        </div>
+        <div class="bombardier-modal-actions">
+          <button class="primary" type="button" data-bombardier-chain-fill="1">Use remaining mix</button>
+          <button type="button" data-bombardier-chain-clear="1">Base reaction</button>
+        </div>
+      </div>
+    </div>
+
+
+    <div class="bombardier-modal-actions">
+      <button type="button" data-bombardier-close="1">Done</button>
+    </div>
+  `;
+}
+
+export function openSharedBombardierReactionChamberModal(fighter) {
+  if (!isSharedBombardierBeetleFighter(fighter)) return;
+
+  const modal = ensureSharedBombardierReactionChamberDom();
+  renderSharedBombardierReactionChamberModalDom(fighter);
+  modal?.classList.add("open");
+}
+
+export function closeSharedBombardierReactionChamberModal() {
+  const modal = document.getElementById("bombardierReactionChamberModal");
+  if (modal) modal.classList.remove("open");
+}
+
+export function updateSharedBombardierReactionChamberButtonDom(player, options = {}) {
+  if (typeof document === "undefined") return;
+
+  const buttonId = options.buttonId || "bombardierReactionChamberBtn";
+  const anchorId = options.anchorId || "specialActionBtn";
+  const anchor = document.getElementById(anchorId);
+
+  let button = document.getElementById(buttonId);
+
+  if (!button && anchor) {
+    button = document.createElement("button");
+    button.type = "button";
+    button.id = buttonId;
+    button.className = "bombardier-chamber-btn";
+    button.setAttribute("data-shared-bombardier-open", "1");
+    button.innerHTML = `
+      <div class="bombardier-chamber-subtitle">Reaction Chamber</div>
+      <div class="bombardier-chamber-title" id="btn-bombardier-title">Chemical Valves</div>
+      <div class="bombardier-chamber-desc" id="btn-bombardier-desc">Open valves, weaken the enemy, or prime Chain Reaction.</div>
+    `;
+    anchor.insertAdjacentElement("afterend", button);
+  }
+
+  ensureSharedBombardierReactionChamberDom();
+
+  if (!button) return;
+
+  if (!isSharedBombardierBeetleFighter(player)) {
+    button.style.display = "none";
+    button.disabled = true;
+    if (sharedBombardierCurrentFighter === player) sharedBombardierCurrentFighter = null;
+    return;
+  }
+
+  sharedBombardierCurrentFighter = player;
+  const preview = getSharedBombardierReactionPreview(player);
+
+  button.style.display = "block";
+  button.disabled = false;
+  const title = button.querySelector("#btn-bombardier-title");
+  const desc = button.querySelector("#btn-bombardier-desc");
+
+  if (title) title.textContent = `Chemical Valves · ${preview.charge}/${preview.requirement}`;
+  if (desc) {
+    desc.textContent = `Stored 🔴 ${preview.storedHydroquinone}/3 🔵 ${preview.storedPeroxide}/3 · Valve: -${preview.valveAttackReduction}% ATK / -${preview.valveTechniqueReduction}% TEC · Chain first ${preview.firstDamage}.`;
+  }
+}
+
+export function renderSharedBombardierReactionChamberPanel(fighter) {
+  if (!isSharedBombardierBeetleFighter(fighter)) return "";
+
+  sharedBombardierCurrentFighter = fighter;
+  ensureSharedBombardierReactionChamberDom();
+
+  const preview = getSharedBombardierReactionPreview(fighter);
+
+  return `
+    <button type="button" class="legendary-extra-card bombardier-reaction-card" data-shared-bombardier-open="1">
+      <div class="legendary-extra-header">
+        <div>
+          <div class="legendary-extra-title">🧪 Reaction Chamber</div>
+          <div class="legendary-extra-subtitle">Valve Release + Chain Reaction</div>
+        </div>
+        <div class="legendary-extra-badge">${preview.charge}/${preview.requirement}</div>
+      </div>
+      <div class="legendary-extra-grid">
+        <div class="legendary-extra-stat"><span>Stored 🔴</span><strong>${preview.storedHydroquinone}/3</strong></div>
+        <div class="legendary-extra-stat"><span>Stored 🔵</span><strong>${preview.storedPeroxide}/3</strong></div>
+        <div class="legendary-extra-stat"><span>Valve Attack</span><strong>-${preview.valveAttackReduction}%</strong></div>
+        <div class="legendary-extra-stat"><span>Valve Technique</span><strong>-${preview.valveTechniqueReduction}%</strong></div>
+      </div>
+      <div class="legendary-extra-note">Open chamber · Valve Release lasts one turn · Chain first discharge ${preview.firstDamage} true damage.</div>
+    </button>
+  `;
+}
+
 export function getSharedLegendaryExtraResourceHtml(fighter, battle = null) {
   if (isSharedThreeToedSlothFighter(fighter)) {
     return renderSharedSlothEcosystemMiniPanel(fighter, battle);
   }
+
+  if (isSharedBombardierBeetleFighter(fighter)) {
+    return renderSharedBombardierReactionChamberPanel(fighter);
+  }
+
   return "";
 }

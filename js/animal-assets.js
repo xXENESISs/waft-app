@@ -9,6 +9,14 @@ export const sharedAnimalImageCandidates = {
     "./images/animals/reptiles/iberian-skink.png",
     "./images/animals/reptiles/eslizon-iberico.png",
     "./images/animals/reptiles/eslizon.png"
+  ],
+
+  "bombardier-beetle": [
+    "./images/animals/arthropods/bombardier-beetle.png",
+    "./images/animals/arthropods/european-bombardier-beetle.png",
+    "./images/animals/arthropods/brachinus-crepitans.png",
+    "./images/animals/arthropods-and-other-invertebrates/bombardier-beetle.png",
+    "./images/animals/arthropods-and-other-invertebrates/european-bombardier-beetle.png"
   ]
 };
 
