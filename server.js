@@ -263,6 +263,15 @@ function isOnlineTournamentBotOnlyMatch(match) {
   return Boolean(match?.fighterA && match?.fighterB && match.fighterA.type === "bot" && match.fighterB.type === "bot");
 }
 
+function hasOnlineTournamentHumanActiveMatch(room) {
+  if (!room?.bracket || !room.activeMatches) return false;
+
+  return Object.keys(room.activeMatches).some((matchId) => {
+    const found = findOnlineTournamentMatchById(room.bracket, matchId);
+    return getOnlineTournamentMatchHumanSocketIds(found?.match).length > 0;
+  });
+}
+
 function findOnlineTournamentMatchById(bracket, matchId) {
   if (!bracket || !matchId) return null;
 
@@ -426,7 +435,7 @@ function generateAvailableOnlineTournamentCombats(room) {
   const createdMatches = [];
   let safety = 0;
 
-  while (safety < 20 && Object.keys(room.activeMatches).length === 0 && !room.bracket.finished) {
+  while (safety < 40 && Object.keys(room.activeMatches).length === 0 && !room.bracket.finished) {
     safety += 1;
 
     const roundIndex = getCurrentPlayableRoundIndex(room.bracket);
@@ -450,25 +459,39 @@ function generateAvailableOnlineTournamentCombats(room) {
       return { type: "waiting", autoResolvedCount, createdMatches };
     }
 
-    for (const { match, matchIndex } of readyMatches) {
-      const humanSocketIds = getOnlineTournamentMatchHumanSocketIds(match);
+    const humanReadyMatches = readyMatches.filter(({ match }) =>
+      getOnlineTournamentMatchHumanSocketIds(match).length > 0
+    );
 
-      createOnlineTournamentActiveMatch(room, roundIndex, matchIndex);
+    if (humanReadyMatches.length > 0) {
+      for (const { match, matchIndex } of humanReadyMatches) {
+        createOnlineTournamentActiveMatch(room, roundIndex, matchIndex);
+        createdMatches.push({
+          matchId: match.id,
+          roundName: round.name,
+          matchIndex,
+          fighterA: match.fighterA,
+          fighterB: match.fighterB,
+          type: "human"
+        });
+      }
+
+      return { type: "active", autoResolvedCount, createdMatches };
+    }
+
+    for (const { match, matchIndex } of readyMatches) {
+      const result = simulateOnlineTournamentBotMatch(room, roundIndex, matchIndex);
+      autoResolvedCount += 1;
+
       createdMatches.push({
         matchId: match.id,
         roundName: round.name,
         matchIndex,
         fighterA: match.fighterA,
-        fighterB: match.fighterB
+        fighterB: match.fighterB,
+        winner: result.winnerParticipant,
+        type: "bot-resolved"
       });
-
-      if (humanSocketIds.length === 0) {
-        continue;
-      }
-    }
-
-    if (createdMatches.length > 0) {
-      return { type: "active", autoResolvedCount, createdMatches };
     }
   }
 
@@ -559,6 +582,7 @@ function scheduleOnlineTournamentBotMatch(roomCode, matchId) {
   const match = found?.match;
 
   if (!isOnlineTournamentBotOnlyMatch(match)) return;
+  if (hasOnlineTournamentHumanActiveMatch(room)) return;
   if (active.botTimer) return;
 
   active.botTimer = setTimeout(() => {
@@ -636,6 +660,24 @@ function emitOnlineTournamentState(roomCode) {
   if (!room) return;
 
   io.to(roomCode).emit("onlineTournamentState", getOnlineTournamentPublicState(room));
+}
+
+function advanceOnlineTournamentIfIdle(roomCode) {
+  const room = onlineTournamentRooms[roomCode];
+  if (!room?.bracket || room.bracket.finished) return null;
+  if (Object.keys(room.activeMatches || {}).length > 0) return null;
+
+  const result = generateAvailableOnlineTournamentCombats(room);
+
+  io.to(roomCode).emit("onlineTournamentCombatGenerated", {
+    result,
+    state: getOnlineTournamentPublicState(room)
+  });
+
+  emitOnlineTournamentState(roomCode);
+  scheduleOnlineTournamentBotMatches(roomCode);
+
+  return result;
 }
 
 function isOnlineTournamentPlayer(room, socketId) {
@@ -1006,15 +1048,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    const result = generateAvailableOnlineTournamentCombats(room);
-
-    io.to(normalizedCode).emit("onlineTournamentCombatGenerated", {
-      result,
-      state: getOnlineTournamentPublicState(room)
-    });
-
-    emitOnlineTournamentState(normalizedCode);
-    scheduleOnlineTournamentBotMatches(normalizedCode);
+    advanceOnlineTournamentIfIdle(normalizedCode);
   });
 
   socket.on("transformCoconutOctopusOnlineTournament", ({ roomCode, matchId, formId }) => {
@@ -1120,7 +1154,10 @@ io.on("connection", (socket) => {
     });
 
     emitOnlineTournamentState(normalizedCode);
-    scheduleOnlineTournamentBotMatches(normalizedCode);
+
+    if (result.finished) {
+      advanceOnlineTournamentIfIdle(normalizedCode);
+    }
   });
 
   socket.on("resetOnlineTournamentRoom", ({ roomCode }) => {
