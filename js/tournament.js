@@ -393,35 +393,10 @@ function getImageCandidates(id, animal) {
     "giant-asian-mantis": ["./images/animals/arthropods/asian-giant-mantis.png"],
     "darwins-frog": ["./images/animals/amphibians/darwins-frog.png"],
     "coconut-octopus": ["./images/animals/fish/coconut-octopus.png"],
-    "iberian-ribbed-newt": [
-      "./images/animals/amphibians/iberian-ribbed-newt.png",
-      "./images/animals/amphibians/iberian-ribbed-newt.jpg",
-      "./images/animals/amphibians/iberian-ribbed-newt.jpeg",
-      "./images/animals/amphibians/iberian-ribbed-newt.webp",
-      "./images/animals/amphibians/gallipato.png",
-      "./images/animals/amphibians/gallipato.jpg",
-      "./images/animals/amphibians/gallipato.jpeg",
-      "./images/animals/amphibians/gallipato.webp",
-      "./images/animals/amphibians/gallipato-iberico.png",
-      "./images/animals/amphibians/gallipato-iberico.jpg",
-      "./images/animals/amphibians/gallipato-iberico.jpeg",
-      "./images/animals/amphibians/gallipato-iberico.webp"
-    ],
-    "iberian-skink": [
-      "./images/animals/reptiles/iberian-skink.png",
-      "./images/animals/reptiles/iberian-skink.jpg",
-      "./images/animals/reptiles/iberian-skink.jpeg",
-      "./images/animals/reptiles/iberian-skink.webp",
-      "./images/animals/reptiles/eslizon-iberico.png",
-      "./images/animals/reptiles/eslizon-iberico.jpg",
-      "./images/animals/reptiles/eslizon-iberico.jpeg",
-      "./images/animals/reptiles/eslizon-iberico.webp",
-      "./images/animals/reptiles/eslizon.png",
-      "./images/animals/reptiles/eslizon.jpg",
-      "./images/animals/reptiles/eslizon.jpeg",
-      "./images/animals/reptiles/eslizon.webp"
-    ]
-  };
+    "iberian-ribbed-newt": ["./images/animals/amphibians/iberian-ribbed-newt.png"],
+    "iberian-skink": ["./images/animals/reptiles/iberian-skink.png"],
+      "bombardier-beetle": ["./images/animals/arthropods/bombardier-beetle.png"],
+};
 
   return getSharedImageCandidates(id, animal, legacy);
 }
@@ -1791,8 +1766,8 @@ function processFinishedPlayerMatch() {
     return;
   }
 
+  resolveRandomNonPlayerMatches(roundIndex);
   currentTournament.currentRoundIndex += 1;
-  resolveRandomNonPlayerMatches(currentTournament.currentRoundIndex);
   currentTournament.awaitingContinue = true;
 
   const nextMatch = getPlayerMatch(currentTournament.currentRoundIndex);
@@ -2093,7 +2068,6 @@ function startTournament() {
     currentAIReplayMatch = null;
     currentAIReplayIndex = 0;
 
-    resolveRandomNonPlayerMatches(0);
     loadCurrentPlayerBattle();
 
     renderTournament();
@@ -2120,6 +2094,23 @@ function resetTournament() {
   currentAIReplayIndex = 0;
   lastTurnSummaryLines = ["Start a tournament to begin."];
   renderTournament();
+}
+
+
+function bindCoconutOctopusFormControls() {
+  const panel = document.getElementById("octopusAdaptationPanel");
+  if (!panel || panel.dataset.octopusControlsBound === "true") return;
+
+  panel.dataset.octopusControlsBound = "true";
+  panel.addEventListener("click", (event) => {
+    const button = event.target.closest(".octopus-form-btn");
+    if (!button || !panel.contains(button) || button.disabled) return;
+
+    const formId = button.dataset.octopusForm || button.dataset.onlineOctopusPreview;
+    if (!formId) return;
+
+    previewPlayerCoconutOctopusForm(formId);
+  });
 }
 
 function init() {
@@ -2150,9 +2141,7 @@ function init() {
     applyFlipStates();
   });
 
-  document.querySelectorAll(".octopus-form-btn").forEach((btn) => {
-    btn.addEventListener("click", () => previewPlayerCoconutOctopusForm(btn.dataset.octopusForm));
-  });
+  bindCoconutOctopusFormControls();
   document.getElementById("octopusConfirmFormBtn")?.addEventListener("click", () => {
     if (pendingOctopusFormPreview) transformPlayerCoconutOctopus(pendingOctopusFormPreview);
   });

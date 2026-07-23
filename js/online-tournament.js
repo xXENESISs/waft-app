@@ -297,35 +297,10 @@ function getImageCandidates(id, animal) {
     "darwins-frog": ["./images/animals/amphibians/darwins-frog.png"],
     "coconut-octopus": ["./images/animals/fish/coconut-octopus.png"],
     "three-toed-sloth": ["./images/animals/mammals/three-toed-sloth.png"],
-    "iberian-ribbed-newt": [
-      "./images/animals/amphibians/iberian-ribbed-newt.png",
-      "./images/animals/amphibians/iberian-ribbed-newt.jpg",
-      "./images/animals/amphibians/iberian-ribbed-newt.jpeg",
-      "./images/animals/amphibians/iberian-ribbed-newt.webp",
-      "./images/animals/amphibians/gallipato.png",
-      "./images/animals/amphibians/gallipato.jpg",
-      "./images/animals/amphibians/gallipato.jpeg",
-      "./images/animals/amphibians/gallipato.webp",
-      "./images/animals/amphibians/gallipato-iberico.png",
-      "./images/animals/amphibians/gallipato-iberico.jpg",
-      "./images/animals/amphibians/gallipato-iberico.jpeg",
-      "./images/animals/amphibians/gallipato-iberico.webp"
-    ],
-    "iberian-skink": [
-      "./images/animals/reptiles/iberian-skink.png",
-      "./images/animals/reptiles/iberian-skink.jpg",
-      "./images/animals/reptiles/iberian-skink.jpeg",
-      "./images/animals/reptiles/iberian-skink.webp",
-      "./images/animals/reptiles/eslizon-iberico.png",
-      "./images/animals/reptiles/eslizon-iberico.jpg",
-      "./images/animals/reptiles/eslizon-iberico.jpeg",
-      "./images/animals/reptiles/eslizon-iberico.webp",
-      "./images/animals/reptiles/eslizon.png",
-      "./images/animals/reptiles/eslizon.jpg",
-      "./images/animals/reptiles/eslizon.jpeg",
-      "./images/animals/reptiles/eslizon.webp"
-    ]
-  };
+    "iberian-ribbed-newt": ["./images/animals/amphibians/iberian-ribbed-newt.png"],
+    "iberian-skink": ["./images/animals/reptiles/iberian-skink.png"],
+      "bombardier-beetle": ["./images/animals/arthropods/bombardier-beetle.png"],
+};
 
   return getSharedImageCandidates(id, animal, legacy);
 }
@@ -1279,34 +1254,14 @@ function renderOnlineTournamentOctopusPanel(activeMatch, canAct) {
 
   const matchId = activeMatch.matchId;
   const preview = pendingOctopusFormPreviewByMatchId[matchId] || null;
-  const currentForm = fighter.octopusForm || "base";
-  const charges = fighter.octopusAdaptationCharges ?? 0;
-  const freeText = fighter.octopusFreeTransformationAvailable ? " · first transformation free" : "";
-  const form = preview ? getCoconutOctopusFormDefinitionForPreview(preview) : null;
 
-  const previewHtml = form
-    ? `<div class="octopus-preview-panel" style="display:block;">
-        <div class="octopus-preview-title">${escapeHtml(form.name)}${preview === currentForm ? " — Current Form" : " — Preview"}</div>
-        <div class="octopus-preview-stats">${getCoconutOctopusPreviewStatsHtml(form)}</div>
-        <div class="octopus-preview-text">${escapeHtml("Passive — " + (form.passive?.name || "None") + "\n" + (form.passive?.description || "No passive.") + "\n\nSuper — " + (form.special?.name || "None") + "\n" + (form.special?.description || "No super."))}</div>
-        <div class="octopus-preview-actions">
-          <button type="button" class="octopus-confirm-btn" data-online-octopus-confirm="${escapeHtml(matchId)}" ${!canAct || preview === currentForm || (!fighter.octopusFreeTransformationAvailable && charges <= 0) ? "disabled" : ""}>${fighter.octopusFreeTransformationAvailable ? "Confirm Free Transformation" : "Confirm Form Change (-1 charge)"}</button>
-          <button type="button" class="octopus-cancel-btn" data-online-octopus-cancel="${escapeHtml(matchId)}">Cancel Preview</button>
-        </div>
-      </div>`
-    : "";
-
-  return `<div class="octopus-adaptation-panel" id="octopusAdaptationPanel">
-      <div class="octopus-adaptation-title">Coconut Octopus — Stand Phase</div>
-      <div class="octopus-adaptation-status">${escapeHtml(getCoconutOctopusFormText(fighter))} · adaptation ${charges}/8${escapeHtml(freeText)}
-Special charges: ${escapeHtml(getCoconutOctopusChargeLine(fighter))}</div>
-      <div class="octopus-adaptation-grid">
-        ${["offensive", "defensive", "evasive"].map((formId) => `<button type="button" class="octopus-mini-btn octopus-form-btn ${formId === currentForm ? "active" : ""} ${formId === preview && formId !== currentForm ? "preview" : ""}" data-online-octopus-preview="${escapeHtml(formId)}" data-match-id="${escapeHtml(matchId)}" ${!canAct ? "disabled" : ""}>${escapeHtml(formId[0].toUpperCase() + formId.slice(1))}</button>`).join("")}
-      </div>
-      ${previewHtml}
-    </div>`;
+  return renderSharedOnlineTournamentOctopusPanel({
+    fighter,
+    matchId,
+    canAct,
+    preview
+  });
 }
-
 function bindOnlineTournamentOctopusControls(container, activeMatch, canAct) {
   if (!container || !activeMatch) return;
   container.querySelectorAll("[data-online-octopus-preview]").forEach((button) => {
