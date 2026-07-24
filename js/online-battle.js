@@ -335,23 +335,61 @@ function renderSlothEcosystemModal(fighterOverride = null) {
 }
 
 function updateSlothEcosystemButton(player) {
-  return updateSharedSlothEcosystemButtonDom(player, currentBattle);
+  return updateSharedSlothEcosystemButtonDom(player, currentBattle, {
+    preview: Boolean(player?.slothPreviewMode && !currentBattle)
+  });
+}
+
+function getSlothFighterForExtraResourcePrefix(prefix) {
+  if (currentBattle) {
+    const { player, enemy } = getBattleFighters();
+    return prefix === "player" ? player : enemy;
+  }
+
+  const selectId = prefix === "player" ? "playerFighter" : "enemyFighter";
+  const selectedId = document.getElementById(selectId)?.value;
+  return selectedId ? createPreviewFighterState(selectedId) : null;
+}
+
+function bindSlothExtraResourceCard(prefix) {
+  const extraResourceEl = document.getElementById(`${prefix}ExtraResource`);
+  if (!extraResourceEl || extraResourceEl.dataset.slothCardClickBound === "true") return;
+
+  extraResourceEl.dataset.slothCardClickBound = "true";
+  extraResourceEl.addEventListener("click", (event) => {
+    const card = event.target.closest(".sloth-ecosystem-card");
+    if (!card || !extraResourceEl.contains(card)) return;
+
+    const fighter = getSlothFighterForExtraResourcePrefix(prefix);
+    openSlothEcosystemModalForFighter(fighter);
+  });
+}
+
+function setSlothExtraResourceClickable(extraResourceEl, enabled) {
+  if (!extraResourceEl) return;
+
+  extraResourceEl.classList.toggle("clickable-sloth-resource", Boolean(enabled));
+  extraResourceEl.style.cursor = enabled ? "pointer" : "";
+  extraResourceEl.title = enabled ? "Open Living Ecosystem" : "";
+}
+
+function openSlothEcosystemModalForFighter(fighter, showAlert = false) {
+  if (!isThreeToedSlothFighter(fighter)) {
+    if (showAlert) alert("Only the Three-Toed Sloth has a Living Ecosystem.");
+    return;
+  }
+
+  renderSlothEcosystemModal(fighter);
+
+  const modal = document.getElementById("slothEcosystemModal");
+  if (modal) modal.style.display = "flex";
 }
 
 function openSlothEcosystemModal() {
   if (currentBattle?.finished) return;
 
   const player = currentBattle ? getBattleFighters().player : preBattlePreviewPlayer;
-
-  if (!isThreeToedSlothFighter(player)) {
-    alert("Only the Three-Toed Sloth has a Living Ecosystem.");
-    return;
-  }
-
-  renderSlothEcosystemModal(player);
-
-  const modal = document.getElementById("slothEcosystemModal");
-  if (modal) modal.style.display = "flex";
+  openSlothEcosystemModalForFighter(player, true);
 }
 
 function closeSlothEcosystemModal() {
@@ -1017,7 +1055,9 @@ function renderFighter(prefix, fighter) {
     if (isThreeToedSlothFighter(fighter)) {
       extraResourceEl.innerHTML = renderSlothEcosystemMiniPanel(fighter);
       extraResourceEl.style.display = "block";
+      setSlothExtraResourceClickable(extraResourceEl, true);
     } else {
+      setSlothExtraResourceClickable(extraResourceEl, false);
       const extraResourceText = getExtraResourceText(fighter);
 
       if (extraResourceText) {
@@ -1374,8 +1414,7 @@ function updateActionButtons() {
     }
 
     if (action === "larval-command") {
-      const larvae = player.darwinsLarvae || 0;
-      btn.disabled = !(player.passive?.id === "larval-gestation" && larvae > 0);
+      btn.disabled = !(player.passive?.id === "larval-gestation");
       return;
     }
 
@@ -1649,6 +1688,8 @@ function startBattle() {
     lastEnemyAction = "-";
     lastTurnOutcome = "Waiting";
     lastTurnSummaryLines = ["Fighter selected. Waiting for opponent..."];
+    preBattlePreviewPlayer = createPreviewFighterState(playerId);
+    updateSlothEcosystemButton(preBattlePreviewPlayer);
 
     socket.emit("selectFighter", {
       roomCode: multiplayerRoomCode,
@@ -1753,7 +1794,9 @@ function renderFighterPreview(prefix, fighterId) {
     if (previewFighter && isThreeToedSlothFighter(previewFighter)) {
       extraResourceEl.innerHTML = renderSlothEcosystemMiniPanel(previewFighter);
       extraResourceEl.style.display = "block";
+      setSlothExtraResourceClickable(extraResourceEl, true);
     } else {
+      setSlothExtraResourceClickable(extraResourceEl, false);
       const extraResourceText = previewFighter ? getExtraResourceText(previewFighter) : "";
 
       if (extraResourceText) {
@@ -2352,6 +2395,8 @@ function init() {
   document.getElementById("larvalConfirmBtn").addEventListener("click", confirmLarvalCommandModal);
 
   initFlipButtons();
+  bindSlothExtraResourceCard("player");
+  bindSlothExtraResourceCard("enemy");
   updateStaticActionButtons();
 
   setupLinkedFighterSelectors([

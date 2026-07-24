@@ -21,7 +21,6 @@ import {
   renderSharedSlothColonyChip,
   renderSharedSlothEcosystemMiniPanel,
   renderSharedSlothColonyDetailCard,
-  renderSharedSlothEcosystemModalDom,
   updateSharedSlothEcosystemButtonDom,
   isSharedCoconutOctopusFighter,
   getSharedCoconutOctopusFormText,
@@ -1276,12 +1275,37 @@ function renderFighter(prefix, fighter) {
   const extraEl = document.getElementById(prefix + "ExtraResource");
   const extraText = getExtraResourceText(fighter);
 
-  if (extraText) {
+  extraEl.classList.toggle("special-resource-panel", isSharedThreeToedSlothFighter(fighter));
+
+  if (isSharedThreeToedSlothFighter(fighter)) {
+    extraEl.innerHTML = renderSharedSlothEcosystemMiniPanel(fighter, currentBattle);
+    extraEl.style.display = "block";
+    extraEl.setAttribute("role", "button");
+    extraEl.setAttribute("tabindex", "0");
+    extraEl.title = "Open Living Ecosystem";
+    extraEl.onclick = () => openSlothEcosystemModalForFighter(fighter);
+    extraEl.onkeydown = (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openSlothEcosystemModalForFighter(fighter);
+      }
+    };
+  } else if (extraText) {
     extraEl.textContent = extraText;
     extraEl.style.display = "block";
+    extraEl.removeAttribute("role");
+    extraEl.removeAttribute("tabindex");
+    extraEl.removeAttribute("title");
+    extraEl.onclick = null;
+    extraEl.onkeydown = null;
   } else {
     extraEl.textContent = "";
     extraEl.style.display = "none";
+    extraEl.removeAttribute("role");
+    extraEl.removeAttribute("tabindex");
+    extraEl.removeAttribute("title");
+    extraEl.onclick = null;
+    extraEl.onkeydown = null;
   }
 }
 
@@ -1315,6 +1339,148 @@ function renderLarvalCommandButton(player) {
   return updateSharedLarvalCommandButtonDom(player);
 }
 
+function renderSlothEcosystemButton(player) {
+  return updateSharedSlothEcosystemButtonDom(player, currentBattle);
+}
+
+function renderTournamentSlothEcosystemModal(player) {
+  const body = document.getElementById("slothEcosystemModalBody");
+  const subtitle = document.getElementById("slothEcosystemModalSubtitle");
+
+  if (!body || !subtitle || !isSharedThreeToedSlothFighter(player)) return false;
+
+  const dormant = isSharedSlothDormant(player, currentBattle);
+  const micro = Boolean(player.slothMicroecosystemActive);
+  const activeCount = getSharedSlothActiveColonies(player).length;
+  const biome = currentBattle?.biome ? currentBattle.biome.toUpperCase() : "-";
+
+  subtitle.textContent = micro
+    ? "Microecosystem Ancestral active: all colonies are awake for " + (player.slothMicroecosystemTurns || 0) + " turn(s)."
+    : dormant
+      ? "Biome " + biome + ": ecosystem in letargo. No colonies are active and Microecosystem is blocked."
+      : "Biome " + biome + ": " + activeCount + "/5 colonies active. Lichens accelerate colony growth when awake.";
+
+  const colonies = [
+    {
+      id: "algae",
+      emoji: "🧪",
+      fullName: "Algae Colony",
+      className: "sloth-colony-algae",
+      detail: "Algae restore 30 HP and 15 Stamina at the end of the turn.",
+      amplified: "With Lichens: recovery is doubled."
+    },
+    {
+      id: "fungi",
+      emoji: "🍄",
+      fullName: "Fungi Colony",
+      className: "sloth-colony-fungi",
+      detail: "Fungi can invert stat debuffs into buffs.",
+      amplified: "With Lichens: the inversion becomes stronger."
+    },
+    {
+      id: "bacteria",
+      emoji: "🦠",
+      fullName: "Bacteria Colony",
+      className: "sloth-colony-bacteria",
+      detail: "Bacteria build a chain that increases the next hit.",
+      amplified: "With Lichens: chain growth is faster."
+    },
+    {
+      id: "mites",
+      emoji: "🕷️",
+      fullName: "Mite Colony",
+      className: "sloth-colony-mites",
+      detail: "Mites reduce attack stamina costs.",
+      amplified: "With Lichens: attacks cost even less Stamina."
+    },
+    {
+      id: "lichens",
+      emoji: "🪨",
+      fullName: "Lichen Colony",
+      className: "sloth-colony-lichens",
+      detail: "Lichens amplify the other active colony.",
+      amplified: "During Microecosystem Ancestral, Lichens empower all colonies at once."
+    }
+  ];
+
+  body.innerHTML = `
+    <div class="sloth-modal-summary${micro ? " ancestral" : ""}${dormant ? " dormant" : ""}">
+      <div>
+        <div class="sloth-modal-summary-label">Current State</div>
+        <div class="sloth-modal-summary-value">${micro ? "MICROECOSYSTEM ANCESTRAL" : dormant ? "LETARGO" : "LIVING ECOSYSTEM ACTIVE"}</div>
+      </div>
+      <div>
+        <div class="sloth-modal-summary-label">Bacterial Chain</div>
+        <div class="sloth-modal-summary-value">${getSharedSlothBacterialProgressText(player)}</div>
+      </div>
+      <div>
+        <div class="sloth-modal-summary-label">Lichens</div>
+        <div class="sloth-modal-summary-value">${
+          sharedSlothHasColony(player, "lichens")
+            ? micro
+              ? "Boosting all colonies"
+              : "Accelerating the other colony"
+            : "Inactive"
+        }</div>
+      </div>
+    </div>
+
+    <div class="sloth-modal-grid">
+      ${colonies.map((colony) => {
+        const active = sharedSlothHasColony(player, colony.id);
+        const lichensActive = sharedSlothHasColony(player, "lichens");
+        const boosted = active && lichensActive && colony.id !== "lichens";
+        const stateText = active
+          ? dormant
+            ? "LETARGO"
+            : boosted
+              ? "AMPLIFIED"
+              : "ACTIVE"
+          : "INACTIVE";
+
+        return `
+          <div class="sloth-modal-colony ${colony.className} ${active ? "active" : "inactive"}${dormant ? " dormant" : ""}${boosted ? " boosted" : ""}">
+            <div class="sloth-modal-colony-head">
+              <div class="sloth-modal-colony-title">
+                <span>${colony.emoji}</span>
+                <strong>${colony.fullName}</strong>
+              </div>
+              <div class="sloth-modal-status">${stateText}</div>
+            </div>
+            <div class="sloth-modal-colony-effect">${colony.detail}</div>
+            <div class="sloth-modal-colony-current">${getSharedSlothColonyCurrentEffectText(player, colony)}</div>
+            <div class="sloth-modal-colony-boost">${colony.amplified}</div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+
+  return true;
+}
+
+function openSlothEcosystemModalForFighter(fighter) {
+  if (!currentBattle || !isSharedThreeToedSlothFighter(fighter)) return;
+
+  const rendered = renderTournamentSlothEcosystemModal(fighter);
+  if (!rendered) return;
+
+  const modal = document.getElementById("slothEcosystemModal");
+  if (modal) modal.style.display = "flex";
+}
+
+function openSlothEcosystemModal() {
+  if (!currentBattle || currentBattle.finished || currentBattleViewMode !== "player") return;
+
+  const { player } = getBattleFighters();
+  openSlothEcosystemModalForFighter(player);
+}
+
+function closeSlothEcosystemModal() {
+  const modal = document.getElementById("slothEcosystemModal");
+  if (modal) modal.style.display = "none";
+}
+
 function renderActionButtons() {
   const { player } = getBattleFighters();
   const buttons = document.querySelectorAll(".action-btn");
@@ -1333,6 +1499,11 @@ function renderActionButtons() {
       isResolvingTurn
     ) {
       btn.disabled = true;
+      return;
+    }
+
+    if (btn.id === "slothEcosystemBtn") {
+      btn.disabled = !isSharedThreeToedSlothFighter(player);
       return;
     }
 
@@ -1670,6 +1841,7 @@ function renderBattle() {
 
   renderSpecialButton(player);
   renderLarvalCommandButton(player);
+  renderSlothEcosystemButton(player);
   updateCoconutOctopusPanel(player);
 
   document.getElementById("currentMatchTitle").textContent =
@@ -2155,11 +2327,19 @@ function init() {
 
   document.querySelectorAll(".action-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (btn.id === "slothEcosystemBtn") {
+        openSlothEcosystemModal();
+        return;
+      }
+
       const action = btn.dataset.action;
+      if (!action) return;
+
       playTurn(action);
     });
   });
 
+  document.getElementById("slothEcosystemCloseBtn")?.addEventListener("click", closeSlothEcosystemModal);
   document.getElementById("larvalCommandCloseBtn").addEventListener("click", closeLarvalCommandModal);
 
   document.getElementById("larvalAttackMinus").addEventListener("click", () => adjustLarvalDraft("attack", -1));

@@ -723,7 +723,6 @@ export function renderSharedCoconutOctopusFormPreviewDom(options = {}) {
     currentBattle.finished ||
     isBusy ||
     isWaiting ||
-    isMultiplayer ||
     isCurrent ||
     !canPay;
 
@@ -749,6 +748,26 @@ export function renderSharedCoconutOctopusFormPreviewDom(options = {}) {
   confirmBtn.disabled = blocked;
 }
 
+
+function ensureSharedCoconutOctopusFormButtons(panel) {
+  const grid = panel?.querySelector(".octopus-adaptation-grid");
+  if (!grid) return;
+
+  const existingForms = Array.from(grid.querySelectorAll(".octopus-form-btn"))
+    .map((btn) => btn.dataset.octopusForm || btn.dataset.onlineOctopusPreview || "");
+
+  const alreadyCorrect =
+    existingForms.length === SHARED_OCTOPUS_FORM_ORDER.length &&
+    SHARED_OCTOPUS_FORM_ORDER.every((formId, index) => existingForms[index] === formId);
+
+  if (alreadyCorrect) return;
+
+  grid.innerHTML = SHARED_OCTOPUS_FORM_ORDER.map((formId) => {
+    const label = SHARED_OCTOPUS_FORM_BUTTON_LABELS[formId] || formId;
+    return `<button type="button" class="octopus-mini-btn octopus-form-btn" data-octopus-form="${escapeSharedHtml(formId)}">${escapeSharedHtml(label)}</button>`;
+  }).join("");
+}
+
 export function updateSharedCoconutOctopusPanelDom(options = {}) {
   const {
     player,
@@ -771,6 +790,7 @@ export function updateSharedCoconutOctopusPanelDom(options = {}) {
   }
 
   panel.style.display = "block";
+  ensureSharedCoconutOctopusFormButtons(panel);
 
   const form = player.octopusForm || "base";
   const charges = player.octopusAdaptationCharges ?? 0;

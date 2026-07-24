@@ -40,7 +40,11 @@ import {
   updateSharedLarvalCommandButtonDom,
   getSharedLarvalDraftTotal,
   getSharedCurrentLarvae,
-  renderSharedLarvalCommandModalDom
+  renderSharedLarvalCommandModalDom,
+  getSharedLegendaryExtraResourceHtml,
+  isSharedBombardierBeetleFighter,
+  getSharedBombardierValveRelease,
+  getSharedBombardierSelectedReactants
 } from "./waft-ui-core.js";
 import { setupFighterSelector } from "./fighter-selector.js";
 
@@ -297,10 +301,35 @@ function getImageCandidates(id, animal) {
     "darwins-frog": ["./images/animals/amphibians/darwins-frog.png"],
     "coconut-octopus": ["./images/animals/fish/coconut-octopus.png"],
     "three-toed-sloth": ["./images/animals/mammals/three-toed-sloth.png"],
-    "iberian-ribbed-newt": ["./images/animals/amphibians/iberian-ribbed-newt.png"],
-    "iberian-skink": ["./images/animals/reptiles/iberian-skink.png"],
-      "bombardier-beetle": ["./images/animals/arthropods/bombardier-beetle.png"],
-};
+    "iberian-ribbed-newt": [
+      "./images/animals/amphibians/iberian-ribbed-newt.png",
+      "./images/animals/amphibians/iberian-ribbed-newt.jpg",
+      "./images/animals/amphibians/iberian-ribbed-newt.jpeg",
+      "./images/animals/amphibians/iberian-ribbed-newt.webp",
+      "./images/animals/amphibians/gallipato.png",
+      "./images/animals/amphibians/gallipato.jpg",
+      "./images/animals/amphibians/gallipato.jpeg",
+      "./images/animals/amphibians/gallipato.webp",
+      "./images/animals/amphibians/gallipato-iberico.png",
+      "./images/animals/amphibians/gallipato-iberico.jpg",
+      "./images/animals/amphibians/gallipato-iberico.jpeg",
+      "./images/animals/amphibians/gallipato-iberico.webp"
+    ],
+    "iberian-skink": [
+      "./images/animals/reptiles/iberian-skink.png",
+      "./images/animals/reptiles/iberian-skink.jpg",
+      "./images/animals/reptiles/iberian-skink.jpeg",
+      "./images/animals/reptiles/iberian-skink.webp",
+      "./images/animals/reptiles/eslizon-iberico.png",
+      "./images/animals/reptiles/eslizon-iberico.jpg",
+      "./images/animals/reptiles/eslizon-iberico.jpeg",
+      "./images/animals/reptiles/eslizon-iberico.webp",
+      "./images/animals/reptiles/eslizon.png",
+      "./images/animals/reptiles/eslizon.jpg",
+      "./images/animals/reptiles/eslizon.jpeg",
+      "./images/animals/reptiles/eslizon.webp"
+    ]
+  };
 
   return getSharedImageCandidates(id, animal, legacy);
 }
@@ -795,6 +824,11 @@ function renderOnlineBattleFighterCard(participant, fighter, sideLabel, battle =
   const meta = formatParticipantMeta(participant);
   const key = getParticipantKey(participant) || participant.slotId || participant.fighterId;
   const extraResourceText = fighter ? getExtraResourceText(fighter) : "";
+  const legendaryExtraHtml = fighter && isThreeToedSlothFighter(fighter)
+    ? renderSharedSlothEcosystemMiniPanel(fighter, battle)
+    : fighter && participantIsLocal(participant)
+      ? getSharedLegendaryExtraResourceHtml(fighter, battle)
+      : "";
   const tooltip = formatCombatTooltip(participant, fighter, battle);
   const sideKey = sideLabel.includes("A") ? "A" : "B";
 
@@ -811,7 +845,7 @@ function renderOnlineBattleFighterCard(participant, fighter, sideLabel, battle =
         <div class="combat-meta">${sideLabel} · ${meta}</div>
         ${renderBattleBars(fighter)}
 
-        ${isThreeToedSlothFighter(fighter) ? renderSlothEcosystemMiniPanel(fighter, battle) : (extraResourceText ? `<div class="online-extra-resource">${escapeHtml(extraResourceText)}</div>` : "")}
+        ${legendaryExtraHtml || (extraResourceText ? `<div class="online-extra-resource">${escapeHtml(extraResourceText)}</div>` : "")}
       </div>
     </div>
   `;
@@ -848,6 +882,25 @@ function getPreparedLarvalCommand(matchId) {
     defense: command.defense || 0,
     sacrifice: command.sacrifice || 0
   };
+}
+
+function getBombardierReactionStateForFighter(fighter) {
+  if (!isSharedBombardierBeetleFighter(fighter)) return null;
+
+  const valve = getSharedBombardierValveRelease(fighter);
+  const selected = getSharedBombardierSelectedReactants(fighter);
+
+  return {
+    bombardierValveHydroquinone: valve.hydroquinone,
+    bombardierValvePeroxide: valve.peroxide,
+    bombardierSelectedHydroquinone: selected.hydroquinone,
+    bombardierSelectedPeroxide: selected.peroxide
+  };
+}
+
+function getPreparedBombardierReactionState(activeMatch) {
+  const { fighter } = getLocalFighterInActiveMatch(activeMatch);
+  return getBombardierReactionStateForFighter(fighter);
 }
 
 function getActionInfoForButton(action, localFighter, activeMatch) {
@@ -893,6 +946,11 @@ function getActionInfoForButton(action, localFighter, activeMatch) {
       desc: getPreparedLarvalCommand(activeMatch?.matchId)
         ? "Command ready. It will be sent with your next main action."
         : "Assign larvae to attack, defend or sacrifice."
+    },
+    "sloth-ecosystem": {
+      subtitle: "Ecosystem",
+      title: "Living Ecosystem",
+      desc: "Open the full colony panel."
     }
   };
 
@@ -908,6 +966,10 @@ function renderActionButtons(activeMatch, canAct) {
     actions.push("larval-command");
   }
 
+  if (isThreeToedSlothFighter(localFighter)) {
+    actions.push("sloth-ecosystem");
+  }
+
   return actions.map((action) => {
     const info = getActionInfoForButton(action, localFighter, activeMatch);
     let disabled = !canAct;
@@ -919,7 +981,11 @@ function renderActionButtons(activeMatch, canAct) {
     }
 
     if (action === "larval-command") {
-      disabled = !canAct || !localFighter || (localFighter.darwinsLarvae || 0) <= 0;
+      disabled = !canAct || !localFighter;
+    }
+
+    if (action === "sloth-ecosystem") {
+      disabled = !isThreeToedSlothFighter(localFighter);
     }
 
     const readyClass =
@@ -1307,6 +1373,63 @@ function closeOnlineTournamentOctopusPerfectAdaptationModal() {
   if (modal) modal.style.display = "none";
 }
 
+function openOnlineTournamentSlothEcosystemModal(activeMatch, side = null) {
+  if (!activeMatch) return;
+
+  let fighter = null;
+
+  if (side === "A") fighter = activeMatch.battle?.fighterA;
+  if (side === "B") fighter = activeMatch.battle?.fighterB;
+
+  if (!fighter) {
+    fighter = getLocalFighterInActiveMatch(activeMatch).fighter;
+  }
+
+  if (!isThreeToedSlothFighter(fighter)) return;
+
+  renderSharedSlothEcosystemModalDom({
+    fighter,
+    battle: activeMatch.battle
+  });
+
+  const modal = document.getElementById("slothEcosystemModal");
+  if (modal) modal.style.display = "flex";
+}
+
+function bindOnlineTournamentSlothCards(container, activeMatch) {
+  if (!container || !activeMatch) return;
+
+  container.querySelectorAll(".sloth-ecosystem-card").forEach((card) => {
+    const fighterCard = card.closest(".online-battle-fighter-card");
+    const imageSide = fighterCard?.querySelector("[data-combat-side]")?.getAttribute("data-combat-side");
+    const side = imageSide === "A" || imageSide === "B" ? imageSide : null;
+
+    card.classList.add("clickable-sloth-card");
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", "0");
+    card.setAttribute("title", "Open Living Ecosystem");
+
+    const open = () => openOnlineTournamentSlothEcosystemModal(activeMatch, side);
+
+    card.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      open();
+    });
+
+    card.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      open();
+    });
+  });
+}
+
+function closeOnlineTournamentSlothEcosystemModal() {
+  const modal = document.getElementById("slothEcosystemModal");
+  if (modal) modal.style.display = "none";
+}
+
 function renderActiveCombatMatch(activeMatch) {
   const panel = getEl("combatPanel");
   const area = getEl("activeCombatArea");
@@ -1382,9 +1505,14 @@ function renderActiveCombatMatch(activeMatch) {
 
   area.querySelectorAll("[data-online-action]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (!roomCode || !canAct) return;
-
       const action = button.getAttribute("data-online-action");
+
+      if (action === "sloth-ecosystem") {
+        openOnlineTournamentSlothEcosystemModal(activeMatch);
+        return;
+      }
+
+      if (!roomCode || !canAct) return;
 
       if (localPlayerNeedsOnlineTournamentPerfectAdaptationChoice(activeMatch, action)) {
         openOnlineTournamentOctopusPerfectAdaptationModal(activeMatch);
@@ -1397,13 +1525,15 @@ function renderActiveCombatMatch(activeMatch) {
       }
 
       const larvalCommand = getPreparedLarvalCommand(activeMatch.matchId);
+      const bombardierReactionState = getPreparedBombardierReactionState(activeMatch);
 
       socket.emit("onlineTournamentPlayerAction", {
         roomCode,
         matchId: activeMatch.matchId,
         action,
         larvalCommand,
-        coconutPerfectAdaptationChoice: null
+        coconutPerfectAdaptationChoice: null,
+        bombardierReactionState
       });
 
       if (larvalCommand) {
@@ -1415,6 +1545,7 @@ function renderActiveCombatMatch(activeMatch) {
   });
 
   bindOnlineTournamentOctopusControls(area, activeMatch, canAct);
+  bindOnlineTournamentSlothCards(area, activeMatch);
 
   getEl("returnToYourMatchBtn")?.addEventListener("click", () => {
     if (!localActive) return;
@@ -1514,11 +1645,6 @@ function openLarvalCommandModal(activeMatch) {
 
   if (!fighter || fighter.passive?.id !== "larval-gestation") {
     window.alert("Only Darwin's Frog can command larvae.");
-    return;
-  }
-
-  if ((fighter.darwinsLarvae || 0) <= 0) {
-    window.alert("No larvae available.");
     return;
   }
 
@@ -1622,12 +1748,14 @@ function bindOnlineTournamentOctopusModalListeners() {
       if (!activeMatch) return;
       const choice = button.getAttribute("data-octopus-perfect-choice");
       const larvalCommand = getPreparedLarvalCommand(activeMatch.matchId);
+      const bombardierReactionState = getPreparedBombardierReactionState(activeMatch);
       socket.emit("onlineTournamentPlayerAction", {
         roomCode,
         matchId: activeMatch.matchId,
         action: "special",
         larvalCommand,
-        coconutPerfectAdaptationChoice: choice
+        coconutPerfectAdaptationChoice: choice,
+        bombardierReactionState
       });
       if (larvalCommand) delete larvalCommandsByMatchId[activeMatch.matchId];
       closeOnlineTournamentOctopusPerfectAdaptationModal();
@@ -1985,15 +2113,11 @@ function initSocket() {
         })()
       : null;
 
-    currentState = state;
+    const summaryLines = result?.newLines?.length
+      ? buildTurnSummary(result.newLines)
+      : null;
 
     if (result?.matchId && result?.newLines?.length) {
-      const summaryLines = buildTurnSummary(result.newLines);
-
-      lastTurnLinesByMatchId[result.matchId] = [""];
-      pendingAnimationByMatchId[result.matchId] = result.newLines;
-      pendingSummaryByMatchId[result.matchId] = summaryLines;
-
       addLog("Turn resolved for " + result.matchId + ".");
     }
 
@@ -2001,31 +2125,40 @@ function initSocket() {
       addLog("Combat finished. Winner: " + result.winnerParticipant.name + ".");
     }
 
-    const localActive = getLocalActiveMatch();
+    const applyResolvedState = async () => {
+      currentState = state;
 
-    if (previousViewedMatchId) {
-      viewedMatchId = previousViewedMatchId;
-    } else if (localActive) {
-      viewedMatchId = localActive.matchId;
-    } else if (result?.matchId) {
-      viewedMatchId = result.matchId;
-    }
+      const localActive = getLocalActiveMatch();
 
-    renderState();
+      if (previousViewedMatchId) {
+        viewedMatchId = previousViewedMatchId;
+      } else if (localActive) {
+        viewedMatchId = localActive.matchId;
+      } else if (result?.matchId) {
+        viewedMatchId = result.matchId;
+      }
 
-    if (result?.matchId && pendingAnimationByMatchId[result.matchId]) {
-      const linesToAnimate = pendingAnimationByMatchId[result.matchId];
-      const summaryToType = pendingSummaryByMatchId[result.matchId] || buildTurnSummary(linesToAnimate);
-      delete pendingAnimationByMatchId[result.matchId];
-      delete pendingSummaryByMatchId[result.matchId];
+      if (result?.matchId && summaryLines) {
+        lastTurnLinesByMatchId[result.matchId] = [""];
+      }
 
+      renderState();
+
+      if (result?.matchId && summaryLines) {
+        await typeTurnSummaryForMatch(result.matchId, summaryLines);
+      }
+    };
+
+    if (result?.matchId && result?.newLines?.length) {
       setTimeout(async () => {
-        await runOnlineShakeSequence(result.matchId, linesToAnimate, animationSnapshot);
-        await typeTurnSummaryForMatch(result.matchId, summaryToType);
+        await runOnlineShakeSequence(result.matchId, result.newLines, animationSnapshot);
+        await applyResolvedState();
       }, 30);
+      return;
     }
-  });
 
+    applyResolvedState();
+  });
   socket.on("onlineTournamentWaitingForOpponentAction", ({ matchId }) => {
     if (matchId) viewedMatchId = matchId;
     addLog("Waiting for opponent action...");
@@ -2086,6 +2219,8 @@ function initDomEvents() {
       roomCode
     });
   });
+
+  getEl("slothEcosystemCloseBtn")?.addEventListener("click", closeOnlineTournamentSlothEcosystemModal);
 
   getEl("nextCombatBtn")?.addEventListener("click", () => {
     if (!roomCode) return;

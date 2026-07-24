@@ -840,6 +840,12 @@
       box-shadow: 0 0 14px rgba(20, 184, 166, 0.35);
     }
 
+    .online-action-btn[data-action="sloth-ecosystem"] {
+      background: linear-gradient(135deg, rgba(34,197,94,0.82), rgba(132,204,22,0.62));
+      border-color: rgba(132,204,22,0.42);
+      box-shadow: 0 0 18px rgba(34,197,94,0.22);
+    }
+
     .online-action-btn.special-ready {
       box-shadow: 0 0 18px rgba(245, 158, 11, 0.75);
       border-color: rgba(255,255,255,0.35);
@@ -924,6 +930,344 @@
       color: var(--muted);
       line-height: 1.45;
     }
+
+
+    /* ===== ONLINE TOURNAMENT SHARED SPECIAL RESOURCE PANELS ===== */
+    .legendary-extra-card {
+      width: 100%;
+      margin-top: 8px;
+      padding: 9px;
+      text-align: left;
+      border-radius: 12px;
+      border: 1px solid rgba(245,158,11,0.28);
+      background:
+        radial-gradient(circle at 12% 18%, rgba(245,158,11,0.18), transparent 28%),
+        rgba(255,255,255,0.055);
+      color: var(--text);
+      box-shadow: inset 0 0 18px rgba(0,0,0,0.18);
+    }
+
+    .legendary-extra-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .legendary-extra-title {
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      line-height: 1.18;
+    }
+
+    .legendary-extra-subtitle,
+    .legendary-extra-note {
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.3;
+    }
+
+    .legendary-extra-badge {
+      flex: 0 0 auto;
+      padding: 4px 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(245,158,11,0.34);
+      background: rgba(245,158,11,0.12);
+      color: #ffd998;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .legendary-extra-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .legendary-extra-stat {
+      padding: 6px;
+      border-radius: 9px;
+      background: rgba(0,0,0,0.18);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .legendary-extra-stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 3px;
+    }
+
+    .legendary-extra-stat strong {
+      font-size: 12px;
+    }
+
+    .sloth-ecosystem-card {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(34,197,94,0.28);
+      background: radial-gradient(circle at top left, rgba(34,197,94,0.18), rgba(8,18,12,0.92));
+      box-shadow: 0 0 16px rgba(34,197,94,0.12);
+      color: var(--text);
+      transition: 0.18s ease;
+    }
+
+    .online-extra-resource .sloth-ecosystem-card {
+      cursor: pointer;
+    }
+
+    .online-extra-resource .sloth-ecosystem-card:hover {
+      border-color: rgba(132,204,22,0.52);
+      box-shadow: 0 0 18px rgba(34,197,94,0.20);
+      transform: translateY(-1px);
+    }
+
+    .sloth-ecosystem-card.ancestral {
+      border-color: rgba(245,158,11,0.58);
+      box-shadow: 0 0 22px rgba(245,158,11,0.28);
+      background: radial-gradient(circle at top left, rgba(245,158,11,0.24), rgba(9,24,13,0.94));
+    }
+
+    .sloth-ecosystem-card.dormant {
+      border-color: rgba(148,163,184,0.28);
+      box-shadow: 0 0 16px rgba(239,68,68,0.12);
+      background: radial-gradient(circle at top left, rgba(239,68,68,0.12), rgba(15,18,24,0.96));
+    }
+
+    .sloth-ecosystem-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 0;
+    }
+
+    .sloth-ecosystem-title {
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #d9f99d;
+      line-height: 1.15;
+    }
+
+    .sloth-ecosystem-subtitle {
+      margin-top: 3px;
+      font-size: 10px;
+      color: #c7d2ce;
+      line-height: 1.35;
+    }
+
+    .sloth-ecosystem-badge {
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(34,197,94,0.22);
+      border: 1px solid rgba(34,197,94,0.38);
+      color: #bbf7d0;
+      font-size: 9px;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .sloth-mini-colonies {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 5px;
+    }
+
+    .sloth-colony-chip {
+      min-height: 46px;
+      padding: 6px;
+      border-radius: 11px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.05);
+      opacity: 0.38;
+      transition: 0.18s ease;
+      overflow: hidden;
+      font-size: inherit;
+    }
+
+    .sloth-colony-chip.active {
+      opacity: 1;
+      transform: translateY(-1px);
+      box-shadow: 0 0 15px rgba(255,255,255,0.16);
+    }
+
+    .sloth-colony-chip.inactive { filter: grayscale(0.55); }
+    .sloth-colony-chip.dormant { opacity: 0.28; filter: grayscale(1); }
+
+    .sloth-colony-chip.boosted {
+      box-shadow: 0 0 18px rgba(245,158,11,0.42);
+      border-color: rgba(245,158,11,0.58);
+    }
+
+    .sloth-colony-chip-top {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .sloth-colony-emoji { font-size: 12px; }
+
+    .sloth-colony-name {
+      font-size: 8px;
+      font-weight: 900;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sloth-colony-state {
+      margin-top: 4px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font-size: 7px;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .sloth-chain-strip {
+      margin-top: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      font-size: 9px;
+      color: #d9f99d;
+      line-height: 1.25;
+    }
+
+    .sloth-chain-strip span {
+      padding: 4px 7px;
+      border-radius: 999px;
+      background: rgba(15,23,42,0.52);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .sloth-colony-algae { background: linear-gradient(135deg, rgba(34,197,94,0.20), rgba(16,185,129,0.10)); border-color: rgba(34,197,94,0.52); color: #bbf7d0; }
+    .sloth-colony-fungi { background: linear-gradient(135deg, rgba(168,85,247,0.22), rgba(76,29,149,0.12)); border-color: rgba(168,85,247,0.52); color: #e9d5ff; }
+    .sloth-colony-bacteria { background: linear-gradient(135deg, rgba(6,182,212,0.22), rgba(8,47,73,0.12)); border-color: rgba(6,182,212,0.52); color: #cffafe; }
+    .sloth-colony-mites { background: linear-gradient(135deg, rgba(245,158,11,0.22), rgba(124,45,18,0.12)); border-color: rgba(245,158,11,0.52); color: #fed7aa; }
+    .sloth-colony-lichens { background: linear-gradient(135deg, rgba(203,213,225,0.18), rgba(245,158,11,0.12)); border-color: rgba(203,213,225,0.42); color: #e5e7eb; }
+
+
+    .sloth-modal-box { max-width: 920px; }
+
+    .sloth-modal-summary {
+      margin-bottom: 12px;
+      padding: 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(34,197,94,0.25);
+      background: rgba(34,197,94,0.08);
+    }
+
+    .sloth-modal-summary.ancestral { border-color: rgba(245,158,11,0.38); background: rgba(245,158,11,0.09); }
+    .sloth-modal-summary.dormant { border-color: rgba(239,68,68,0.34); background: rgba(239,68,68,0.08); }
+
+    .sloth-modal-summary-label {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+    }
+
+    .sloth-modal-summary-value {
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .sloth-modal-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .sloth-modal-colony {
+      padding: 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.05);
+      opacity: 0.45;
+      min-height: 220px;
+    }
+
+    .sloth-modal-colony.active { opacity: 1; box-shadow: 0 0 18px rgba(34,197,94,0.16); }
+    .sloth-modal-colony.inactive { filter: grayscale(0.38); }
+    .sloth-modal-colony.dormant { opacity: 0.32; filter: grayscale(1); }
+    .sloth-modal-colony.boosted { border-color: rgba(245,158,11,0.60); box-shadow: 0 0 20px rgba(245,158,11,0.24); }
+
+    .sloth-modal-colony-title {
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1.2;
+    }
+
+    .sloth-modal-status {
+      margin: 8px 0;
+      display: inline-block;
+      padding: 4px 7px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      font-size: 9px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .sloth-modal-colony-effect,
+    .sloth-modal-colony-current,
+    .sloth-modal-colony-boost {
+      margin-top: 8px;
+      font-size: 11px;
+      line-height: 1.42;
+      color: #dbe3ee;
+    }
+
+    .sloth-modal-colony-current { color: #bbf7d0; }
+    .sloth-modal-colony-boost { color: #fed7aa; }
+
+  
+
+    /* Sloth colony badge safety: keep ACTIVE/AMP labels from covering emoji/title. */
+    .sloth-colony-state {
+      display: block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sloth-modal-colony-head {
+      display: grid;
+      grid-template-columns: 1fr;
+      align-items: flex-start;
+      gap: 6px;
+    }
+
+    .sloth-modal-colony-title {
+      min-width: 0;
+    }
+
+    .sloth-modal-status {
+      width: fit-content;
+      max-width: 100%;
+      align-self: flex-start;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
 
     .larval-command-modal {
       position: fixed;
@@ -1339,9 +1683,10 @@
       }
 
       .online-battle-fighter-image {
-        aspect-ratio: auto;
-        height: min(38vh, 148px);
-        min-height: 94px;
+        aspect-ratio: 2 / 3;
+        height: auto;
+        min-height: 0;
+        max-height: none;
       }
 
       .online-battle-fighter-body,
@@ -1880,7 +2225,7 @@
     }
 
     .octopus-adaptation-panel {
-      display: none;
+      display: block;
       margin-bottom: 8px;
       padding: 10px;
       border-radius: 14px;
@@ -2292,5 +2637,19 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="./js/online-tournament.js"></script>
+
+    <div id="slothEcosystemModal" class="larval-command-modal" style="display:none;">
+      <div class="larval-command-box sloth-modal-box">
+        <div class="larval-command-header">
+          <div>
+            <div class="larval-command-title">Living Ecosystem</div>
+            <div class="larval-command-subtitle" id="slothEcosystemModalSubtitle">Symbiotic colonies overview.</div>
+          </div>
+          <button id="slothEcosystemCloseBtn" class="larval-small-btn">×</button>
+        </div>
+        <div id="slothEcosystemModalBody"></div>
+      </div>
+    </div>
+
 </body>
 </html>

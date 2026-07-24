@@ -513,6 +513,36 @@
       display: none;
     }
 
+
+    .extra-resource.special-resource-panel {
+      padding: 0;
+      background: transparent;
+      border-radius: 0;
+      white-space: normal;
+      color: inherit;
+      font-size: inherit;
+      line-height: normal;
+    }
+
+    .extra-resource.special-resource-panel .sloth-ecosystem-card {
+      margin-top: 0;
+      white-space: normal;
+    }
+
+    .extra-resource.special-resource-panel[role="button"] {
+      cursor: pointer;
+    }
+
+    .extra-resource.special-resource-panel[role="button"] .sloth-ecosystem-card {
+      transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+    }
+
+    .extra-resource.special-resource-panel[role="button"]:hover .sloth-ecosystem-card {
+      border-color: rgba(34,197,94,0.48);
+      box-shadow: 0 0 18px rgba(34,197,94,0.18);
+      transform: translateY(-1px);
+    }
+
     .battle-center {
       display: grid;
       gap: 10px;
@@ -1296,8 +1326,10 @@
       }
 
       .battle-fighter-image {
-        height: min(42vh, 150px);
-        min-height: 104px;
+        aspect-ratio: 2 / 3;
+        height: auto;
+        min-height: 0;
+        max-height: none;
       }
 
       .actions-grid {
@@ -1350,7 +1382,7 @@
 
     .octopus-adaptation-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 6px;
     }
 
@@ -1912,7 +1944,6 @@
             <div class="octopus-adaptation-title">Coconut Octopus — Stand Phase</div>
             <div class="octopus-adaptation-status" id="octopusAdaptationStatus">Base Form · charges 8/8</div>
             <div class="octopus-adaptation-grid">
-              <button type="button" class="octopus-mini-btn octopus-form-btn" data-octopus-form="base">Base</button>
               <button type="button" class="octopus-mini-btn octopus-form-btn" data-octopus-form="offensive">Offensive</button>
               <button type="button" class="octopus-mini-btn octopus-form-btn" data-octopus-form="defensive">Defensive</button>
               <button type="button" class="octopus-mini-btn octopus-form-btn" data-octopus-form="evasive">Evasive</button>
