@@ -130,7 +130,11 @@ export function createFighter(id) {
 
     parasiticControlHits: 0,
     parasiticControlActive: false,
+    parasiticControlAppliedTurn: null,
     nervousDisruptionActive: false,
+    zombieCockroachTurns: 0,
+    zombieCockroachSourceName: null,
+    zombieCockroachConfused: false,
 
     falconStacks: 0,
     tempAccuracyLockTurns: 0,
@@ -155,6 +159,14 @@ export function createFighter(id) {
     bombardierValvePeroxide: animal.id === "bombardier-beetle" ? 0 : null,
     bombardierValveAttackReductionPct: 0,
     bombardierValveTechniqueReductionPct: 0,
+
+    hornedLizardPressure: animal.id === "horned-lizard" ? 0 : null,
+    hornedLizardMuscleDischargeReady: false,
+    hornedLizardPermanentExplosivenessBonus: 0,
+    hornedLizardPermanentDefenseBonus: 0,
+    hornedLizardTemporaryBlindnessActions: 0,
+    hornedLizardLeftEyeLost: false,
+    hornedLizardRightEyeLost: false,
 
     phantomCurrentActive: false,
 
@@ -598,6 +610,346 @@ function isOffensiveActionTargeting(actionType, fighter) {
     return fighter?.special?.chargeType === "offensive";
   }
   return false;
+}
+
+
+function isHornedLizard(fighter) {
+  return fighter?.passive?.id === "blood-pressure" || fighter?.id === "horned-lizard";
+}
+
+function clampHornedLizardPressure(value) {
+  return Math.max(0, Math.min(100, Math.round(value || 0)));
+}
+
+function getHornedLizardEyeLossCount(fighter) {
+  return (fighter?.hornedLizardLeftEyeLost ? 1 : 0) +
+    (fighter?.hornedLizardRightEyeLost ? 1 : 0);
+}
+
+function hasHornedLizardPartialVisionPenalty(fighter) {
+  return getHornedLizardEyeLossCount(fighter) === 1 ||
+    (fighter?.hornedLizardTemporaryBlindnessActions || 0) > 0;
+}
+
+function hasHornedLizardTotalBlindnessPenalty(fighter) {
+  return getHornedLizardEyeLossCount(fighter) >= 2;
+}
+
+function gainHornedLizardPressure(fighter, amount, battle, reason = "Blood Pressure") {
+  if (!isHornedLizard(fighter)) return 0;
+
+  const before = clampHornedLizardPressure(fighter.hornedLizardPressure);
+  const after = clampHornedLizardPressure(before + amount);
+  const gained = after - before;
+
+  fighter.hornedLizardPressure = after;
+
+  if (gained > 0) {
+    addLog(
+      battle,
+      fighter.name +
+        "'s Blood Pressure rises by " +
+        gained +
+        " from " +
+        reason +
+        " (" +
+        after +
+        "/100)."
+    );
+  } else {
+    addLog(
+      battle,
+      fighter.name +
+        "'s Blood Pressure is already at maximum (100/100)."
+    );
+  }
+
+  return gained;
+}
+
+function handleHornedLizardPressureFromCritical(attacker, defender, battle, critical) {
+  if (!critical) return;
+
+  if (isHornedLizard(attacker)) {
+    gainHornedLizardPressure(attacker, 20, battle, "its own critical hit");
+  }
+
+  if (isHornedLizard(defender)) {
+    gainHornedLizardPressure(defender, 20, battle, "the enemy critical hit");
+  }
+}
+
+function consumeHornedLizardOffensiveTemporaryStates(fighter, actionType, battle) {
+  if (!isOffensiveActionTargeting(actionType, fighter)) return;
+
+  if (isHornedLizard(fighter) && fighter.hornedLizardMuscleDischargeReady) {
+    fighter.hornedLizardMuscleDischargeReady = false;
+    addLog(
+      battle,
+      fighter.name + "'s Muscular Discharge is spent after the offensive action."
+    );
+  }
+
+  if ((fighter.hornedLizardTemporaryBlindnessActions || 0) > 0) {
+    fighter.hornedLizardTemporaryBlindnessActions = Math.max(
+      0,
+      fighter.hornedLizardTemporaryBlindnessActions - 1
+    );
+  }
+}
+
+function applyHornedLizardEyePenaltyToStat(fighter, stat, value) {
+  if (stat !== "technique" && stat !== "agility") return value;
+
+  if (hasHornedLizardTotalBlindnessPenalty(fighter)) {
+    return 0;
+  }
+
+  if (hasHornedLizardPartialVisionPenalty(fighter)) {
+    return value * 0.5;
+  }
+
+  return value;
+}
+
+function applyHornedLizardTemporaryBlindness(target, charges, battle) {
+  const previous = target.hornedLizardTemporaryBlindnessActions || 0;
+  const next = Math.max(previous, charges);
+
+  target.hornedLizardTemporaryBlindnessActions = next;
+
+  addLog(
+    battle,
+    target.name +
+      " is blinded by ocular blood for " +
+      next +
+      " offensive action" +
+      (next === 1 ? "" : "s") +
+      "."
+  );
+}
+
+function applyHornedLizardEyeLoss(target, eye, battle) {
+  const key = eye === "left" ? "hornedLizardLeftEyeLost" : "hornedLizardRightEyeLost";
+
+  if (target[key]) return false;
+
+  target[key] = true;
+
+  addLog(
+    battle,
+    target.name +
+      " loses its " +
+      eye +
+      " eye. Ocular damage is permanent for this battle."
+  );
+
+  const lostEyes = getHornedLizardEyeLossCount(target);
+
+  if (lostEyes === 1) {
+    addLog(
+      battle,
+      target.name +
+        " suffers Partial Vision: Technique and Agility are permanently reduced by 50%."
+    );
+  }
+
+  if (lostEyes >= 2) {
+    addLog(
+      battle,
+      target.name +
+        " suffers Total Blindness: Technique and Agility are permanently reduced to 0."
+    );
+  }
+
+  return true;
+}
+
+function resolveHornedLizardGougingAttempt(attacker, defender, eye, battle) {
+  const key = eye === "left" ? "hornedLizardLeftEyeLost" : "hornedLizardRightEyeLost";
+  const roll = Math.random();
+
+  if (!defender[key]) {
+    if (roll < 0.1) {
+      applyHornedLizardEyeLoss(defender, eye, battle);
+      return { eye, success: true, type: "eye-lost", healed: 0 };
+    }
+
+    addLog(
+      battle,
+      attacker.name +
+        " claws for " +
+        defender.name +
+        "'s " +
+        eye +
+        " eye, but the Gouging attempt fails."
+    );
+
+    return { eye, success: false, type: "miss", healed: 0 };
+  }
+
+  if (roll < 0.1) {
+    const beforeHp = attacker.hp;
+    restoreHp(attacker, 100);
+    const healed = attacker.hp - beforeHp;
+
+    addLog(
+      battle,
+      attacker.name +
+        " licks blood from " +
+        defender.name +
+        "'s empty " +
+        eye +
+        " socket and restores " +
+        healed +
+        " HP."
+    );
+
+    return { eye, success: true, type: "blood-lick", healed };
+  }
+
+  addLog(
+    battle,
+    attacker.name +
+      " reaches for the already ruined " +
+      eye +
+      " socket, but fails to feed from it."
+  );
+
+  return { eye, success: false, type: "blood-lick-failed", healed: 0 };
+}
+
+function performHornedLizardGouging(attacker, defender, battle, source = "Gouging") {
+  if (!isHornedLizard(attacker) || !defender?.alive) {
+    return [];
+  }
+
+  addLog(
+    battle,
+    attacker.name +
+      " attempts " +
+      source +
+      ": two independent eye attacks, one per eye."
+  );
+
+  const results = [
+    resolveHornedLizardGougingAttempt(attacker, defender, "left", battle),
+    resolveHornedLizardGougingAttempt(attacker, defender, "right", battle)
+  ];
+
+  finishBattleIfNeeded(battle);
+  return results;
+}
+
+export function canUseHornedLizardPressureControl(fighter, option) {
+  if (!isHornedLizard(fighter)) return false;
+
+  const costs = {
+    recovery: 20,
+    "muscular-discharge": 40,
+    hypertension: 60,
+    vasoconstriction: 80,
+    gouging: 100
+  };
+
+  const cost = costs[option];
+  if (!cost) return false;
+
+  return clampHornedLizardPressure(fighter.hornedLizardPressure) >= cost;
+}
+
+export function applyHornedLizardPressureControl(fighter, opponent, battle, option) {
+  if (!isHornedLizard(fighter)) {
+    return { ok: false, message: "Only the Texas Horned Lizard can use Pressure Control." };
+  }
+
+  if (!battle || battle.finished) {
+    return { ok: false, message: "Pressure Control can only be used during an active battle." };
+  }
+
+  if (!canUseHornedLizardPressureControl(fighter, option)) {
+    return { ok: false, message: "Not enough Blood Pressure for this Pressure Control option." };
+  }
+
+  const costs = {
+    recovery: 20,
+    "muscular-discharge": 40,
+    hypertension: 60,
+    vasoconstriction: 80,
+    gouging: 100
+  };
+
+  const cost = costs[option];
+  fighter.hornedLizardPressure = clampHornedLizardPressure(
+    (fighter.hornedLizardPressure || 0) - cost
+  );
+
+  if (option === "recovery") {
+    const before = fighter.stamina;
+    restoreStamina(fighter, 20, battle);
+    const restored = fighter.stamina - before;
+
+    addLog(
+      battle,
+      fighter.name +
+        " uses Pressure Control — Recovery, spending 20 Pressure to restore " +
+        restored +
+        " Stamina."
+    );
+
+    return { ok: true, message: "Recovery prepared: +" + restored + " Stamina." };
+  }
+
+  if (option === "muscular-discharge") {
+    fighter.hornedLizardMuscleDischargeReady = true;
+
+    addLog(
+      battle,
+      fighter.name +
+        " uses Pressure Control — Muscular Discharge, spending 40 Pressure. Its next offensive action uses doubled Explosiveness for critical chance."
+    );
+
+    return { ok: true, message: "Muscular Discharge prepared for the next offensive action." };
+  }
+
+  if (option === "hypertension") {
+    fighter.hornedLizardPermanentExplosivenessBonus =
+      (fighter.hornedLizardPermanentExplosivenessBonus || 0) + 2;
+
+    addLog(
+      battle,
+      fighter.name +
+        " uses Pressure Control — Muscular Hypertension, spending 60 Pressure for +2 permanent Explosiveness."
+    );
+
+    return { ok: true, message: "Permanent Explosiveness +2." };
+  }
+
+  if (option === "vasoconstriction") {
+    fighter.hornedLizardPermanentDefenseBonus =
+      (fighter.hornedLizardPermanentDefenseBonus || 0) + 3;
+
+    addLog(
+      battle,
+      fighter.name +
+        " uses Pressure Control — Vasoconstriction, spending 80 Pressure for +3 permanent Defense."
+    );
+
+    return { ok: true, message: "Permanent Defense +3." };
+  }
+
+  if (option === "gouging") {
+    addLog(
+      battle,
+      fighter.name +
+        " uses Pressure Control — Gouging, spending 100 Pressure before its main action."
+    );
+
+    performHornedLizardGouging(fighter, opponent, battle, "Gouging");
+    return { ok: true, message: "Gouging resolved. Choose the main action." };
+  }
+
+  return { ok: false, message: "Unknown Pressure Control option." };
 }
 
 function getRibbedGuardExtraStaminaCost(opponent) {
@@ -1750,10 +2102,11 @@ function increaseParasiticControlHits(attacker, defender, battle) {
   if (attacker.parasiticControlHits >= 3) {
     attacker.parasiticControlHits = 0;
     defender.parasiticControlActive = true;
+    defender.parasiticControlAppliedTurn = battle?.turn ?? null;
 
     addLog(
       battle,
-      `${attacker.name}'s Parasitic Control disrupts ${defender.name}: next turn, no Concentration or Special Attack, and 50% chance to hit itself.`
+      `${attacker.name}'s Parasitic Control infects ${defender.name}. It will affect ${defender.name}'s next real action from the next turn onward: no Concentration or Special Attack, and 50% chance to hit itself.`
     );
   }
 }
@@ -2070,6 +2423,23 @@ function handleFennecMirageProgress(fighter, battle, requirement) {
   }
 }
 
+function isParasiticControlReady(fighter, battle) {
+  if (!fighter?.parasiticControlActive) return false;
+  const appliedTurn = fighter.parasiticControlAppliedTurn;
+  if (appliedTurn === null || appliedTurn === undefined) return true;
+  if (!battle || typeof battle.turn !== "number") return true;
+  return appliedTurn < battle.turn;
+}
+
+function mindControlBlocksAction(fighter, battle) {
+  return Boolean(fighter?.nervousDisruptionActive || isParasiticControlReady(fighter, battle));
+}
+
+function clearParasiticControlState(fighter) {
+  fighter.parasiticControlActive = false;
+  fighter.parasiticControlAppliedTurn = null;
+}
+
 function calculateSelfHitDamage(fighter, battle, multiplier = 1) {
   const damageInfo = calculateDamageWithDefenseFactor(
     fighter,
@@ -2094,11 +2464,11 @@ function resolveMindControlTurn(fighter, battle) {
     );
 
     fighter.nervousDisruptionActive = false;
-    fighter.parasiticControlActive = false;
+    clearParasiticControlState(fighter);
     return true;
   }
 
-  if (fighter.parasiticControlActive) {
+  if (isParasiticControlReady(fighter, battle)) {
     const selfHit = Math.random() < 0.5;
 
     if (selfHit) {
@@ -2111,17 +2481,28 @@ function resolveMindControlTurn(fighter, battle) {
         `${fighter.name} is affected by Parasitic Control and hits itself for ${selfDamage} damage.`
       );
 
-      fighter.parasiticControlActive = false;
+      clearParasiticControlState(fighter);
       return true;
     }
+  }
+
+  if (fighter.zombieCockroachConfused) {
+    fighter.zombieCockroachConfused = false;
+
+    addLog(
+      battle,
+      `${fighter.name} is neurologically confused by Zombie Cockroach and loses its action.`
+    );
+
+    return true;
   }
 
   return false;
 }
 
 function consumeOneTurnControlState(fighter, battle) {
-  if (fighter.parasiticControlActive) {
-    fighter.parasiticControlActive = false;
+  if (isParasiticControlReady(fighter, battle)) {
+    clearParasiticControlState(fighter);
     addLog(
       battle,
       `${fighter.name} breaks free from Parasitic Control.`
@@ -2317,6 +2698,14 @@ function createTetrodotoxinEffect(duration = 2) {
 export function getEffectiveStat(fighter, stat, battle, opponent = null, actionType = null) {
   let value = fighter.stats[stat];
 
+  if (stat === "explosiveness" && (fighter.hornedLizardPermanentExplosivenessBonus || 0) > 0) {
+    value += fighter.hornedLizardPermanentExplosivenessBonus || 0;
+  }
+
+  if (stat === "defense" && (fighter.hornedLizardPermanentDefenseBonus || 0) > 0) {
+    value += fighter.hornedLizardPermanentDefenseBonus || 0;
+  }
+
   if (fighter.passive?.id === "circadian-cycle") {
     if (isCircadianDay(battle)) {
       if (stat === "attack") value *= 0.5;
@@ -2432,6 +2821,8 @@ export function getEffectiveStat(fighter, stat, battle, opponent = null, actionT
     value *= Math.max(0, 1 - fighter.bombardierValveTechniqueReductionPct / 100);
   }
 
+  value = applyHornedLizardEyePenaltyToStat(fighter, stat, value);
+
   return value;
 }
 
@@ -2505,8 +2896,17 @@ export function rollHit(hitChance) {
 }
 
 export function calculateCriticalChance(fighter, battle, actionType) {
-  let chance =
-    getEffectiveStat(fighter, "explosiveness", battle, null, actionType) * 0.4;
+  let explosivenessValue = getEffectiveStat(fighter, "explosiveness", battle, null, actionType);
+
+  if (
+    isHornedLizard(fighter) &&
+    fighter.hornedLizardMuscleDischargeReady &&
+    isOffensiveActionTargeting(actionType, fighter)
+  ) {
+    explosivenessValue *= 2;
+  }
+
+  let chance = explosivenessValue * 0.4;
 
   if (actionType === "explosive") {
     chance += 20;
@@ -2911,7 +3311,7 @@ export function canUseAction(fighter, actionType, battle = null) {
   if (actionType === "concentration") {
     if (fighter.concentratedLastTurn && fighter.passive?.id !== "reaction-chamber") return false;
     if (!canConcentrateUnderEffects(fighter)) return false;
-    if (fighter.parasiticControlActive || fighter.nervousDisruptionActive) return false;
+    if (mindControlBlocksAction(fighter, battle)) return false;
   }
 
   if (actionType === "special") {
@@ -2947,7 +3347,7 @@ export function canUseAction(fighter, actionType, battle = null) {
       return false;
     }
 
-    if (fighter.parasiticControlActive || fighter.nervousDisruptionActive) return false;
+    if (mindControlBlocksAction(fighter, battle)) return false;
 
     const specialExtraCost = getFinalActionStaminaCost(fighter, actionType, opponent);
     if (specialExtraCost > 0 && fighter.stamina < specialExtraCost) return false;
@@ -3526,6 +3926,14 @@ export function performAttack(attacker, defender, actionType, battle) {
     consumeNextAttackBuff(attacker);
   }
 
+  if (isHornedLizard(attacker) && attacker.hornedLizardMuscleDischargeReady) {
+    addLog(
+      battle,
+      attacker.name +
+        "'s Muscular Discharge doubles Explosiveness for this critical roll."
+    );
+  }
+
   const critChance = calculateCriticalChance(attacker, battle, actionType);
   let critical = rollCritical(critChance);
 
@@ -3597,6 +4005,8 @@ export function performAttack(attacker, defender, actionType, battle) {
         "."
     );
   }
+
+  handleHornedLizardPressureFromCritical(attacker, defender, battle, critical);
 
   addLog(
     battle,
@@ -4628,7 +5038,7 @@ function performEmeraldWaspSpecial(attacker, defender, battle) {
   if (!hit) {
     addLog(
       battle,
-      attacker.name + " uses Nervous Disruption but misses " + defender.name + "."
+      attacker.name + " uses Zombie Cockroach but misses " + defender.name + "."
     );
 
     resetMomentum(attacker, battle, "miss");
@@ -4641,52 +5051,24 @@ function performEmeraldWaspSpecial(attacker, defender, battle) {
     return;
   }
 
-  const damageInfo = calculateDamageWithDefenseFactor(
-    attacker,
-    defender,
-    battle,
-    1,
-    "special"
-  );
-
-  let damage = damageInfo.damage;
-
-  damage = applyIllusoryDanceDefense(defender, damage, battle);
-  damage = applyCostalEversionDefense(defender, attacker, damage, battle);
-  damage = applyCaudalAutotomyDefense(defender, attacker, damage, battle);
-  damage = applyAncestralRetreatDefense(defender, attacker, damage, battle);
-  damage = applyCoconutFortressDefense(defender, damage, battle);
-  damage = applyDarwinsLarvalDefense(defender, attacker, damage, battle);
-
-  applyDamage(defender, damage);
-  applyDirectHitRecoil(attacker, defender, battle, damage);
-    handleScaledRetreatBonus(attacker, defender, battle);
-
   if (darwinsLarvalDefenseBlocksSecondaryEffects(defender, battle)) {
     addLog(
       battle,
-      attacker.name + "'s Nervous Disruption fails to take control."
-    );
-
-    addLog(
-      battle,
-      attacker.name +
-        " uses Nervous Disruption, dealing " +
-        damage +
-        " damage."
+      attacker.name + "'s Zombie Cockroach fails to attach to " + defender.name + "."
     );
   } else {
-    defender.nervousDisruptionActive = true;
-    defender.parasiticControlActive = false;
+    defender.zombieCockroachTurns = 3;
+    defender.zombieCockroachSourceName = attacker.name;
+    defender.zombieCockroachConfused = false;
 
     addLog(
       battle,
       attacker.name +
-        " uses Nervous Disruption, dealing " +
-        damage +
-        " damage. On " +
+        " uses Zombie Cockroach: a neurotoxic zombie roach attaches to " +
         defender.name +
-        "'s next turn, it hits itself and cannot use Concentration or Special Attack."
+        " for up to 3 turns. At the end of each turn it drains 20 HP and 10 Stamina, has a 20% chance to confuse the next action, and then " +
+        defender.name +
+        " has a 20% chance to remove it."
     );
   }
 
@@ -5591,6 +5973,38 @@ function performBombardierBeetleSpecial(attacker, defender, battle) {
   );
 }
 
+
+function performHornedLizardBloodyGouging(attacker, defender, battle) {
+  attacker.concentratedLastTurn = false;
+  attacker.overinflationUsedThisTurn = false;
+
+  const pressure = clampHornedLizardPressure(attacker.hornedLizardPressure);
+  const damage = 80 + Math.floor(pressure / 20) * 20;
+
+  addLog(
+    battle,
+    attacker.name +
+      " uses Bloody Gouging, firing pressurized ocular blood into " +
+      defender.name +
+      "'s face for " +
+      damage +
+      " true damage. Current Blood Pressure: " +
+      pressure +
+      "/100."
+  );
+
+  applyDamage(defender, damage);
+  finishBattleIfNeeded(battle);
+
+  if (defender.alive) {
+    applyHornedLizardTemporaryBlindness(defender, 2, battle);
+    performHornedLizardGouging(attacker, defender, battle, "Bloody Gouging follow-up Gouging");
+  }
+
+  consumeSpecialCharge(attacker);
+  finishBattleIfNeeded(battle);
+}
+
 function performSpecialAction(attacker, defender, battle) {
   if (!attacker.special) return;
 
@@ -5617,6 +6031,9 @@ function performSpecialAction(attacker, defender, battle) {
     case "chain-reaction":
       performBombardierBeetleSpecial(attacker, defender, battle);
       break;
+    case "bloody-gouging":
+      performHornedLizardBloodyGouging(attacker, defender, battle);
+      break;
     case "marine-flash":
       performMantisShrimpSpecial(attacker, defender, battle);
       break;
@@ -5630,6 +6047,7 @@ function performSpecialAction(attacker, defender, battle) {
       performAxolotlSpecial(attacker, battle);
       break;
     case "nervous-disruption":
+    case "zombie-cockroach":
       performEmeraldWaspSpecial(attacker, defender, battle);
       break;
     case "deadly-dive":
@@ -5682,7 +6100,55 @@ function performSpecialAction(attacker, defender, battle) {
   }
 }
 
+function handleZombieCockroachEndTurn(fighter, battle) {
+  if (!fighter || (fighter.zombieCockroachTurns || 0) <= 0) return;
+
+  const sourceName = fighter.zombieCockroachSourceName || "Emerald Wasp";
+  const hpBefore = fighter.hp;
+  const staminaBefore = fighter.stamina;
+
+  applyDamage(fighter, 20);
+  fighter.stamina = Math.max(0, fighter.stamina - 10);
+
+  const hpDrained = hpBefore - fighter.hp;
+  const staminaDrained = staminaBefore - fighter.stamina;
+
+  addLog(
+    battle,
+    `${sourceName}'s Zombie Cockroach drains ${hpDrained} HP and ${staminaDrained} Stamina from ${fighter.name}.`
+  );
+
+  if (fighter.alive && Math.random() < 0.2) {
+    fighter.zombieCockroachConfused = true;
+    addLog(
+      battle,
+      `${fighter.name}'s nervous system spasms: Zombie Cockroach will confuse its next action.`
+    );
+  }
+
+  if (fighter.alive && Math.random() < 0.2) {
+    fighter.zombieCockroachTurns = 0;
+    fighter.zombieCockroachSourceName = null;
+    addLog(
+      battle,
+      `${fighter.name} tears off the Zombie Cockroach.`
+    );
+    return;
+  }
+
+  fighter.zombieCockroachTurns = Math.max(0, (fighter.zombieCockroachTurns || 0) - 1);
+
+  if (fighter.zombieCockroachTurns <= 0) {
+    fighter.zombieCockroachSourceName = null;
+    addLog(
+      battle,
+      `The Zombie Cockroach falls from ${fighter.name}.`
+    );
+  }
+}
+
 function processEndTurnPassives(fighter, opponent, battle) {
+  handleZombieCockroachEndTurn(fighter, battle);
   if (!fighter.alive) return;
 
   if (fighter.passive?.id === "neotenic-regeneration") {
@@ -5793,6 +6259,7 @@ export function performAction(attacker, defender, actionType, battle) {
     }
 
     performSpecialAction(attacker, defender, battle);
+    consumeHornedLizardOffensiveTemporaryStates(attacker, actionType, battle);
     consumeOneTurnControlState(attacker, battle);
     return;
   }
@@ -5804,6 +6271,7 @@ export function performAction(attacker, defender, actionType, battle) {
   }
 
   performAttack(attacker, defender, actionType, battle);
+  consumeHornedLizardOffensiveTemporaryStates(attacker, actionType, battle);
   consumeOneTurnControlState(attacker, battle);
 }
 
@@ -5866,6 +6334,14 @@ function logFighterState(battle, fighter) {
     addLog(
       battle,
       `${fighter.name} → HP: ${fighter.hp}/${fighter.maxHp} (${hpPercent}%) | Stamina: ${fighter.stamina}/${fighter.maxStamina} (${staminaPercent}%) | Special Charge: ${fighter.specialCharge}/${fighter.special?.chargeHits ?? 0} | Reaction Chamber: 🔴 ${fighter.bombardierHydroquinone || 0}/3 🔵 ${fighter.bombardierPeroxide || 0}/3.`
+    );
+    return;
+  }
+
+  if (fighter.special?.id === "bloody-gouging") {
+    addLog(
+      battle,
+      `${fighter.name} → HP: ${fighter.hp}/${fighter.maxHp} (${hpPercent}%) | Stamina: ${fighter.stamina}/${fighter.maxStamina} (${staminaPercent}%) | Special Charge: ${fighter.specialCharge}/${fighter.special?.chargeHits ?? 0} | Blood Pressure: ${fighter.hornedLizardPressure || 0}/100 | Eyes lost: ${getHornedLizardEyeLossCount(fighter)}/2.`
     );
     return;
   }

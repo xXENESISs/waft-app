@@ -1,7 +1,7 @@
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
-import { createBattle, resolveTurn, canUseAction, transformCoconutOctopus, setCoconutOctopusPerfectAdaptationChoice } from "./js/battle-engine.js";
+import { createBattle, resolveTurn, canUseAction, transformCoconutOctopus, setCoconutOctopusPerfectAdaptationChoice, applyHornedLizardPressureControl } from "./js/battle-engine.js";
 import { animals } from "./js/animals.js";
 import { chooseAndApplyAIAction } from "./js/ai-controller.js";
 
@@ -697,6 +697,19 @@ function applyCoconutPerfectAdaptationChoiceIfNeeded(fighter, choice) {
   setCoconutOctopusPerfectAdaptationChoice(fighter, normalized);
 }
 
+function normalizeHornedLizardPressureControl(option) {
+  const allowed = ["recovery", "muscular-discharge", "hypertension", "vasoconstriction", "gouging"];
+  return allowed.includes(option) ? option : null;
+}
+
+function applyHornedLizardPressureControlIfNeeded(fighter, opponent, battle, option) {
+  const normalized = normalizeHornedLizardPressureControl(option);
+  if (!normalized) return null;
+  if (!fighter || fighter.id !== "horned-lizard") return null;
+  return applyHornedLizardPressureControl(fighter, opponent, battle, normalized);
+}
+
+
 function getBattleFighterForSocket(room, socketId) {
   if (!room?.battle || !room.players) return null;
   if (room.players[0] === socketId) return room.battle.fighterA;
@@ -808,7 +821,7 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("playerAction", ({ roomCode, action, larvalCommand = null, coconutPerfectAdaptationChoice = null }) => {
+  socket.on("playerAction", ({ roomCode, action, larvalCommand = null, coconutPerfectAdaptationChoice = null, hornedLizardPressureControl = null }) => {
     const normalizedCode = normalizeRoomCode(roomCode);
     const room = rooms[normalizedCode];
     if (!room || !room.battle) return;
@@ -816,7 +829,8 @@ io.on("connection", (socket) => {
     room.actions[socket.id] = {
       action,
       larvalCommand: normalizeLarvalCommand(larvalCommand),
-      coconutPerfectAdaptationChoice: normalizeCoconutPerfectAdaptationChoice(coconutPerfectAdaptationChoice)
+      coconutPerfectAdaptationChoice: normalizeCoconutPerfectAdaptationChoice(coconutPerfectAdaptationChoice),
+      hornedLizardPressureControl: normalizeHornedLizardPressureControl(hornedLizardPressureControl)
     };
 
     socket.emit("waitingForOpponentAction");
@@ -839,7 +853,23 @@ io.on("connection", (socket) => {
       applyCoconutPerfectAdaptationChoiceIfNeeded(room.battle.fighterA, player1ActionData.coconutPerfectAdaptationChoice);
       applyCoconutPerfectAdaptationChoiceIfNeeded(room.battle.fighterB, player2ActionData.coconutPerfectAdaptationChoice);
 
+      const hornedLizardPressureControl1 = player1ActionData.hornedLizardPressureControl;
+      const hornedLizardPressureControl2 = player2ActionData.hornedLizardPressureControl;
+
       const oldLogLength = room.battle.log.length;
+
+      applyHornedLizardPressureControlIfNeeded(
+        room.battle.fighterA,
+        room.battle.fighterB,
+        room.battle,
+        hornedLizardPressureControl1
+      );
+      applyHornedLizardPressureControlIfNeeded(
+        room.battle.fighterB,
+        room.battle.fighterA,
+        room.battle,
+        hornedLizardPressureControl2
+      );
 
       resolveTurn(room.battle, action1, action2);
 
@@ -852,6 +882,8 @@ io.on("connection", (socket) => {
         action2,
         larvalCommand1,
         larvalCommand2,
+        hornedLizardPressureControl1,
+        hornedLizardPressureControl2,
         player1: p1,
         player2: p2
       });

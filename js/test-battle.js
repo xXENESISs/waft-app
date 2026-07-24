@@ -49,7 +49,9 @@ import {
   canUseAction,
   getEffectiveStat,
   transformCoconutOctopus,
-  setCoconutOctopusPerfectAdaptationChoice
+  setCoconutOctopusPerfectAdaptationChoice,
+  applyHornedLizardPressureControl,
+  canUseHornedLizardPressureControl
 } from "./battle-engine.js";
 import { chooseAndApplyAIAction } from "./ai-controller.js";
 
@@ -65,6 +67,7 @@ let lastTurnSummaryLines = ["Start a battle to begin."];
 let playerFlipped = false;
 let enemyFlipped = true;
 let pendingOctopusFormPreview = null;
+let pendingHornedPressureControl = null;
 let preBattlePreviewPlayer = null;
 
 let isAnimatingTurn = false;
@@ -370,6 +373,48 @@ function setSlothExtraResourceClickable(extraResourceEl, enabled) {
   extraResourceEl.title = enabled ? "Open Living Ecosystem" : "";
 }
 
+function getHornedFighterForExtraResourcePrefix(prefix) {
+  if (currentBattle) {
+    const { player, enemy } = getBattleFighters();
+    return prefix === "player" ? player : enemy;
+  }
+
+  const selectId = prefix === "player" ? "playerFighter" : "enemyFighter";
+  const selectedId = document.getElementById(selectId)?.value;
+  return selectedId ? createPreviewFighterState(selectedId) : null;
+}
+
+function bindHornedPressureExtraResourceCard(prefix) {
+  const extraResourceEl = document.getElementById(`${prefix}ExtraResource`);
+  if (!extraResourceEl || extraResourceEl.dataset.hornedPressureCardClickBound === "true") return;
+
+  extraResourceEl.dataset.hornedPressureCardClickBound = "true";
+
+  const openFromCard = (event) => {
+    const card = event.target.closest(".horned-pressure-card");
+    if (!card || !extraResourceEl.contains(card)) return;
+
+    const fighter = getHornedFighterForExtraResourcePrefix(prefix);
+    openHornedLizardPressureControlModal(fighter, true);
+  };
+
+  extraResourceEl.addEventListener("click", openFromCard);
+  extraResourceEl.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target.closest(".horned-pressure-card");
+    if (!card || !extraResourceEl.contains(card)) return;
+    event.preventDefault();
+    openFromCard(event);
+  });
+}
+
+function setHornedPressureExtraResourceClickable(extraResourceEl, enabled) {
+  if (!extraResourceEl) return;
+
+  extraResourceEl.classList.toggle("clickable-horned-pressure-resource", Boolean(enabled));
+  extraResourceEl.title = enabled ? "Open Pressure Control" : "";
+}
+
 function openSlothEcosystemModalForFighter(fighter, showAlert = false) {
   if (!isThreeToedSlothFighter(fighter)) {
     if (showAlert) alert("Only the Three-Toed Sloth has a Living Ecosystem.");
@@ -495,6 +540,924 @@ function getCoconutOctopusStatusText(fighter) {
 }
 
 
+const HORNED_PRESSURE_CONTROL_OPTIONS = [
+  {
+    id: "recovery",
+    cost: 20,
+    emoji: "❤️",
+    title: "Recovery",
+    desc: "Restore 20 Stamina."
+  },
+  {
+    id: "muscular-discharge",
+    cost: 40,
+    emoji: "💥",
+    title: "Muscular Discharge",
+    desc: "Next offensive action uses doubled Explosiveness for critical chance."
+  },
+  {
+    id: "hypertension",
+    cost: 60,
+    emoji: "📈",
+    title: "Muscular Hypertension",
+    desc: "+2 permanent Explosiveness for the rest of the battle."
+  },
+  {
+    id: "vasoconstriction",
+    cost: 80,
+    emoji: "🛡️",
+    title: "Vasoconstriction",
+    desc: "+3 permanent Defense for the rest of the battle."
+  },
+  {
+    id: "gouging",
+    cost: 100,
+    emoji: "👁️",
+    title: "Gouging",
+    desc: "Two independent 10% eye attacks. Already lost eyes can heal the lizard by 100 HP each."
+  }
+];
+
+function getHornedPressureControlOption(optionId) {
+  return HORNED_PRESSURE_CONTROL_OPTIONS.find((option) => option.id === optionId) || null;
+}
+
+function getPendingHornedPressureControlLabel() {
+  const option = getHornedPressureControlOption(pendingHornedPressureControl);
+  return option ? option.title : null;
+}
+
+function clearPendingHornedPressureControl() {
+  pendingHornedPressureControl = null;
+}
+
+function isHornedLizardFighter(fighter) {
+  return fighter?.id === "horned-lizard" || fighter?.passive?.id === "blood-pressure";
+}
+
+function getHornedLizardEyeLossCount(fighter) {
+  return (fighter?.hornedLizardLeftEyeLost ? 1 : 0) +
+    (fighter?.hornedLizardRightEyeLost ? 1 : 0);
+}
+
+function getHornedLizardVisionText(fighter) {
+  const lostEyes = getHornedLizardEyeLossCount(fighter);
+
+  if (lostEyes >= 2) return "Total Blindness";
+  if (lostEyes === 1) return "Partial Vision";
+  if ((fighter?.hornedLizardTemporaryBlindnessActions || 0) > 0) return "Blood-Blinded";
+  return "Normal";
+}
+
+function getHornedLizardEyePanelState(isLost, blindActions = 0) {
+  if (isLost) {
+    return {
+      className: "lost",
+      label: "RIPPED OUT"
+    };
+  }
+
+  if (blindActions > 0) {
+    return {
+      className: "blinded",
+      label: "BLOOD-BLINDED"
+    };
+  }
+
+  return {
+    className: "intact",
+    label: "INTACT"
+  };
+}
+
+function renderHornedLizardPressurePanel(fighter) {
+  const pressure = Math.max(0, Math.min(100, fighter?.hornedLizardPressure || 0));
+  const pressurePct = pressure;
+  const explosiveBonus = fighter?.hornedLizardPermanentExplosivenessBonus || 0;
+  const defenseBonus = fighter?.hornedLizardPermanentDefenseBonus || 0;
+  const dischargeReady = Boolean(fighter?.hornedLizardMuscleDischargeReady);
+  const pendingLabel = isHornedLizardFighter(fighter) && currentBattle && getBattleFighters().player === fighter
+    ? getPendingHornedPressureControlLabel()
+    : null;
+
+  return `
+    <div class="horned-pressure-card clickable-horned-pressure-card${pendingLabel ? " pending" : ""}" role="button" tabindex="0" title="Open Pressure Control">
+      <div class="horned-pressure-header">
+        <div>
+          <div class="horned-pressure-title">🩸 Blood Pressure</div>
+          <div class="horned-pressure-subtitle">${pendingLabel ? "Pending: activates with your next action" : "Click to open Pressure Control"}</div>
+        </div>
+        <div class="horned-pressure-badge">${pressure}/100</div>
+      </div>
+      <div class="horned-pressure-meter">
+        <div class="horned-pressure-fill" style="width:${pressurePct}%"></div>
+      </div>
+      <div class="horned-bonus-grid">
+        <div class="horned-bonus-chip${pendingLabel ? " active pending" : ""}">${pendingLabel ? "⏳ " + pendingLabel : "🫀 No control"}</div>
+        <div class="horned-bonus-chip${dischargeReady ? " active" : ""}">💥 ${dischargeReady ? "Discharge ready" : "Off"}</div>
+        <div class="horned-bonus-chip${explosiveBonus > 0 || defenseBonus > 0 ? " active" : ""}">📈 +${explosiveBonus} · 🛡️ +${defenseBonus}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderHornedLizardOcularPanel(fighter) {
+  const leftLost = Boolean(fighter?.hornedLizardLeftEyeLost);
+  const rightLost = Boolean(fighter?.hornedLizardRightEyeLost);
+  const blindActions = fighter?.hornedLizardTemporaryBlindnessActions || 0;
+  const vision = getHornedLizardVisionText(fighter);
+  const leftEye = getHornedLizardEyePanelState(leftLost, blindActions);
+  const rightEye = getHornedLizardEyePanelState(rightLost, blindActions);
+
+  return `
+    <div class="horned-ocular-card${getHornedLizardEyeLossCount(fighter) >= 2 ? " total" : getHornedLizardEyeLossCount(fighter) === 1 || blindActions > 0 ? " partial" : ""}">
+      <div class="horned-pressure-header horned-ocular-header">
+        <div>
+          <div class="horned-pressure-title">👁️ Ocular State</div>
+          <div class="horned-pressure-subtitle">${blindActions > 0 ? "Blood blindness active" : "Eye damage tracked here"}</div>
+        </div>
+        <div class="horned-pressure-badge">${vision}</div>
+      </div>
+      <div class="horned-eye-row">
+        <div class="horned-eye-chip ${leftEye.className}">Left: ${leftEye.label}</div>
+        <div class="horned-eye-chip ${rightEye.className}">Right: ${rightEye.label}</div>
+      </div>
+      <div class="horned-blindness-line">Blindness: ${blindActions}/2 offensive action${blindActions === 1 ? "" : "s"}</div>
+    </div>
+  `;
+}
+
+function updateHornedLizardOcularResource(prefix, fighter, opponent = null) {
+  const resource = document.getElementById(`${prefix}OcularResource`);
+  if (!resource) return;
+
+  const shouldShow = Boolean(currentBattle && fighter && isHornedLizardFighter(opponent));
+
+  if (!shouldShow) {
+    resource.innerHTML = "";
+    resource.style.display = "none";
+    return;
+  }
+
+  resource.innerHTML = renderHornedLizardOcularPanel(fighter);
+  resource.style.display = "block";
+}
+
+function getHornedLizardPressureStatusText(fighter) {
+  if (!fighter) return "";
+
+  return (
+    "Blood Pressure: " +
+    (fighter.hornedLizardPressure || 0) +
+    "/100" +
+    "\nMuscular Discharge: " +
+    (fighter.hornedLizardMuscleDischargeReady ? "READY" : "NO") +
+    "\nPermanent Explosiveness: +" +
+    (fighter.hornedLizardPermanentExplosivenessBonus || 0) +
+    "\nPermanent Defense: +" +
+    (fighter.hornedLizardPermanentDefenseBonus || 0)
+  );
+}
+
+function getHornedLizardOcularStatusText(fighter) {
+  if (!fighter) return "";
+
+  return (
+    "Vision: " +
+    getHornedLizardVisionText(fighter) +
+    "\nLeft Eye: " +
+    (fighter.hornedLizardLeftEyeLost ? "RIPPED OUT" : "INTACT") +
+    "\nRight Eye: " +
+    (fighter.hornedLizardRightEyeLost ? "RIPPED OUT" : "INTACT") +
+    "\nTemporary Blindness: " +
+    (fighter.hornedLizardTemporaryBlindnessActions || 0) +
+    "/2 offensive actions"
+  );
+}
+
+function getCompactPhaseTextForPanel(fighter) {
+  if (!currentBattle) return "PREVIEW";
+  const phaseIndex = Math.floor((currentBattle.turn - 1) / 2) % 2;
+  return phaseIndex === 0 ? "DAY" : "NIGHT";
+}
+
+function getCircadianTurnsUntilChange() {
+  if (!currentBattle) return "-";
+  const turnInsidePhase = ((currentBattle.turn - 1) % 2) + 1;
+  return Math.max(0, 2 - turnInsidePhase);
+}
+
+function isGenericResourcePanelFighter(fighter) {
+  return Boolean(
+    fighter && (
+      fighter.id === "bombardier-beetle" ||
+      isCoconutOctopusFighter(fighter) ||
+      fighter.passive?.id === "circadian-cycle" ||
+      fighter.special?.id === "overinflation" ||
+      fighter.passive?.id === "momentum" ||
+      fighter.passive?.id === "hunting-inertia" ||
+      fighter.passive?.id === "parasitic-control" ||
+      fighter.passive?.id === "immobile-stalk" ||
+      fighter.passive?.id === "thoths-mirage" ||
+      fighter.passive?.id === "larval-gestation"
+    )
+  );
+}
+
+function getGenericResourcePanelType(fighter) {
+  if (!fighter) return null;
+  if (fighter.id === "bombardier-beetle") return "bombardier";
+  if (isCoconutOctopusFighter(fighter)) return "coconut-octopus";
+  if (fighter.passive?.id === "circadian-cycle") return "circadian";
+  if (fighter.special?.id === "overinflation") return "overinflation";
+  if (fighter.passive?.id === "momentum") return "momentum";
+  if (fighter.passive?.id === "hunting-inertia") return "hunting-inertia";
+  if (fighter.passive?.id === "parasitic-control") return "parasitic-control";
+  if (fighter.passive?.id === "immobile-stalk") return "immobile-stalk";
+  if (fighter.passive?.id === "thoths-mirage") return "thoths-mirage";
+  if (fighter.passive?.id === "larval-gestation") return "larval-gestation";
+  return null;
+}
+
+function getBombardierValveText(fighter) {
+  const hydro = fighter.bombardierValveHydroquinone || 0;
+  const peroxide = fighter.bombardierValvePeroxide || 0;
+  if (hydro <= 0 && peroxide <= 0) return "Valve: off";
+
+  const parts = [];
+  if (hydro > 0) parts.push(`🔴 ${hydro}`);
+  if (peroxide > 0) parts.push(`🔵 ${peroxide}`);
+  return `Valve: ${parts.join(" + ")}`;
+}
+
+function getFennecOasisEffect(fighter) {
+  if (!currentBattle || !fighter) return null;
+
+  return (currentBattle.battleEffects || []).find((effect) => {
+    return effect.id === "oasis" && effect.sourceId === fighter.id;
+  }) || null;
+}
+
+function getFennecMirageProgress(fighter) {
+  return fighter?.fennecMirageProgress || {
+    quick: false,
+    explosive: false,
+    concentration: 0
+  };
+}
+
+function getFennecMirageProgressCount(fighter) {
+  const progress = getFennecMirageProgress(fighter);
+  return (progress.quick ? 1 : 0) +
+    (progress.explosive ? 1 : 0) +
+    Math.min(2, progress.concentration || 0);
+}
+
+function getOctopusFormShortText(fighter) {
+  const form = fighter?.octopusForm || "base";
+  const labels = {
+    base: "BASE",
+    offensive: "OFF",
+    defensive: "DEF",
+    evasive: "EVA"
+  };
+  return labels[form] || form.toUpperCase();
+}
+
+function renderOctopusFormGuideCard(formId, form) {
+  if (!form) return "";
+
+  const stats = form.stats
+    ? `ATK ${form.stats.attack} · DEF ${form.stats.defense} · TEC ${form.stats.technique} · AGI ${form.stats.agility} · EXP ${form.stats.explosiveness}`
+    : "Stats unavailable";
+
+  const special = form.special?.name ? `Special: ${form.special.name}. ${form.special.description || ""}` : "Special unavailable.";
+  const passive = form.passive?.name ? `Passive: ${form.passive.name}. ${form.passive.description || ""}` : "Passive unavailable.";
+
+  return `
+    <div class="generic-modal-card octopus-form-guide ${formId}">
+      <strong>${form.name || formId}</strong>
+      <span>${stats}</span>
+      <span>${passive}</span>
+      <span>${special}</span>
+    </div>
+  `;
+}
+
+function renderGenericResourcePanel(fighter, opponent = null) {
+  const type = getGenericResourcePanelType(fighter);
+  if (!type) return "";
+
+  if (type === "circadian") {
+    const phase = getCompactPhaseTextForPanel(fighter);
+    const night = phase === "NIGHT";
+    const turnsLeft = getCircadianTurnsUntilChange();
+    return `
+      <div class="generic-resource-card compact circadian ${night ? "night" : "day"}" data-generic-resource="circadian" role="button" tabindex="0" title="Open Circadian Cycle guide">
+        <div class="generic-resource-header">
+          <div class="generic-resource-title">${night ? "🌙" : "☀️"} Circadian Cycle</div>
+          <div class="generic-resource-badge">${phase}</div>
+        </div>
+        <div class="generic-resource-chip-row">
+          <span>${night ? "+ATK / +TEC" : "+DEF / -ATK"}</span>
+          <span>Change: ${turnsLeft}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  if (type === "overinflation") {
+    const uses = fighter.overinflationUses ?? 4;
+    return `
+      <div class="generic-resource-card compact overinflation" data-generic-resource="overinflation" role="button" tabindex="0" title="Open Overinflation guide">
+        <div class="generic-resource-header">
+          <div class="generic-resource-title">🐡 Overinflation</div>
+          <div class="generic-resource-badge">${uses}/4</div>
+        </div>
+        <div class="generic-resource-chip-row">
+          <span>Uses: ${uses}/4</span>
+          <span>Toxin: ${fighter.residualNeurotoxinActive ? "YES" : "NO"}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  if (type === "momentum") {
+    const stacks = fighter.momentumStacks || 0;
+    const bonus = [0, 5, 10, 15, 20][stacks] || 0;
+    return `
+      <div class="generic-resource-card compact momentum" data-generic-resource="momentum" role="button" tabindex="0" title="Open Momentum guide">
+        <div class="generic-resource-header">
+          <div class="generic-resource-title">💩 Momentum</div>
+          <div class="generic-resource-badge">${stacks}/4</div>
+        </div>
+        <div class="generic-resource-chip-row">
+          <span>Stacks: ${stacks}/4</span>
+          <span>Damage: +${bonus}%</span>
+        </div>
+      </div>
+    `;
+  }
+
+  if (type === "hunting-inertia") {
+    const stacks = fighter.falconStacks || 0;
+    return `
+      <div class="generic-resource-card compact hunting-inertia" data-generic-resource="hunting-inertia" role="button" tabindex="0" title="Open Hunting Inertia guide">
+        <div class="generic-resource-header">
+          <div class="generic-resource-title">🦅 Hunting Inertia</div>
+          <div class="generic-resource-badge">${stacks}/4</div>
+        </div>
+        <div class="generic-resource-chip-row">
+          <span>Damage: +${stacks * 5}%</span>
+          <span>Expl.: +${stacks * 10}%</span>
+        </div>
+      </div>
+    `;
+  }
+
+  if (type === "bombardier") {
+    const hydro = fighter.bombardierHydroquinone || 0;
+    const peroxide = fighter.bombardierPeroxide || 0;
+    return `
+      <div class="generic-resource-card compact bombardier" data-generic-resource="bombardier" role="button" tabindex="0" title="Open Reaction Chamber guide">
+        <div class="generic-resource-header">
+          <div class="generic-resource-title">⚗️ Reaction Chamber</div>
+          <div class="generic-resource-badge">${hydro}/${peroxide}</div>
+        </div>
+        <div class="generic-resource-chip-row">
+          <span>🔴 ${hydro}/3</span>
+          <span>🔵 ${peroxide}/3</span>
+          <span>${getBombardierValveText(fighter)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  if (type === "immobile-stalk") {
+    const charges = fighter.matamataStalkCharges || 0;
+    const ready = Boolean(fighter.matamataAmbushReady);
+    return `
+      <div class="generic-resource-card compact immobile-stalk" data-generic-resource="immobile-stalk" role="button" tabindex="0" title="Open Immobile Stalk guide">
+        <div class="generic-resource-header">
+          <div class="generic-resource-title">🐢 Immobile Stalk</div>
+          <div class="generic-resource-badge">${ready ? "AMBUSH" : charges + "/4"}</div>
+        </div>
+        <div class="generic-resource-chip-row">
+          <span>Stalk: ${charges}/4</span>
+          <span>Ambush: ${ready ? "READY" : "NO"}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  if (type === "thoths-mirage") {
+    const progress = getFennecMirageProgress(fighter);
+    const oasis = getFennecOasisEffect(fighter);
+    const progressCount = getFennecMirageProgressCount(fighter);
+    return `
+      <div class="generic-resource-card compact thoths-mirage" data-generic-resource="thoths-mirage" role="button" tabindex="0" title="Open Thoth's Mirage guide">
+        <div class="generic-resource-header">
+          <div class="generic-resource-title">🏜️ Thoth's Mirage</div>
+          <div class="generic-resource-badge">${oasis ? "OASIS" : progressCount + "/4"}</div>
+        </div>
+        <div class="generic-resource-chip-row">
+          <span>Q: ${progress.quick ? "✓" : "-"}</span>
+          <span>E: ${progress.explosive ? "✓" : "-"}</span>
+          <span>C: ${Math.min(2, progress.concentration || 0)}/2</span>
+          <span>Oasis: ${oasis ? oasis.duration : "OFF"}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  if (type === "larval-gestation") {
+    const larvae = fighter.darwinsLarvae || 0;
+    const maxLarvae = fighter.darwinsMaxLarvae || 5;
+    const larvalDefense = fighter.darwinsLarvalDefense || 0;
+    return `
+      <div class="generic-resource-card compact larval-gestation" data-generic-resource="larval-gestation" role="button" tabindex="0" title="Open Larval Command guide">
+        <div class="generic-resource-header">
+          <div class="generic-resource-title">🐸 Larval Gestation</div>
+          <div class="generic-resource-badge">${larvae}/${maxLarvae}</div>
+        </div>
+        <div class="generic-resource-chip-row">
+          <span>Larvae: ${larvae}/${maxLarvae}</span>
+          <span>Defense: ${larvalDefense}</span>
+          <span>Command: ${fighter.darwinsLarvalCommand || "none"}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  if (type === "coconut-octopus") {
+    const form = fighter.octopusForm || "base";
+    const charges = fighter.octopusAdaptationCharges ?? 0;
+    const charge = getCoconutOctopusCurrentCharge(fighter);
+    const maxCharge = getCoconutOctopusCurrentChargeMax(fighter);
+    return `
+      <div class="generic-resource-card compact coconut-octopus" data-generic-resource="coconut-octopus" role="button" tabindex="0" title="Open Coconut Octopus forms guide">
+        <div class="generic-resource-header">
+          <div class="generic-resource-title">🐙 Adaptation</div>
+          <div class="generic-resource-badge">${getOctopusFormShortText(fighter)}</div>
+        </div>
+        <div class="generic-resource-chip-row">
+          <span>Form: ${getCoconutOctopusFormText(fighter)}</span>
+          <span>Charges: ${charges}/8</span>
+          <span>Special: ${charge}/${maxCharge}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  if (type === "parasitic-control") {
+    const hits = fighter.parasiticControlHits || 0;
+    const roachAttached = opponent?.zombieCockroachSourceName === fighter.name
+      ? opponent.zombieCockroachTurns || 0
+      : 0;
+    const roachConfused = opponent?.zombieCockroachSourceName === fighter.name
+      ? Boolean(opponent.zombieCockroachConfused)
+      : false;
+    const controlState = roachAttached > 0
+      ? `🪳 ${roachAttached}/3`
+      : fighter.parasiticControlActive
+        ? "CONTROL"
+        : hits > 0
+          ? `${hits}/3`
+          : "NONE";
+
+    return `
+      <div class="generic-resource-card compact parasitic-control" data-generic-resource="parasitic-control" role="button" tabindex="0" title="Open Parasitic Control guide">
+        <div class="generic-resource-header">
+          <div class="generic-resource-title">🧠 Parasitic Control</div>
+          <div class="generic-resource-badge">${controlState}</div>
+        </div>
+        <div class="generic-resource-chip-row">
+          <span>🧠 ${hits}/3</span>
+          <span>🪳 Roach: ${roachAttached}/3</span>
+          <span>😵 ${roachConfused ? "YES" : "NO"}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  return "";
+}
+
+function getGenericResourceOpponentForFighter(fighter) {
+  if (!currentBattle || !fighter) return null;
+  if (currentBattle.fighterA === fighter) return currentBattle.fighterB;
+  if (currentBattle.fighterB === fighter) return currentBattle.fighterA;
+  const { player, enemy } = getBattleFighters();
+  if (player === fighter) return enemy;
+  if (enemy === fighter) return player;
+  return null;
+}
+
+function getGenericResourceGuideHtml(fighter) {
+  const type = getGenericResourcePanelType(fighter);
+  if (!type) return "";
+
+  const animal = animals[fighter.id];
+  const title = animal?.name || fighter.name || "Fighter";
+
+  if (type === "circadian") {
+    return `
+      <div class="generic-modal-summary circadian">
+        <div><div class="generic-modal-label">Current phase</div><div class="generic-modal-value">${getCompactPhaseTextForPanel(fighter)}</div></div>
+        <div><div class="generic-modal-label">Turns until change</div><div class="generic-modal-value">${getCircadianTurnsUntilChange()}</div></div>
+      </div>
+      <div class="generic-modal-grid">
+        <div class="generic-modal-card"><strong>☀️ Day</strong><span>-50% Attack, +50% Defense, -25% Technique and Agility. Special is blocked.</span></div>
+        <div class="generic-modal-card"><strong>🌙 Night</strong><span>+50% Attack, +25% Technique and +25% Agility. Nocturnal Hunt becomes usable when charged.</span></div>
+      </div>
+    `;
+  }
+
+  if (type === "overinflation") {
+    return `
+      <div class="generic-modal-summary overinflation">
+        <div><div class="generic-modal-label">Uses left</div><div class="generic-modal-value">${fighter.overinflationUses ?? 4}/4</div></div>
+        <div><div class="generic-modal-label">Residual Neurotoxin</div><div class="generic-modal-value">${fighter.residualNeurotoxinActive ? "ACTIVE" : "INACTIVE"}</div></div>
+      </div>
+      <div class="generic-modal-grid">
+        <div class="generic-modal-card"><strong>🐡 Overinflation</strong><span>Becomes immune to damage for the turn. If hit, punishes the attacker and can apply Tetrodotoxin pressure.</span></div>
+        <div class="generic-modal-card"><strong>Explosion risk</strong><span>Using Overinflation twice in a row makes Pufferfish explode, damaging the opponent and leaving itself at 1 HP.</span></div>
+      </div>
+    `;
+  }
+
+  if (type === "momentum") {
+    const stacks = fighter.momentumStacks || 0;
+    const bonus = [0, 5, 10, 15, 20][stacks] || 0;
+    return `
+      <div class="generic-modal-summary momentum">
+        <div><div class="generic-modal-label">Current stacks</div><div class="generic-modal-value">${stacks}/4</div></div>
+        <div><div class="generic-modal-label">Current bonus</div><div class="generic-modal-value">+${bonus}% damage</div></div>
+      </div>
+      <div class="generic-modal-grid">
+        <div class="generic-modal-card"><strong>💩 Momentum</strong><span>Each consecutive successful attack increases damage: +5%, +10%, +15%, +20%.</span></div>
+        <div class="generic-modal-card"><strong>Pressure pattern</strong><span>The Dung Beetle becomes more dangerous if it keeps landing hits without interruption.</span></div>
+      </div>
+    `;
+  }
+
+  if (type === "hunting-inertia") {
+    const stacks = fighter.falconStacks || 0;
+    return `
+      <div class="generic-modal-summary hunting-inertia">
+        <div><div class="generic-modal-label">Stacks</div><div class="generic-modal-value">${stacks}/4</div></div>
+        <div><div class="generic-modal-label">Damage</div><div class="generic-modal-value">+${stacks * 5}%</div></div>
+        <div><div class="generic-modal-label">Explosiveness</div><div class="generic-modal-value">+${stacks * 10}%</div></div>
+      </div>
+      <div class="generic-modal-grid">
+        <div class="generic-modal-card"><strong>🦅 Hunting Inertia</strong><span>Each successful attack gives 1 stack, up to 4. Each stack grants +5% damage and +10% Explosiveness.</span></div>
+        <div class="generic-modal-card"><strong>Deadly Dive</strong><span>The falcon can dive with defensive timing, drain stamina based on damage, and keep its stacks if the dive hits.</span></div>
+      </div>
+    `;
+  }
+
+  if (type === "bombardier") {
+    const hydro = fighter.bombardierHydroquinone || 0;
+    const peroxide = fighter.bombardierPeroxide || 0;
+    const selectedHydro = fighter.bombardierSelectedHydroquinone ?? hydro;
+    const selectedPeroxide = fighter.bombardierSelectedPeroxide ?? peroxide;
+    return `
+      <div class="generic-modal-summary bombardier">
+        <div><div class="generic-modal-label">Hydroquinone</div><div class="generic-modal-value">🔴 ${hydro}/3</div></div>
+        <div><div class="generic-modal-label">Hydrogen Peroxide</div><div class="generic-modal-value">🔵 ${peroxide}/3</div></div>
+        <div><div class="generic-modal-label">Chain Mix</div><div class="generic-modal-value">🔴 ${selectedHydro} · 🔵 ${selectedPeroxide}</div></div>
+      </div>
+      <div class="generic-modal-grid">
+        <div class="generic-modal-card"><strong>⚗️ Reaction Chamber</strong><span>Offensive hits store 🔴 Hydroquinone. Concentration stores 🔵 Hydrogen Peroxide. Maximum 3 of each.</span></div>
+        <div class="generic-modal-card"><strong>Valve Release</strong><span>Before the main action, stored reactants can be spent. 🔴 reduces enemy Attack; 🔵 reduces enemy Technique. 1/2/3 charges give 10%/25%/50%.</span></div>
+        <div class="generic-modal-card"><strong>Chain Reaction</strong><span>The super uses the selected mix for chained true-damage discharges. If no mix is selected, it can use all stored reactants.</span></div>
+      </div>
+    `;
+  }
+
+  if (type === "immobile-stalk") {
+    const charges = fighter.matamataStalkCharges || 0;
+    const ready = Boolean(fighter.matamataAmbushReady);
+    return `
+      <div class="generic-modal-summary immobile-stalk">
+        <div><div class="generic-modal-label">Stalk charges</div><div class="generic-modal-value">${charges}/4</div></div>
+        <div><div class="generic-modal-label">Ambush</div><div class="generic-modal-value">${ready ? "READY" : "NO"}</div></div>
+      </div>
+      <div class="generic-modal-grid">
+        <div class="generic-modal-card"><strong>🐢 Immobile Stalk</strong><span>Every enemy Concentration gives Matamata 1 stalk charge. At 4/4, from the next turn onward, its next attack cannot miss, deals double damage, and absorbs 20 stamina.</span></div>
+        <div class="generic-modal-card"><strong>🛡️ Ancestral Retreat</strong><span>Defensive special: restores 60 HP and 30 stamina. During that turn, the next direct damage is reduced by 50%, and 25% of the original incoming damage is reflected.</span></div>
+      </div>
+    `;
+  }
+
+  if (type === "thoths-mirage") {
+    const progress = getFennecMirageProgress(fighter);
+    const oasis = getFennecOasisEffect(fighter);
+    return `
+      <div class="generic-modal-summary thoths-mirage">
+        <div><div class="generic-modal-label">Quick hit</div><div class="generic-modal-value">${progress.quick ? "DONE" : "NO"}</div></div>
+        <div><div class="generic-modal-label">Explosive hit</div><div class="generic-modal-value">${progress.explosive ? "DONE" : "NO"}</div></div>
+        <div><div class="generic-modal-label">Concentration</div><div class="generic-modal-value">${Math.min(2, progress.concentration || 0)}/2</div></div>
+        <div><div class="generic-modal-label">Oasis</div><div class="generic-modal-value">${oasis ? oasis.duration + " turns" : "INACTIVE"}</div></div>
+      </div>
+      <div class="generic-modal-grid">
+        <div class="generic-modal-card"><strong>🏜️ Thoth's Mirage</strong><span>Complete 1 successful Quick Attack, 1 successful Explosive Attack, and 2 Concentrations to unlock Oasis.</span></div>
+        <div class="generic-modal-card"><strong>🌅 Oasis</strong><span>Oasis lasts 3 full turns, or 6 full turns if activated in Desert.</span></div>
+        <div class="generic-modal-card"><strong>🦊 Anubis' Staff</strong><span>Evasive special. Outside Oasis, heals for 50% of damage dealt and steals stamina equal to 25% of damage. During Oasis, healing becomes 100% and stamina steal becomes 50%.</span></div>
+      </div>
+    `;
+  }
+
+  if (type === "larval-gestation") {
+    const larvae = fighter.darwinsLarvae || 0;
+    const maxLarvae = fighter.darwinsMaxLarvae || 5;
+    return `
+      <div class="generic-modal-summary larval-gestation">
+        <div><div class="generic-modal-label">Larvae</div><div class="generic-modal-value">${larvae}/${maxLarvae}</div></div>
+        <div><div class="generic-modal-label">Larval defense</div><div class="generic-modal-value">${fighter.darwinsLarvalDefense || 0}</div></div>
+        <div><div class="generic-modal-label">Stored command</div><div class="generic-modal-value">${fighter.darwinsLarvalCommand || "NONE"}</div></div>
+      </div>
+      <div class="generic-modal-grid">
+        <div class="generic-modal-card"><strong>🐸 Larval Gestation</strong><span>At the end of each turn, Darwin's Frog has a 25% chance to generate 1 larva. Maximum: 5 active larvae.</span></div>
+        <div class="generic-modal-card"><strong>🧬 Larval Command</strong><span>Attack spends larvae for guaranteed damage. Defend can block incoming damage. Sacrifice converts larvae into HP/stamina recovery. Meditate preserves resources.</span></div>
+        <div class="generic-modal-card"><strong>🌋 Darwinian Expulsion</strong><span>Special: instantly generates 1, 2 or 3 larvae, without exceeding the 5-larva cap.</span></div>
+      </div>
+    `;
+  }
+
+  if (type === "coconut-octopus") {
+    const octopus = animals["coconut-octopus"];
+    const forms = octopus?.octopusForms || {};
+    return `
+      <div class="generic-modal-summary coconut-octopus">
+        <div><div class="generic-modal-label">Current form</div><div class="generic-modal-value">${getCoconutOctopusFormText(fighter)}</div></div>
+        <div><div class="generic-modal-label">Adaptation charges</div><div class="generic-modal-value">${fighter.octopusAdaptationCharges ?? 0}/8</div></div>
+        <div><div class="generic-modal-label">Current special</div><div class="generic-modal-value">${getCoconutOctopusCurrentCharge(fighter)}/${getCoconutOctopusCurrentChargeMax(fighter)}</div></div>
+      </div>
+      <div class="generic-modal-grid octopus-form-guide-grid">
+        ${["base", "offensive", "defensive", "evasive"].map((formId) => renderOctopusFormGuideCard(formId, forms[formId])).join("")}
+        <div class="generic-modal-card"><strong>🌊 Perfect Adaptation</strong><span>In Base Form, the super lets the octopus choose a balanced Tentacle Storm, Coconut Fortress or Ink Sea without transforming or spending adaptation charges.</span></div>
+      </div>
+    `;
+  }
+
+  if (type === "parasitic-control") {
+    const opponent = getGenericResourceOpponentForFighter(fighter);
+    const roachAttached = opponent?.zombieCockroachSourceName === fighter.name
+      ? opponent.zombieCockroachTurns || 0
+      : 0;
+    return `
+      <div class="generic-modal-summary parasitic-control">
+        <div><div class="generic-modal-label">Neurohits</div><div class="generic-modal-value">${fighter.parasiticControlHits || 0}/3</div></div>
+        <div><div class="generic-modal-label">Control</div><div class="generic-modal-value">${fighter.parasiticControlActive ? "ARMED" : "NONE"}</div></div>
+        <div><div class="generic-modal-label">Zombie Cockroach</div><div class="generic-modal-value">${roachAttached}/3 on rival</div></div>
+      </div>
+      <div class="generic-modal-grid">
+        <div class="generic-modal-card"><strong>🧠 Parasitic Control</strong><span>3 consecutive offensive hits arm control from the rival's next real action onward. It blocks Concentration and Special Attack and has a 50% chance to force self-hit.</span></div>
+        <div class="generic-modal-card"><strong>🪳 Zombie Cockroach</strong><span>4-charge offensive super. If it attaches, for up to 3 turns it drains 20 HP and 10 Stamina at turn end, may confuse the next action, and can be removed by a 20% end-turn escape roll.</span></div>
+      </div>
+    `;
+  }
+
+  return `<div class="generic-modal-card"><strong>${title}</strong><span>No extra guide available.</span></div>`;
+}
+
+function getGenericResourceFighterForPrefix(prefix) {
+  if (currentBattle) {
+    const { player, enemy } = getBattleFighters();
+    return prefix === "player" ? player : enemy;
+  }
+
+  const selectId = prefix === "player" ? "playerFighter" : "enemyFighter";
+  const selectedId = document.getElementById(selectId)?.value;
+  return selectedId ? createPreviewFighterState(selectedId) : null;
+}
+
+function openGenericResourceModal(fighter) {
+  if (!isGenericResourcePanelFighter(fighter)) return;
+
+  const modal = document.getElementById("genericResourceModal");
+  const titleEl = document.getElementById("genericResourceModalTitle");
+  const subtitleEl = document.getElementById("genericResourceModalSubtitle");
+  const bodyEl = document.getElementById("genericResourceModalBody");
+  if (!modal || !titleEl || !subtitleEl || !bodyEl) return;
+
+  const animal = animals[fighter.id];
+  const type = getGenericResourcePanelType(fighter);
+  const titles = {
+    circadian: "Circadian Cycle",
+    overinflation: "Overinflation",
+    momentum: "Momentum",
+    "hunting-inertia": "Hunting Inertia",
+    bombardier: "Reaction Chamber",
+    "immobile-stalk": "Immobile Stalk",
+    "thoths-mirage": "Thoth's Mirage",
+    "larval-gestation": "Larval Command",
+    "coconut-octopus": "Adaptation Forms",
+    "parasitic-control": "Parasitic Control"
+  };
+
+  titleEl.textContent = titles[type] || animal?.passive?.name || animal?.special?.name || "Mechanic Guide";
+  subtitleEl.textContent = `${animal?.name || fighter.name}: mechanic state and combat rules.`;
+  bodyEl.innerHTML = getGenericResourceGuideHtml(fighter);
+  modal.style.display = "flex";
+}
+
+function closeGenericResourceModal() {
+  const modal = document.getElementById("genericResourceModal");
+  if (modal) modal.style.display = "none";
+}
+
+function setGenericResourceClickable(extraResourceEl, enabled) {
+  if (!extraResourceEl) return;
+  extraResourceEl.classList.toggle("clickable-generic-resource", Boolean(enabled));
+  extraResourceEl.style.cursor = enabled ? "pointer" : "";
+  extraResourceEl.title = enabled ? "Open mechanic guide" : "";
+}
+
+function bindGenericResourceCard(prefix) {
+  const extraResourceEl = document.getElementById(`${prefix}ExtraResource`);
+  if (!extraResourceEl || extraResourceEl.dataset.genericResourceBound === "true") return;
+
+  extraResourceEl.dataset.genericResourceBound = "true";
+  extraResourceEl.addEventListener("click", (event) => {
+    const card = event.target.closest(".generic-resource-card");
+    if (!card || !extraResourceEl.contains(card)) return;
+    openGenericResourceModal(getGenericResourceFighterForPrefix(prefix));
+  });
+}
+
+function updateHornedLizardPressureControlButton(player) {
+  const btn = document.getElementById("hornedPressureControlBtn");
+  const title = document.getElementById("btn-horned-pressure-title");
+  const desc = document.getElementById("btn-horned-pressure-desc");
+
+  if (!btn || !desc) return;
+
+  const isHorned = isHornedLizardFighter(player);
+  btn.style.display = isHorned ? "block" : "none";
+
+  if (!isHorned) {
+    btn.disabled = true;
+    if (title) title.textContent = "Pressure Control";
+    desc.textContent = "Spend Blood Pressure before your main action.";
+    return;
+  }
+
+  const pressure = player?.hornedLizardPressure || 0;
+  const preview = !currentBattle;
+  const pendingLabel = getPendingHornedPressureControlLabel();
+
+  btn.disabled = Boolean(currentBattle && (currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction));
+
+  if (title) {
+    title.textContent = pendingLabel ? "Selected: " + pendingLabel : "Pressure Control";
+  }
+
+  desc.textContent = preview
+    ? "Open the Pressure Control guide before battle."
+    : pendingLabel
+      ? "Will activate before your next main action. Click to change or cancel. Pressure: " + pressure + "/100."
+      : "Current Pressure: " + pressure + "/100. Select a control, then choose your main action.";
+}
+
+function renderHornedLizardPressureControlModal(fighterOverride = null, selectionAllowed = false) {
+  const body = document.getElementById("hornedPressureControlModalBody");
+  const subtitle = document.getElementById("hornedPressureControlSubtitle");
+
+  if (!body || !subtitle) return;
+
+  const { player } = currentBattle ? getBattleFighters() : { player: preBattlePreviewPlayer };
+  const fighter = fighterOverride || player;
+  const pressure = fighter?.hornedLizardPressure || 0;
+  const pendingLabel = selectionAllowed ? getPendingHornedPressureControlLabel() : null;
+  const fighterName = fighter?.name || "Texas Horned Lizard";
+
+  subtitle.textContent = selectionAllowed
+    ? pendingLabel
+      ? "Selected: " + pendingLabel + ". It will activate only after you choose an attack, Concentration or Special."
+      : "Blood Pressure available: " + pressure + "/100. Select one option, then choose your main action."
+    : fighterName + " Pressure Control guide. Options are visible here, but only your own Texas Horned Lizard can select one.";
+
+  body.innerHTML = `
+    <div class="horned-modal-summary${pendingLabel ? " pending" : ""}">
+      <div>
+        <div class="horned-modal-label">Current Pressure</div>
+        <div class="horned-modal-value">${pressure}/100</div>
+      </div>
+      <div>
+        <div class="horned-modal-label">Selected Control</div>
+        <div class="horned-modal-value">${pendingLabel || "None"}</div>
+      </div>
+      <div>
+        <div class="horned-modal-label">Permanent Buffs</div>
+        <div class="horned-modal-value">+${fighter?.hornedLizardPermanentExplosivenessBonus || 0} Expl. · +${fighter?.hornedLizardPermanentDefenseBonus || 0} Def.</div>
+      </div>
+    </div>
+    <div class="horned-control-grid">
+      ${HORNED_PRESSURE_CONTROL_OPTIONS.map((option) => {
+        const enabled = selectionAllowed && canUseHornedLizardPressureControl(fighter, option.id);
+        const selected = selectionAllowed && pendingHornedPressureControl === option.id;
+        return `
+          <button type="button" class="horned-control-option${enabled ? " available" : ""}${selected ? " selected" : ""}" data-pressure-control="${option.id}" ${enabled ? "" : "disabled"}>
+            <div class="horned-control-cost">${option.emoji} ${option.cost} Pressure</div>
+            <div class="horned-control-title">${selected ? "✓ " : ""}${option.title}</div>
+            <div class="horned-control-desc">${option.desc}</div>
+          </button>
+        `;
+      }).join("")}
+    </div>
+    <div class="horned-control-footer">
+      <button type="button" class="horned-control-cancel" data-pressure-control-cancel ${selectionAllowed && pendingLabel ? "" : "disabled"}>Cancel selected control</button>
+      <div class="horned-control-footnote">${selectionAllowed ? "Selection does not spend Pressure now. It resolves immediately before your next main action." : "Information view only. Open your own Blood Pressure panel or central button to select a control."}</div>
+    </div>
+  `;
+}
+
+function openHornedLizardPressureControlModal(fighterOverride = null, showAlert = true) {
+  const { player } = currentBattle ? getBattleFighters() : { player: preBattlePreviewPlayer };
+  const fighter = fighterOverride || player;
+
+  if (!isHornedLizardFighter(fighter)) {
+    if (showAlert) alert("Only the Texas Horned Lizard has Pressure Control.");
+    return;
+  }
+
+  const modal = document.getElementById("hornedPressureControlModal");
+  if (!modal) return;
+
+  const selectionAllowed = Boolean(
+    currentBattle &&
+    !currentBattle.finished &&
+    !isAnimatingTurn &&
+    !isWaitingForOpponentAction &&
+    !isMultiplayer &&
+    fighter === player &&
+    isHornedLizardFighter(player)
+  );
+
+  renderHornedLizardPressureControlModal(fighter, selectionAllowed);
+  modal.style.display = "flex";
+}
+
+function closeHornedLizardPressureControlModal() {
+  const modal = document.getElementById("hornedPressureControlModal");
+  if (modal) modal.style.display = "none";
+}
+
+function chooseHornedLizardPressureControl(option) {
+  if (!currentBattle || currentBattle.finished || isAnimatingTurn || isWaitingForOpponentAction) return;
+
+  const { player } = getBattleFighters();
+
+  if (!isHornedLizardFighter(player)) return;
+
+  if (!canUseHornedLizardPressureControl(player, option)) {
+    lastTurnOutcome = "Pressure Failed";
+    lastTurnSummaryLines = ["Not enough Blood Pressure for this Pressure Control option."];
+    renderBattle();
+    return;
+  }
+
+  pendingHornedPressureControl = option;
+  const selected = getHornedPressureControlOption(option);
+
+  lastTurnOutcome = "Pressure Selected";
+  lastTurnSummaryLines = [
+    "Pressure Control selected: " + (selected?.title || option) + ".",
+    "It has not been spent yet.",
+    "Choose an attack, Concentration or Special to activate it before the main action."
+  ];
+
+  closeHornedLizardPressureControlModal();
+  renderBattle();
+}
+
+function cancelHornedLizardPressureControl() {
+  const previous = getPendingHornedPressureControlLabel();
+  clearPendingHornedPressureControl();
+
+  lastTurnOutcome = previous ? "Pressure Canceled" : "Pressure Control";
+  lastTurnSummaryLines = [previous ? "Canceled Pressure Control: " + previous + "." : "No Pressure Control was selected."];
+
+  renderHornedLizardPressureControlModal(currentBattle ? getBattleFighters().player : preBattlePreviewPlayer, Boolean(currentBattle));
+  renderBattle();
+}
+
+function applyPendingHornedLizardPressureControlIfNeeded(player, enemy) {
+  if (!pendingHornedPressureControl) return null;
+
+  const option = pendingHornedPressureControl;
+  clearPendingHornedPressureControl();
+
+  if (!isHornedLizardFighter(player)) {
+    return { ok: false, message: "Pending Pressure Control was canceled because the current fighter is not the Texas Horned Lizard." };
+  }
+
+  return applyHornedLizardPressureControl(player, enemy, currentBattle, option);
+}
+
+
 function getBattleFighters() {
   if (!currentBattle) return { player: null, enemy: null };
 
@@ -544,6 +1507,7 @@ function getImageCandidates(id, animal) {
     "three-toed-sloth": ["./images/animals/mammals/three-toed-sloth.png"],
     "iberian-ribbed-newt": ["./images/animals/amphibians/iberian-ribbed-newt.png"],
     "iberian-skink": ["./images/animals/reptiles/iberian-skink.png"],
+    "horned-lizard": ["./images/animals/reptiles/horned-lizard.png"],
       "bombardier-beetle": ["./images/animals/arthropods/bombardier-beetle.png"],
 };
 
@@ -872,6 +1836,10 @@ function getExtraResourceText(fighter) {
     return getThreeToedSlothStatusText(fighter);
   }
 
+  if (isHornedLizardFighter(fighter)) {
+    return getHornedLizardPressureStatusText(fighter);
+  }
+
   return "";
 }
 
@@ -978,6 +1946,34 @@ function formatTooltip(fighter) {
   `
       : "";
 
+  const hornedPressureExtra =
+    isHornedLizardFighter(fighter)
+      ? `
+    <div class="tooltip-section">
+      <div class="tooltip-label">Blood Pressure</div>
+      <div class="tooltip-text">${getHornedLizardPressureStatusText(fighter)}</div>
+    </div>
+  `
+      : "";
+
+  const battleHasHornedLizard =
+    currentBattle &&
+    (isHornedLizardFighter(currentBattle.fighterA) ||
+      isHornedLizardFighter(currentBattle.fighterB));
+
+  const hornedOcularExtra =
+    !isHornedLizardFighter(fighter) &&
+    (battleHasHornedLizard ||
+      getHornedLizardEyeLossCount(fighter) > 0 ||
+      (fighter.hornedLizardTemporaryBlindnessActions || 0) > 0)
+      ? `
+    <div class="tooltip-section">
+      <div class="tooltip-label">Ocular State</div>
+      <div class="tooltip-text">${getHornedLizardOcularStatusText(fighter)}</div>
+    </div>
+  `
+      : "";
+
   return `
     <h3>${animal.name}</h3>
 
@@ -1017,10 +2013,18 @@ ${formatStatArrowLine(fighter, "explosiveness", "Explosiveness")}</div>
     ${iguanaExtra}
     ${coconutExtra}
     ${slothExtra}
+    ${hornedPressureExtra}
+    ${hornedOcularExtra}
+    ${isGenericResourcePanelFighter(fighter) ? `
+      <div class="tooltip-section">
+        <div class="tooltip-label">Mechanic State</div>
+        <div class="tooltip-text">${getGenericResourcePanelType(fighter) || "Resource"}</div>
+      </div>
+    ` : ""}
   `;
 }
 
-function renderFighter(prefix, fighter) {
+function renderFighter(prefix, fighter, opponent = null) {
   const hpPct = percent(fighter.hp, fighter.maxHp);
   const staminaPct = percent(fighter.stamina, fighter.maxStamina);
 
@@ -1050,11 +2054,27 @@ function renderFighter(prefix, fighter) {
   const extraResourceEl = document.getElementById(`${prefix}ExtraResource`);
   if (extraResourceEl) {
     if (isThreeToedSlothFighter(fighter)) {
+      setHornedPressureExtraResourceClickable(extraResourceEl, false);
+      setGenericResourceClickable(extraResourceEl, false);
       extraResourceEl.innerHTML = renderSlothEcosystemMiniPanel(fighter);
       extraResourceEl.style.display = "block";
       setSlothExtraResourceClickable(extraResourceEl, true);
+    } else if (isHornedLizardFighter(fighter)) {
+      setSlothExtraResourceClickable(extraResourceEl, false);
+      setHornedPressureExtraResourceClickable(extraResourceEl, true);
+      setGenericResourceClickable(extraResourceEl, false);
+      extraResourceEl.innerHTML = renderHornedLizardPressurePanel(fighter);
+      extraResourceEl.style.display = "block";
+    } else if (isGenericResourcePanelFighter(fighter)) {
+      setSlothExtraResourceClickable(extraResourceEl, false);
+      setHornedPressureExtraResourceClickable(extraResourceEl, false);
+      setGenericResourceClickable(extraResourceEl, true);
+      extraResourceEl.innerHTML = renderGenericResourcePanel(fighter, opponent);
+      extraResourceEl.style.display = "block";
     } else {
       setSlothExtraResourceClickable(extraResourceEl, false);
+      setHornedPressureExtraResourceClickable(extraResourceEl, false);
+      setGenericResourceClickable(extraResourceEl, false);
       const extraResourceText = getExtraResourceText(fighter);
 
       if (extraResourceText) {
@@ -1067,6 +2087,7 @@ function renderFighter(prefix, fighter) {
     }
   }
 
+  updateHornedLizardOcularResource(prefix, fighter, opponent);
   renderEffects(`${prefix}Effects`, fighter);
 }
 
@@ -1367,6 +2388,11 @@ function updateActionButtons() {
         return;
       }
 
+      if (btn.id === "hornedPressureControlBtn") {
+        btn.disabled = !isHornedLizardFighter(previewPlayer);
+        return;
+      }
+
       if (action === "larval-command") {
         btn.disabled = !(previewPlayer?.passive?.id === "larval-gestation");
         return;
@@ -1401,6 +2427,11 @@ function updateActionButtons() {
       return;
     }
 
+    if (btn.id === "hornedPressureControlBtn") {
+      btn.disabled = !isHornedLizardFighter(player);
+      return;
+    }
+
     if (action === "larval-command") {
       const larvae = player.darwinsLarvae || 0;
       btn.disabled = !(player.passive?.id === "larval-gestation" && larvae > 0);
@@ -1417,8 +2448,8 @@ function renderBattle() {
   const { player, enemy } = getBattleFighters();
 
   renderTopPanel();
-  renderFighter("player", player);
-  renderFighter("enemy", enemy);
+  renderFighter("player", player, enemy);
+  renderFighter("enemy", enemy, player);
   renderSummary();
   renderLog();
 
@@ -1430,6 +2461,7 @@ function renderBattle() {
   }
 
   updateSlothEcosystemButton(player);
+  updateHornedLizardPressureControlButton(player);
   updateCoconutOctopusPanel(player);
 
   updateActionButtons();
@@ -1651,6 +2683,7 @@ async function runShakeSequence(newLines, player, enemy) {
 }
 
 function startBattle() {
+  clearPendingHornedPressureControl();
   const playerSelect = document.getElementById("playerFighter");
   const enemySelect = document.getElementById("enemyFighter");
 
@@ -1729,6 +2762,14 @@ function createPreviewFighterState(fighterId) {
     alive: true,
     specialCharge: 0,
 
+    hornedLizardPressure: animal.id === "horned-lizard" ? 0 : null,
+    hornedLizardMuscleDischargeReady: false,
+    hornedLizardPermanentExplosivenessBonus: 0,
+    hornedLizardPermanentDefenseBonus: 0,
+    hornedLizardTemporaryBlindnessActions: 0,
+    hornedLizardLeftEyeLost: false,
+    hornedLizardRightEyeLost: false,
+
     darwinsLarvae: animal.id === "darwins-frog" ? 0 : 0,
     darwinsMaxLarvae: animal.id === "darwins-frog" ? 5 : 5,
 
@@ -1779,11 +2820,27 @@ function renderFighterPreview(prefix, fighterId) {
   const extraResourceEl = document.getElementById(`${prefix}ExtraResource`);
   if (extraResourceEl) {
     if (previewFighter && isThreeToedSlothFighter(previewFighter)) {
+      setHornedPressureExtraResourceClickable(extraResourceEl, false);
+      setGenericResourceClickable(extraResourceEl, false);
       extraResourceEl.innerHTML = renderSlothEcosystemMiniPanel(previewFighter);
       extraResourceEl.style.display = "block";
       setSlothExtraResourceClickable(extraResourceEl, true);
+    } else if (previewFighter && isHornedLizardFighter(previewFighter)) {
+      setSlothExtraResourceClickable(extraResourceEl, false);
+      setHornedPressureExtraResourceClickable(extraResourceEl, true);
+      setGenericResourceClickable(extraResourceEl, false);
+      extraResourceEl.innerHTML = renderHornedLizardPressurePanel(previewFighter);
+      extraResourceEl.style.display = "block";
+    } else if (previewFighter && isGenericResourcePanelFighter(previewFighter)) {
+      setSlothExtraResourceClickable(extraResourceEl, false);
+      setHornedPressureExtraResourceClickable(extraResourceEl, false);
+      setGenericResourceClickable(extraResourceEl, true);
+      extraResourceEl.innerHTML = renderGenericResourcePanel(previewFighter);
+      extraResourceEl.style.display = "block";
     } else {
       setSlothExtraResourceClickable(extraResourceEl, false);
+      setHornedPressureExtraResourceClickable(extraResourceEl, false);
+      setGenericResourceClickable(extraResourceEl, false);
       const extraResourceText = previewFighter ? getExtraResourceText(previewFighter) : "";
 
       if (extraResourceText) {
@@ -1795,6 +2852,8 @@ function renderFighterPreview(prefix, fighterId) {
       }
     }
   }
+
+  updateHornedLizardOcularResource(prefix, previewFighter, null);
 
   const effectsEl = document.getElementById(`${prefix}Effects`);
   effectsEl.innerHTML = "";
@@ -1816,6 +2875,7 @@ function renderFighterPreview(prefix, fighterId) {
 
 function renderSelectionPreview() {
   if (currentBattle) return;
+  clearPendingHornedPressureControl();
 
   const playerSelect = document.getElementById("playerFighter");
   const enemySelect = document.getElementById("enemyFighter");
@@ -1875,6 +2935,7 @@ function renderSelectionPreview() {
 
   updateLarvalCommandButton(previewPlayer);
   updateSlothEcosystemButton(previewPlayer);
+  updateHornedLizardPressureControlButton(previewPlayer);
   updateCoconutOctopusPanel(previewPlayer);
   updateActionButtons();
 
@@ -1895,9 +2956,14 @@ async function resolveLocalTurn(playerAction) {
     const { player, enemy } = getBattleFighters();
     const enemyAction = chooseEnemyAction(enemy);
     const oldLogLength = currentBattle.log.length;
+    const pendingPressureLabel = getPendingHornedPressureControlLabel();
 
-    lastPlayerAction = prettyActionLabel(playerAction, player);
+    lastPlayerAction = pendingPressureLabel
+      ? pendingPressureLabel + " + " + prettyActionLabel(playerAction, player)
+      : prettyActionLabel(playerAction, player);
     lastEnemyAction = prettyActionLabel(enemyAction, enemy);
+
+    applyPendingHornedLizardPressureControlIfNeeded(player, enemy);
 
     if (currentBattle.fighterA.id === player.id) {
       resolveTurn(currentBattle, playerAction, enemyAction);
@@ -2309,6 +3375,15 @@ function init() {
         return;
       }
 
+      if (btn.id === "hornedPressureControlBtn") {
+        if (isMultiplayer) {
+          alert("Pressure Control is only enabled in Single Battle for this first test.");
+          return;
+        }
+        openHornedLizardPressureControlModal();
+        return;
+      }
+
       if (action === "larval-command") {
         await openLarvalCommandPrompt();
         return;
@@ -2351,6 +3426,20 @@ function init() {
 
   document.getElementById("larvalCommandCloseBtn").addEventListener("click", closeLarvalCommandModal);
   document.getElementById("slothEcosystemCloseBtn")?.addEventListener("click", closeSlothEcosystemModal);
+  document.getElementById("hornedPressureControlCloseBtn")?.addEventListener("click", closeHornedLizardPressureControlModal);
+  document.getElementById("genericResourceCloseBtn")?.addEventListener("click", closeGenericResourceModal);
+
+  document.getElementById("hornedPressureControlModalBody")?.addEventListener("click", (event) => {
+    const cancelBtn = event.target.closest("[data-pressure-control-cancel]");
+    if (cancelBtn) {
+      if (!cancelBtn.disabled) cancelHornedLizardPressureControl();
+      return;
+    }
+
+    const btn = event.target.closest("[data-pressure-control]");
+    if (!btn || btn.disabled) return;
+    chooseHornedLizardPressureControl(btn.dataset.pressureControl);
+  });
 
   document.getElementById("larvalAttackMinus").addEventListener("click", () => adjustLarvalDraft("attack", -1));
   document.getElementById("larvalAttackPlus").addEventListener("click", () => adjustLarvalDraft("attack", 1));
@@ -2367,6 +3456,10 @@ function init() {
   initFlipButtons();
   bindSlothExtraResourceCard("player");
   bindSlothExtraResourceCard("enemy");
+  bindHornedPressureExtraResourceCard("player");
+  bindHornedPressureExtraResourceCard("enemy");
+  bindGenericResourceCard("player");
+  bindGenericResourceCard("enemy");
   updateStaticActionButtons();
 
   setupLinkedFighterSelectors([

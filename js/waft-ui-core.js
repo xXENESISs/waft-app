@@ -122,6 +122,17 @@ function isImportantSummaryLine(line) {
     line.includes("Hydroquinone") ||
     line.includes("Hydrogen Peroxide") ||
     line.includes("Chain Reaction") ||
+    line.includes("Blood Pressure") ||
+    line.includes("Pressure Control") ||
+    line.includes("Muscular Discharge") ||
+    line.includes("Vasoconstriction") ||
+    line.includes("Bloody Gouging") ||
+    line.includes("Gouging") ||
+    line.includes("Partial Vision") ||
+    line.includes("Total Blindness") ||
+    line.includes("temporary Blindness") ||
+    line.includes("ocular blood") ||
+    line.includes("loses its") && line.includes("eye") ||
     line.includes("true damage") ||
     line.includes("chemical sequence") ||
     line.includes("stored reactants") ||
@@ -148,7 +159,8 @@ function isImportantSummaryLine(line) {
     line.includes("fails to take control") ||
     line.includes("fails to open") ||
     line.includes("fails to drain") ||
-    line.includes("Tetrodotoxin effects")
+    line.includes("Tetrodotoxin effects") ||
+    line.includes("Zombie Cockroach")
   );
 }
 
@@ -163,6 +175,7 @@ function getSpecialUserFromLine(line) {
     line.match(/^(.+?) uses Death Roll\b/) ||
     line.match(/^(.+?) uses Total Regeneration\b/) ||
     line.match(/^(.+?) uses Nervous Disruption\b/) ||
+    line.match(/^(.+?) uses Zombie Cockroach\b/) ||
     line.match(/^(.+?) uses Deadly Dive\b/) ||
     line.match(/^(.+?) uses Phantom Current\b/) ||
     line.match(/^(.+?) uses Looting Burst\b/) ||
@@ -420,6 +433,7 @@ export function deriveSharedTurnOutcome(summaryLines = []) {
   if (joined.includes("Phantom Current")) return "Special Triggered";
   if (joined.includes("Deadly Dive")) return "Special Triggered";
   if (joined.includes("Nervous Disruption")) return "Special Triggered";
+  if (joined.includes("Zombie Cockroach")) return "Special Triggered";
   if (joined.includes("Total Regeneration")) return "Special Triggered";
   if (joined.includes("Death Roll")) return "Special Triggered";
   if (joined.includes("Ancestral Retreat")) return "Special Triggered";

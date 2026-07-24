@@ -298,14 +298,14 @@ export const animals = {
       id: "parasitic-control",
       name: "Parasitic Control",
       description:
-        "After landing 3 consecutive hits, the opponent cannot use Concentration or Special Attack and has a 50% chance to hit itself for 1 turn. Missing resets the chain."
+        "After landing 3 consecutive offensive hits, the opponent becomes controlled from its next real action onward: it cannot use Concentration or Special Attack and has a 50% chance to hit itself. Missing or skipping offensive pressure resets the chain."
     },
 
     special: {
-      id: "nervous-disruption",
-      name: "Nervous Disruption",
+      id: "zombie-cockroach",
+      name: "Zombie Cockroach",
       description:
-        "Uses Technique as accuracy. On the opponent's next turn, it hits itself and cannot use Concentration or Special Attack.",
+        "Uses Technique as accuracy. If it hits, attaches a zombie cockroach to the opponent for up to 3 turns. At the end of each turn, the cockroach drains 20 HP and 10 Stamina, has a 20% chance to confuse the opponent's next action, and then the opponent has a 20% chance to remove it.",
       chargeType: "offensive",
       chargeHits: 4
     }
@@ -1211,6 +1211,53 @@ export const animals = {
   }
 },
 
+
+"horned-lizard": {
+  id: "horned-lizard",
+  name: "Texas Horned Lizard",
+  scientificName: "Phrynosoma cornutum",
+  category: "reptiles",
+
+  stats: {
+    life: 84,
+    attack: 82,
+    defense: 79,
+    resistance: 83,
+    speed: 62,
+    agility: 71,
+    technique: 64,
+    explosiveness: 75
+  },
+
+  biomes: {
+    favorable: ["desert", "mountain"],
+    neutral: ["forest", "jungle"],
+    unfavorable: ["arctic", "marine"]
+  },
+
+  martialArt: {
+    name: "Rough-and-Tumble",
+    country: "United States",
+    description:
+      "Historical unarmed fighting style from the southern United States, known for vicious grappling, gouging and attacks aimed at vulnerable targets, especially the eyes."
+  },
+
+  passive: {
+    id: "blood-pressure",
+    name: "Blood Pressure",
+    description:
+      "Every time the Texas Horned Lizard or its opponent lands a critical hit, the lizard gains 20 Pressure, up to 100. Before choosing its main action, it can spend Pressure on Pressure Control: 20 restores Stamina, 40 prepares Muscular Discharge, 60 grants permanent Explosiveness, 80 grants permanent Defense, and 100 attempts Gouging on both enemy eyes."
+  },
+
+  special: {
+    id: "bloody-gouging",
+    name: "Bloody Gouging",
+    description:
+      "Costs 5 offensive charges. Fires a high-pressure ocular blood stream for true damage: 80 + 20 per 20 current Pressure. It does not consume Pressure. Then applies Blindness for the enemy's next 2 offensive actions and immediately resolves Gouging on both eyes.",
+    chargeType: "offensive",
+    chargeHits: 5
+  }
+},
 
 "bombardier-beetle": {
   id: "bombardier-beetle",
