@@ -4,6 +4,7 @@
 
 import { renderTurnSummaryV2 } from "./turn-summary-v2.js";
 import { playTurnSequenceVfx } from "./battle-vfx.js";
+import { renderBattleStatusHuds } from "./battle-status-hud.js";
 
 const LIVE_STYLE_ID = "waft-turn-summary-v2-live-styles";
 
@@ -88,6 +89,10 @@ export function installTurnSummaryV2Live(options = {}) {
 
       lastResolvedAt = Date.now();
       renderTurnSummaryV2(sequence, { boxId: host.id });
+
+      if (battle) {
+        renderBattleStatusHuds(battle, { playerSide });
+      }
 
       if (playVfx && battle) {
         const player = playerSide === "fighterB" ? battle.fighterB : battle.fighterA;
