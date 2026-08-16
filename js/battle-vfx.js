@@ -69,25 +69,11 @@ function ensureStyles() {
       line-height: 1.05;
     }
 
-    .waft-vfx-hit {
-      animation: waft-vfx-hit 260ms ease-out;
-    }
-
-    .waft-vfx-critical {
-      animation: waft-vfx-critical 420ms cubic-bezier(.2,.8,.2,1);
-    }
-
-    .waft-vfx-heal {
-      animation: waft-vfx-heal 520ms ease-out;
-    }
-
-    .waft-vfx-dodge {
-      animation: waft-vfx-dodge 360ms ease-out;
-    }
-
-    .waft-vfx-status {
-      animation: waft-vfx-status 480ms ease-out;
-    }
+    .waft-vfx-hit { animation: waft-vfx-hit 260ms ease-out; }
+    .waft-vfx-critical { animation: waft-vfx-critical 420ms cubic-bezier(.2,.8,.2,1); }
+    .waft-vfx-heal { animation: waft-vfx-heal 520ms ease-out; }
+    .waft-vfx-dodge { animation: waft-vfx-dodge 360ms ease-out; }
+    .waft-vfx-status { animation: waft-vfx-status 480ms ease-out; }
 
     .waft-vfx-screen-flash {
       position: fixed;
@@ -167,17 +153,52 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function getWrap(side) {
+function getWrap(side, context = {}) {
+  if (typeof context.getWrap === "function") {
+    const custom = context.getWrap(side);
+    if (custom) return custom;
+  }
+
+  if (context.wraps?.[side]) {
+    return context.wraps[side];
+  }
+
   const id = side === "player" ? "playerImageWrap" : "enemyImageWrap";
   return document.getElementById(id);
 }
 
+function sideFromFighterId(fighterId, context = {}) {
+  if (!fighterId) return null;
+  if (context.playerId && fighterId === context.playerId) return "player";
+  if (context.enemyId && fighterId === context.enemyId) return "enemy";
+  return null;
+}
+
+function sideFromFighterName(fighterName, context = {}) {
+  if (!fighterName) return null;
+  if (context.playerName && fighterName === context.playerName) return "player";
+  if (context.enemyName && fighterName === context.enemyName) return "enemy";
+  return null;
+}
+
+function eventPrefersActor(event) {
+  return [
+    TURN_EVENT.HEAL,
+    TURN_EVENT.BUFF,
+    TURN_EVENT.SPECIAL,
+    TURN_EVENT.PASSIVE
+  ].includes(event?.type);
+}
+
 function sideForEvent(event, context = {}) {
-  if (event?.targetId && context.playerId && event.targetId === context.playerId) return "player";
-  if (event?.targetId && context.enemyId && event.targetId === context.enemyId) return "enemy";
-  if (event?.actorId && context.playerId && event.actorId === context.playerId) return "player";
-  if (event?.actorId && context.enemyId && event.actorId === context.enemyId) return "enemy";
-  return context.defaultSide || "enemy";
+  const actorSide = sideFromFighterId(event?.actorId, context) || sideFromFighterName(event?.actorName, context);
+  const targetSide = sideFromFighterId(event?.targetId, context) || sideFromFighterName(event?.targetName, context);
+
+  if (eventPrefersActor(event)) {
+    return actorSide || targetSide || context.defaultSide || "enemy";
+  }
+
+  return targetSide || actorSide || context.defaultSide || "enemy";
 }
 
 function addClassBriefly(element, className, duration) {
@@ -257,7 +278,7 @@ export async function playBattleEventVfx(event, context = {}) {
     return true;
   }
 
-  const wrap = getWrap(cue.side);
+  const wrap = getWrap(cue.side, context);
   if (cue.flash) screenFlash();
   if (cue.className) addClassBriefly(wrap, cue.className, cue.duration || 350);
   if (cue.text) floatingText(wrap, cue.text, cue.emphasis || "normal");
