@@ -60,7 +60,7 @@ export function resolveTurn(battle, actionA, actionB) {
     ? battle.log.slice(oldLogLength)
     : [];
 
-  battle.lastTurnSequence = buildLegacyOrderedTurnSequence({
+  const sequence = buildLegacyOrderedTurnSequence({
     turn: turnNumber,
     lines: newLines,
     first,
@@ -68,4 +68,20 @@ export function resolveTurn(battle, actionA, actionB) {
     battleFinished: Boolean(battle.finished),
     winner: battle.winner ?? null
   });
+
+  battle.lastTurnSequence = sequence;
+
+  if (typeof window !== "undefined") {
+    window.__WAFT_LAST_TURN_SEQUENCE__ = sequence;
+    window.dispatchEvent(
+      new CustomEvent("waft:turn-resolved", {
+        detail: {
+          sequence,
+          battle,
+          actionA,
+          actionB
+        }
+      })
+    );
+  }
 }
