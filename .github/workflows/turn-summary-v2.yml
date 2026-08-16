@@ -1,9 +1,6 @@
 name: Turn Summary V2
 
 on:
-  push:
-    branches:
-      - agent/turn-summary-v2-single-battle
   pull_request:
     branches:
       - main
