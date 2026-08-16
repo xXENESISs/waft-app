@@ -33,6 +33,7 @@ export async function presentTurnSequenceV2(sequence, options = {}) {
   const vfxContext = options.vfxContext || {};
   const eventGap = options.eventGap ?? 70;
   const phaseGap = options.phaseGap ?? 110;
+  const playVfx = options.playVfx !== false;
   const token = nextToken(boxId);
 
   renderTurnSummaryV2(sequence, {
@@ -56,7 +57,10 @@ export async function presentTurnSequenceV2(sequence, options = {}) {
     const activePhase = box?.querySelector(`[data-turn-phase-index="${index}"]`);
     activePhase?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
 
-    await playBattlePhaseVfx(phases[index], vfxContext, { gap: eventGap });
+    if (playVfx) {
+      await playBattlePhaseVfx(phases[index], vfxContext, { gap: eventGap });
+    }
+
     if (!isCurrent(boxId, token)) return false;
 
     if (phaseGap > 0 && index < phases.length - 1) {
