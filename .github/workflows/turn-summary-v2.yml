@@ -69,10 +69,10 @@ jobs:
       - name: Browser smoke Single Battle V2
         run: node tests/browser-smoke-v2.mjs
 
-      - name: Upload V2 smoke screenshot
+      - name: Upload V2 smoke screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: turn-summary-v2-smoke
-          path: artifacts/turn-summary-v2-single-battle.png
+          path: artifacts/*.png
           if-no-files-found: ignore
