@@ -43,6 +43,36 @@ jobs:
           node --check js/online-tournament.js
           node --check js/online-tournament-v2-live.js
           node --check js/online-tournament-v2-socket-bridge.js
+          node --check tests/browser-smoke-v2.mjs
 
       - name: Test ordered turn sequence
         run: node --test tests/turn-sequence-v2.test.mjs
+
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright@1.54.2
+          npx playwright install --with-deps chromium
+
+      - name: Start WAFT server
+        run: |
+          node server.js > /tmp/waft-server.log 2>&1 &
+          echo $! > /tmp/waft-server.pid
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/test.html > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/waft-server.log
+          exit 1
+
+      - name: Browser smoke Single Battle V2
+        run: node tests/browser-smoke-v2.mjs
+
+      - name: Upload V2 smoke screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: turn-summary-v2-smoke
+          path: artifacts/turn-summary-v2-single-battle.png
+          if-no-files-found: ignore
