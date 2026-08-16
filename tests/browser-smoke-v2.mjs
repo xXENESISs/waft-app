@@ -9,6 +9,54 @@ await fs.mkdir(artifactDir, { recursive: true });
 
 const browser = await chromium.launch({ headless: true });
 
+async function probeSignatureVfx(page, playerId, enemyId) {
+  await page.evaluate(async ({ playerId, enemyId }) => {
+    const module = await import("/js/battle-vfx-signatures.js");
+    window.__waftSignatureProbe = module.playSignatureSpecialVfx(
+      {
+        type: "special",
+        specialName: "Ink Sea",
+        actorId: playerId,
+        targetId: enemyId
+      },
+      { playerId, enemyId }
+    );
+  }, { playerId, enemyId });
+
+  await page.waitForSelector(".waft-signature-layer.ink-sea", { timeout: 5000 });
+  const inkBlobs = await page.locator(".waft-signature-layer.ink-sea .waft-signature-ink-blob").count();
+  assert.ok(inkBlobs >= 4, "Ink Sea should create a full-screen ink overlay with multiple blobs");
+  await page.screenshot({ path: `${artifactDir}/turn-summary-v2-ink-sea-vfx.png`, fullPage: true });
+  await page.evaluate(() => window.__waftSignatureProbe);
+  await page.waitForSelector(".waft-signature-layer.ink-sea", { state: "detached", timeout: 5000 });
+
+  await page.evaluate(async ({ playerId, enemyId }) => {
+    const module = await import("/js/battle-vfx-signatures.js");
+    window.__waftSignatureProbe = module.playSignatureSpecialVfx(
+      {
+        type: "special",
+        specialName: "Throat Bite",
+        actorId: playerId,
+        targetId: enemyId
+      },
+      { playerId, enemyId }
+    );
+  }, { playerId, enemyId });
+
+  await page.waitForSelector("#enemyImageWrap .waft-signature-local.throat-bite", { timeout: 5000 });
+  assert.equal(
+    await page.locator("#playerImageWrap .waft-signature-local.throat-bite").count(),
+    0,
+    "Throat Bite signature VFX must not render on its user"
+  );
+  assert.equal(
+    await page.locator("#enemyImageWrap .waft-signature-local.throat-bite").count(),
+    1,
+    "Throat Bite signature VFX should render on its target"
+  );
+  await page.evaluate(() => window.__waftSignatureProbe);
+}
+
 async function runSingleBattleSmoke({ label, viewport, screenshotPath, checkHorizontalOverflow = false }) {
   const page = await browser.newPage({ viewport });
   const pageErrors = [];
@@ -103,6 +151,10 @@ async function runSingleBattleSmoke({ label, viewport, screenshotPath, checkHori
     assert.ok(/ROUND\s+1/i.test(summaryText), "V2 summary should identify Round 1");
     assert.ok(!/Damage calc|Critical calc|→ HP:/i.test(summaryText), "Technical engine lines must not leak into the player summary");
     assert.ok(!/gains effect:/i.test(summaryText), "Legacy effect sentences must not leak into the compact summary");
+
+    if (label === "desktop") {
+      await probeSignatureVfx(page, playerId, enemyId);
+    }
 
     if (checkHorizontalOverflow) {
       const layout = await page.evaluate(() => ({
