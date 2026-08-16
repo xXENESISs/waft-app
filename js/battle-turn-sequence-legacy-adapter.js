@@ -34,6 +34,7 @@ const ROUND_END_HINTS = [
   "Neotenic Regeneration",
   "Suffocating Humidity restores",
   "Algae",
+  "Silent Stalk",
   "remains active for",
   "has expired",
   "falls from",
@@ -202,6 +203,7 @@ export function buildLegacyOrderedTurnSequence(options = {}) {
 
   const secondLines = secondAndEnd.slice(0, endRelativeStart);
   const endLines = secondAndEnd.slice(endRelativeStart);
+  const secondActed = secondLines.length > 0;
 
   const phases = [];
 
@@ -211,7 +213,7 @@ export function buildLegacyOrderedTurnSequence(options = {}) {
 
   phases.push(phaseFromLines(TURN_PHASE.ACTION, firstLines, firstMeta));
 
-  if (secondLines.length > 0) {
+  if (secondActed) {
     phases.push(phaseFromLines(TURN_PHASE.ACTION, secondLines, secondMeta));
   }
 
@@ -219,12 +221,19 @@ export function buildLegacyOrderedTurnSequence(options = {}) {
     phases.push(phaseFromLines(TURN_PHASE.ROUND_END, endLines, sharedFighters));
   }
 
+  const order = [
+    { position: 1, ...firstMeta }
+  ];
+
+  // A faster fighter can end the battle before its opponent gets a turn.
+  // In that case the UI should not claim the defeated fighter acted.
+  if (secondActed || !battleFinished) {
+    order.push({ position: 2, ...secondMeta });
+  }
+
   return {
     turn,
-    order: [
-      { position: 1, ...firstMeta },
-      { position: 2, ...secondMeta }
-    ],
+    order,
     phases,
     battleFinished,
     winner
