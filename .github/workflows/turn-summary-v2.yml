@@ -1,0 +1,29 @@
+name: Turn Summary V2
+
+on:
+  push:
+    branches:
+      - agent/turn-summary-v2-single-battle
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test-turn-sequence:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test ordered turn sequence
+        run: node --test tests/turn-sequence-v2.test.mjs
