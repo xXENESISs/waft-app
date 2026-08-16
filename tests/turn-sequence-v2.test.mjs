@@ -109,6 +109,81 @@ test("legacy round becomes ordered actions plus round-end events", () => {
   assert.ok(endPhase.events.some((event) => event.type === TURN_EVENT.HEAL && event.actorName === "Kea" && event.amount === 30));
 });
 
+test("end-of-round passives do not leak into the second fighter action", () => {
+  const first = {
+    actorId: "tiger",
+    actorName: "Sumatran Tiger",
+    targetId: "walrus",
+    targetName: "Walrus",
+    action: "normal",
+    speed: 80,
+    priority: 1
+  };
+
+  const second = {
+    actorId: "walrus",
+    actorName: "Walrus",
+    targetId: "tiger",
+    targetName: "Sumatran Tiger",
+    action: "explosive",
+    speed: 60,
+    priority: 1
+  };
+
+  const sequence = buildLegacyOrderedTurnSequence({
+    turn: 1,
+    first,
+    second,
+    lines: [
+      "Sumatran Tiger hits Walrus with Normal Attack for 61 damage.",
+      "Walrus misses Sumatran Tiger.",
+      "Sumatran Tiger's Silent Stalk gains 1 Stalk stack (1/4)."
+    ]
+  });
+
+  const actionPhases = sequence.phases.filter((phase) => phase.type === TURN_PHASE.ACTION);
+  const endPhase = sequence.phases.find((phase) => phase.type === TURN_PHASE.ROUND_END);
+
+  assert.equal(actionPhases.length, 2);
+  assert.equal(actionPhases[1].lines.some((line) => line.includes("Silent Stalk")), false);
+  assert.ok(endPhase?.lines.some((line) => line.includes("Silent Stalk")));
+});
+
+test("a fighter KO'd by the first action is not shown as having acted", () => {
+  const sequence = buildLegacyOrderedTurnSequence({
+    turn: 3,
+    battleFinished: true,
+    winner: "kea",
+    first: {
+      actorId: "kea",
+      actorName: "Kea",
+      targetId: "wolf",
+      targetName: "Wolf",
+      action: "precise",
+      speed: 100,
+      priority: 1
+    },
+    second: {
+      actorId: "wolf",
+      actorName: "Wolf",
+      targetId: "kea",
+      targetName: "Kea",
+      action: "normal",
+      speed: 60,
+      priority: 1
+    },
+    lines: [
+      "Kea hits Wolf with Precise Attack for 999 damage (CRITICAL).",
+      "Wolf has been defeated."
+    ]
+  });
+
+  const actionPhases = sequence.phases.filter((phase) => phase.type === TURN_PHASE.ACTION);
+  assert.equal(actionPhases.length, 1);
+  assert.equal(sequence.order.length, 1);
+  assert.equal(sequence.order[0].actorName, "Kea");
+});
+
 test("VFX routes self-benefits to actor and harmful effects to target", () => {
   const context = {
     playerId: "kea",
