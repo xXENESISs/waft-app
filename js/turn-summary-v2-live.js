@@ -21,6 +21,11 @@ function ensureLiveStyles() {
       overflow: auto;
     }
 
+    #playerEffects,
+    #enemyEffects {
+      display: none !important;
+    }
+
     .waft-turn-v2-system-message {
       padding: 10px 12px;
       border-radius: 12px;
