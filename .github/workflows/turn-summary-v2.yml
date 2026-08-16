@@ -45,6 +45,7 @@ jobs:
           node --check js/online-tournament-v2-socket-bridge.js
           node --check tests/browser-smoke-v2.mjs
           node --check tests/online-battle-smoke-v2.mjs
+          node --check tests/single-tournament-smoke-v2.mjs
 
       - name: Test ordered turn sequence
         run: node --test tests/turn-sequence-v2.test.mjs
@@ -72,6 +73,9 @@ jobs:
 
       - name: Browser smoke Online Battle V2
         run: node tests/online-battle-smoke-v2.mjs
+
+      - name: Browser smoke Single Tournament V2
+        run: node tests/single-tournament-smoke-v2.mjs
 
       - name: Upload V2 smoke screenshots
         if: always()
