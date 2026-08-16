@@ -3,6 +3,7 @@
 
 import { presentTurnSequenceV2 } from "./turn-sequence-presenter.js";
 import { renderFighterStatusHudInto } from "./battle-status-hud.js";
+import { renderBattleFieldHudInto } from "./battle-field-hud.js";
 
 const STYLE_ID = "waft-online-tournament-v2-live-styles";
 
@@ -64,6 +65,14 @@ function renderVisibleStatuses(battle, elements, matchId) {
   });
 }
 
+function renderVisibleFieldState(battle, elements, matchId) {
+  if (!battle || !elements?.summaryBox) return;
+
+  renderBattleFieldHudInto(battle, elements.summaryBox, {
+    hudId: `onlineTournamentFieldHud-${safeDomIdPart(matchId)}`
+  });
+}
+
 async function renderResolvedTurn(detail) {
   const { matchId, battle, sequence } = detail || {};
   if (!matchId || !battle || !sequence) return false;
@@ -73,6 +82,7 @@ async function renderResolvedTurn(detail) {
 
   ensureStyles();
   elements.summaryBox.dataset.turnSummaryVersion = "2";
+  renderVisibleFieldState(battle, elements, matchId);
 
   await presentTurnSequenceV2(sequence, {
     boxId: elements.summaryBox.id,
@@ -92,6 +102,7 @@ async function renderResolvedTurn(detail) {
   });
 
   renderVisibleStatuses(battle, elements, matchId);
+  renderVisibleFieldState(battle, elements, matchId);
   return true;
 }
 
