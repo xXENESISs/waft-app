@@ -1,1 +1,0 @@
-online-battle-legacy.js is the preserved mature Online Battle implementation used by the V2 bootstrap.
