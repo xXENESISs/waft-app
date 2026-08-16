@@ -28,6 +28,7 @@ jobs:
       - name: Syntax check V2 modules
         run: |
           node --check js/battle-engine.js
+          node --check js/battle-field-hud.js
           node --check js/battle-status-hud.js
           node --check js/battle-turn-sequence.js
           node --check js/battle-turn-sequence-legacy-adapter.js
