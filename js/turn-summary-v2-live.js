@@ -117,10 +117,6 @@ export function installTurnSummaryV2Live(options = {}) {
 
       lastResolvedAt = Date.now();
 
-      if (battle) {
-        renderBattleFieldHud(battle, { anchorId: host.id });
-      }
-
       presentTurnSequenceV2(sequence, {
         boxId: host.id,
         playVfx: playVfx && Boolean(battle),
