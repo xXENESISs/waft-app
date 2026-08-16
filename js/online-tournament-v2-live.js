@@ -82,7 +82,6 @@ async function renderResolvedTurn(detail) {
 
   ensureStyles();
   elements.summaryBox.dataset.turnSummaryVersion = "2";
-  renderVisibleFieldState(battle, elements, matchId);
 
   await presentTurnSequenceV2(sequence, {
     boxId: elements.summaryBox.id,
