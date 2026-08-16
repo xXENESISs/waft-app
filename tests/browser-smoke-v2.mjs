@@ -21,8 +21,16 @@ try {
     timeout: 30000
   });
 
-  await page.waitForSelector("#playerFighter option", { timeout: 15000 });
-  await page.waitForSelector("#enemyFighter option", { timeout: 15000 });
+  await page.waitForFunction(
+    () => document.querySelectorAll("#playerFighter option").length > 0,
+    undefined,
+    { timeout: 15000 }
+  );
+  await page.waitForFunction(
+    () => document.querySelectorAll("#enemyFighter option").length > 0,
+    undefined,
+    { timeout: 15000 }
+  );
 
   const playerOptions = await page.locator("#playerFighter option").evaluateAll((options) =>
     options.map((option) => option.value).filter(Boolean)
@@ -55,20 +63,28 @@ try {
 
   await normalAction.click();
 
-  await page.waitForFunction(() => {
-    const host = document.getElementById("turnSummaryV2Host");
-    const round = host?.querySelector(".waft-turn-v2-round")?.textContent || "";
-    const phases = host?.querySelectorAll(".waft-turn-v2-phase").length || 0;
-    return /ROUND\s+1/i.test(round) && phases >= 1;
-  }, { timeout: 15000 });
+  await page.waitForFunction(
+    () => {
+      const host = document.getElementById("turnSummaryV2Host");
+      const round = host?.querySelector(".waft-turn-v2-round")?.textContent || "";
+      const phases = host?.querySelectorAll(".waft-turn-v2-phase").length || 0;
+      return /ROUND\s+1/i.test(round) && phases >= 1;
+    },
+    undefined,
+    { timeout: 15000 }
+  );
 
-  await page.waitForFunction(() => {
-    const host = document.getElementById("turnSummaryV2Host");
-    if (!host) return false;
-    const active = host.querySelector(".waft-turn-v2-phase.active-phase");
-    const actionPhases = host.querySelectorAll('[data-turn-phase="action"]').length;
-    return !active && actionPhases >= 1;
-  }, { timeout: 20000 });
+  await page.waitForFunction(
+    () => {
+      const host = document.getElementById("turnSummaryV2Host");
+      if (!host) return false;
+      const active = host.querySelector(".waft-turn-v2-phase.active-phase");
+      const actionPhases = host.querySelectorAll('[data-turn-phase="action"]').length;
+      return !active && actionPhases >= 1;
+    },
+    undefined,
+    { timeout: 20000 }
+  );
 
   const orderPills = await page.locator("#turnSummaryV2Host .waft-turn-v2-order span").count();
   assert.equal(orderPills, 2, "Resolved round should display both action-order entries");
@@ -86,6 +102,9 @@ try {
 
   console.log(`WAFT V2 browser smoke passed: ${playerId} vs ${enemyId}`);
   console.log(`Screenshot: ${screenshotPath}`);
+} catch (error) {
+  await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+  throw error;
 } finally {
   await browser.close();
 }
