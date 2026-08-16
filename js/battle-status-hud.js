@@ -3,6 +3,7 @@
 // not need to reread the turn log to know what is currently applied.
 
 const STYLE_ID = "waft-battle-status-hud-styles";
+let dynamicHudCounter = 0;
 
 const EFFECT_ICONS = {
   bleed: "🩸",
@@ -74,10 +75,6 @@ function ensureStyles() {
       font-size: 9px;
       text-align: center;
     }
-
-    .waft-status-empty {
-      display: none;
-    }
   `;
 
   document.head.appendChild(style);
@@ -87,22 +84,27 @@ function getWrap(side) {
   return document.getElementById(side === "player" ? "playerImageWrap" : "enemyImageWrap");
 }
 
-function getOrCreateHud(side) {
-  const wrap = getWrap(side);
+function normalizeWrap(wrap) {
   if (!wrap) return null;
 
   if (getComputedStyle(wrap).position === "static") {
     wrap.style.position = "relative";
   }
 
-  const id = side === "player" ? "playerStatusHud" : "enemyStatusHud";
-  let hud = document.getElementById(id);
+  return wrap;
+}
+
+function getOrCreateHudInWrap(wrap, hudId = null) {
+  const target = normalizeWrap(wrap);
+  if (!target) return null;
+
+  let hud = hudId ? document.getElementById(hudId) : target.querySelector(":scope > .waft-status-hud");
 
   if (!hud) {
     hud = document.createElement("div");
-    hud.id = id;
+    hud.id = hudId || `waftDynamicStatusHud${++dynamicHudCounter}`;
     hud.className = "waft-status-hud";
-    wrap.appendChild(hud);
+    target.appendChild(hud);
   }
 
   return hud;
@@ -187,12 +189,12 @@ function createChip(effect) {
   return chip;
 }
 
-export function renderFighterStatusHud(fighter, side) {
+export function renderFighterStatusHudInto(fighter, wrap, options = {}) {
   ensureStyles();
-  const hud = getOrCreateHud(side);
+  const hud = getOrCreateHudInWrap(wrap, options.hudId || null);
   if (!hud) return false;
 
-  hud.innerHTML = "";
+  hud.replaceChildren();
   const effects = Array.isArray(fighter?.effects) ? fighter.effects : [];
 
   for (const effect of effects) {
@@ -200,6 +202,12 @@ export function renderFighterStatusHud(fighter, side) {
   }
 
   return true;
+}
+
+export function renderFighterStatusHud(fighter, side) {
+  const wrap = getWrap(side);
+  const hudId = side === "player" ? "playerStatusHud" : "enemyStatusHud";
+  return renderFighterStatusHudInto(fighter, wrap, { hudId });
 }
 
 export function renderBattleStatusHuds(battle, options = {}) {
