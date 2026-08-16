@@ -2,8 +2,7 @@
 // It leaves mature page logic running for compatibility while replacing the
 // wall-of-text presentation with ordered phases, VFX, and persistent statuses.
 
-import { renderTurnSummaryV2 } from "./turn-summary-v2.js";
-import { playTurnSequenceVfx } from "./battle-vfx.js";
+import { presentTurnSequenceV2 } from "./turn-sequence-presenter.js";
 import { renderBattleStatusHuds } from "./battle-status-hud.js";
 
 const LIVE_STYLE_ID = "waft-turn-summary-v2-live-styles";
@@ -17,6 +16,8 @@ function ensureLiveStyles() {
     #turnSummaryV2Host {
       width: 100%;
       min-height: 92px;
+      max-height: min(48vh, 470px);
+      overflow: auto;
     }
 
     .waft-turn-v2-system-message {
@@ -105,32 +106,33 @@ export function installTurnSummaryV2Live(options = {}) {
       if (!sequence) return;
 
       const effectivePlayerSide = resolvePlayerSide(detail, playerSide);
+      const player = battle
+        ? effectivePlayerSide === "fighterB" ? battle.fighterB : battle.fighterA
+        : null;
+      const enemy = battle
+        ? effectivePlayerSide === "fighterB" ? battle.fighterA : battle.fighterB
+        : null;
 
       lastResolvedAt = Date.now();
-      renderTurnSummaryV2(sequence, { boxId: host.id });
 
-      if (battle) {
-        renderBattleStatusHuds(battle, { playerSide: effectivePlayerSide });
-      }
-
-      if (playVfx && battle) {
-        const player = effectivePlayerSide === "fighterB" ? battle.fighterB : battle.fighterA;
-        const enemy = effectivePlayerSide === "fighterB" ? battle.fighterA : battle.fighterB;
-
-        playTurnSequenceVfx(
-          sequence,
-          {
-            playerId: player?.id ?? null,
-            enemyId: enemy?.id ?? null
-          },
-          {
-            gap: 70,
-            phaseGap: 90
-          }
-        ).catch((error) => {
-          console.warn("WAFT VFX sequence failed:", error);
-        });
-      }
+      presentTurnSequenceV2(sequence, {
+        boxId: host.id,
+        playVfx: playVfx && Boolean(battle),
+        vfxContext: {
+          playerId: player?.id ?? null,
+          enemyId: enemy?.id ?? null,
+          playerName: player?.name ?? null,
+          enemyName: enemy?.name ?? null
+        },
+        eventGap: 70,
+        phaseGap: 110
+      }).then(() => {
+        if (battle) {
+          renderBattleStatusHuds(battle, { playerSide: effectivePlayerSide });
+        }
+      }).catch((error) => {
+        console.warn("WAFT Turn Summary V2 sequence failed:", error);
+      });
     };
 
     window.addEventListener("waft:battle-state", onBattleState);
