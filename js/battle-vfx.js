@@ -2,6 +2,7 @@
 // Visual feedback is driven by structured turn events, not by UI-specific logs.
 
 import { TURN_EVENT } from "./battle-turn-sequence.js";
+import { playSignatureSpecialVfx } from "./battle-vfx-signatures.js";
 
 const STYLE_ID = "waft-battle-vfx-styles";
 
@@ -274,7 +275,14 @@ export async function playBattleEventVfx(event, context = {}) {
 
   if (cue.special) {
     specialBanner(cue.special);
-    await delay(cue.duration || 720);
+
+    // Signature specials add their identity on top of the universal banner.
+    // Unknown specials simply fall back to the banner with no branching in the
+    // four battle modes.
+    await Promise.all([
+      delay(cue.duration || 720),
+      playSignatureSpecialVfx(event, context)
+    ]);
     return true;
   }
 
