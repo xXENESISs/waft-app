@@ -25,5 +25,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Syntax check V2 modules
+        run: |
+          node --check js/battle-engine.js
+          node --check js/battle-status-hud.js
+          node --check js/battle-turn-sequence.js
+          node --check js/battle-turn-sequence-legacy-adapter.js
+          node --check js/battle-vfx.js
+          node --check js/legacy-presentation-compat.js
+          node --check js/turn-summary-v2.js
+          node --check js/turn-summary-v2-live.js
+          node --check js/turn-sequence-presenter.js
+          node --check js/test-battle.js
+          node --check js/online-battle.js
+          node --check js/online-battle-entry-v2.js
+          node --check js/online-battle-v2-bootstrap.js
+          node --check js/online-battle-v2-socket-bridge.js
+          node --check js/tournament.js
+          node --check js/online-tournament.js
+          node --check js/online-tournament-v2-live.js
+          node --check js/online-tournament-v2-socket-bridge.js
+
       - name: Test ordered turn sequence
         run: node --test tests/turn-sequence-v2.test.mjs
