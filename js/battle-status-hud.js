@@ -11,9 +11,17 @@ const EFFECT_ICONS = {
   poison: "☠️",
   perforation: "✹",
   "costal-toxin": "☣️",
+  tetrodotoxin: "☣️",
   "evasion-down": "👁️",
   "heavy-evasion-down": "👁️",
   "agility-down": "⬇️",
+  blindness: "👁️",
+  "irritant-secretion": "🧪",
+  destabilization: "🌀",
+  anchor: "⚓",
+  momentum: "💨",
+  "hunting-inertia": "🎯",
+  humidity: "💧",
   "predatory-pressure": "🐾",
   "ink-sea": "🌑",
   "refresh-debuff": "⬇️",
@@ -120,6 +128,9 @@ function effectIcon(effect) {
   if (name.includes("blind") || name.includes("vision")) return "👁️";
   if (name.includes("burn")) return "🔥";
   if (name.includes("stun") || name.includes("paraly")) return "⚡";
+  if (name.includes("humidity")) return "💧";
+  if (name.includes("anchor")) return "⚓";
+  if (name.includes("momentum") || name.includes("inertia")) return "💨";
   if (name.includes("shell") || name.includes("guard") || name.includes("defense")) return "🛡️";
   return "◉";
 }
@@ -139,6 +150,14 @@ function effectTurns(effect) {
   return Math.max(0, duration);
 }
 
+function effectBadge(effect) {
+  const stacks = Number(effect?.stacks);
+  if (Number.isFinite(stacks) && stacks > 0) return `×${stacks}`;
+
+  const turns = effectTurns(effect);
+  return turns === "" ? "" : String(turns);
+}
+
 function modifierText(modifiers = {}) {
   const labels = {
     attackPct: "ATK",
@@ -148,7 +167,8 @@ function modifierText(modifiers = {}) {
     techniquePct: "TEC",
     explosivenessPct: "EXP",
     precisionPct: "PRE",
-    evasionPct: "EVA"
+    evasionPct: "EVA",
+    damagePct: "DMG"
   };
 
   return Object.entries(modifiers)
@@ -160,8 +180,10 @@ function modifierText(modifiers = {}) {
 function effectTooltip(effect) {
   const parts = [effect?.name || effect?.id || "Status"];
   const turns = effectTurns(effect);
+  const stacks = Number(effect?.stacks);
   const modifiers = modifierText(effect?.modifiers);
 
+  if (Number.isFinite(stacks) && stacks > 0) parts.push(`${stacks} stack${stacks === 1 ? "" : "s"}`);
   if (turns !== "") parts.push(`${turns} turn${turns === 1 ? "" : "s"} remaining`);
   if (modifiers) parts.push(modifiers);
   return parts.join(" — ");
@@ -178,11 +200,11 @@ function createChip(effect) {
   icon.textContent = effectIcon(effect);
   chip.appendChild(icon);
 
-  const turns = effectTurns(effect);
-  if (turns !== "") {
+  const badge = effectBadge(effect);
+  if (badge) {
     const count = document.createElement("span");
     count.className = "waft-status-turns";
-    count.textContent = turns;
+    count.textContent = badge;
     chip.appendChild(count);
   }
 
