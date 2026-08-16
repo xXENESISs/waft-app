@@ -67,10 +67,18 @@ function ensureStyles() {
       background: rgba(8,12,20,.62);
       border: 1px solid rgba(255,255,255,.07);
       overflow: hidden;
+      transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
     }
 
     .waft-turn-v2-phase.action-phase {
       border-color: rgba(255,255,255,.11);
+    }
+
+    .waft-turn-v2-phase.active-phase {
+      border-color: rgba(245,158,11,.55);
+      background: rgba(36,27,10,.72);
+      transform: translateY(-1px);
+      box-shadow: 0 0 18px rgba(245,158,11,.09);
     }
 
     .waft-turn-v2-phase-title {
@@ -254,14 +262,15 @@ function phaseTitle(phase) {
   };
 }
 
-function renderPhase(phase) {
+function renderPhase(phase, index, activePhaseIndex) {
   const title = phaseTitle(phase);
   const events = Array.isArray(phase.events) ? phase.events : [];
   const visibleEvents = events.filter((event) => event && event.type !== TURN_EVENT.INFO);
   const fallbackEvents = visibleEvents.length > 0 ? visibleEvents : events.slice(0, 1);
+  const activeClass = index === activePhaseIndex ? " active-phase" : "";
 
   return `
-    <section class="waft-turn-v2-phase ${phase.type === TURN_PHASE.ACTION ? "action-phase" : "system-phase"}" data-turn-phase="${escapeHtml(phase.type)}">
+    <section class="waft-turn-v2-phase ${phase.type === TURN_PHASE.ACTION ? "action-phase" : "system-phase"}${activeClass}" data-turn-phase="${escapeHtml(phase.type)}" data-turn-phase-index="${index}">
       <div class="waft-turn-v2-phase-title">
         <div class="waft-turn-v2-actor">${escapeHtml(title.actor)}</div>
         <div class="waft-turn-v2-action">${escapeHtml(title.action)}</div>
@@ -275,13 +284,20 @@ function renderPhase(phase) {
   `;
 }
 
-export function buildTurnSummaryV2Html(sequence) {
+export function buildTurnSummaryV2Html(sequence, options = {}) {
   if (!sequence) {
     return `<div class="waft-turn-v2-empty">Waiting for the next round.</div>`;
   }
 
   const order = Array.isArray(sequence.order) ? sequence.order : [];
-  const phases = Array.isArray(sequence.phases) ? sequence.phases : [];
+  const allPhases = Array.isArray(sequence.phases) ? sequence.phases : [];
+  const visiblePhaseCount = Number.isFinite(options.visiblePhaseCount)
+    ? Math.max(0, Math.min(allPhases.length, options.visiblePhaseCount))
+    : allPhases.length;
+  const activePhaseIndex = Number.isFinite(options.activePhaseIndex)
+    ? options.activePhaseIndex
+    : -1;
+  const phases = allPhases.slice(0, visiblePhaseCount);
 
   const orderHtml = order.length
     ? order.map((entry) => `<span>${escapeHtml(entry.position)}. ${escapeHtml(entry.actorName)} · ${escapeHtml(entry.actionLabel)}</span>`).join("")
@@ -293,7 +309,9 @@ export function buildTurnSummaryV2Html(sequence) {
         <div class="waft-turn-v2-round">ROUND ${escapeHtml(sequence.turn ?? "-")}</div>
         ${orderHtml ? `<div class="waft-turn-v2-order">${orderHtml}</div>` : ""}
       </div>
-      ${phases.map(renderPhase).join("")}
+      ${phases.length
+        ? phases.map((phase, index) => renderPhase(phase, index, activePhaseIndex)).join("")
+        : `<div class="waft-turn-v2-empty">Resolving round…</div>`}
     </div>
   `;
 }
@@ -305,7 +323,7 @@ export function renderTurnSummaryV2(sequence, options = {}) {
   const box = document.getElementById(boxId);
   if (!box) return false;
 
-  box.innerHTML = buildTurnSummaryV2Html(sequence);
+  box.innerHTML = buildTurnSummaryV2Html(sequence, options);
   box.dataset.turnSummaryVersion = "2";
   return true;
 }
