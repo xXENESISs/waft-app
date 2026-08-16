@@ -2,10 +2,12 @@
 // combat/spectator area. Only the match currently visible is animated.
 
 import { presentTurnSequenceV2 } from "./turn-sequence-presenter.js";
+import { renderTurnSummaryV2 } from "./turn-summary-v2.js";
 import { renderFighterStatusHudInto } from "./battle-status-hud.js";
 import { renderBattleFieldHudInto } from "./battle-field-hud.js";
 
 const STYLE_ID = "waft-online-tournament-v2-live-styles";
+const RESULT_CACHE_KEY = "__WAFT_ONLINE_TOURNAMENT_V2_RESULTS__";
 
 function ensureStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -52,6 +54,12 @@ function ensureStyles() {
 
 function safeDomIdPart(value) {
   return String(value || "match").replace(/[^a-zA-Z0-9_-]/g, "-");
+}
+
+function getResultCache() {
+  return window[RESULT_CACHE_KEY] instanceof Map
+    ? window[RESULT_CACHE_KEY]
+    : null;
 }
 
 function getVisibleMatchElements(matchId) {
@@ -110,16 +118,6 @@ function syncCombatLogToggles() {
   });
 }
 
-function observeDynamicCombatArea() {
-  const area = document.getElementById("activeCombatArea");
-  if (!area || area.dataset.waftV2LogObserver === "true") return;
-
-  area.dataset.waftV2LogObserver = "true";
-  const observer = new MutationObserver(() => syncCombatLogToggles());
-  observer.observe(area, { childList: true, subtree: true });
-  syncCombatLogToggles();
-}
-
 function renderVisibleStatuses(battle, elements, matchId) {
   if (!battle || !elements) return;
   const idPart = safeDomIdPart(matchId);
@@ -139,6 +137,49 @@ function renderVisibleFieldState(battle, elements, matchId) {
   renderBattleFieldHudInto(battle, elements.summaryBox, {
     hudId: `onlineTournamentFieldHud-${safeDomIdPart(matchId)}`
   });
+}
+
+function restoreCachedVisibleSummaries() {
+  const area = document.getElementById("activeCombatArea");
+  const cache = getResultCache();
+  if (!area || !cache) return;
+
+  area.querySelectorAll(".online-summary-box[data-turn-summary-match-id]").forEach((summaryBox) => {
+    const matchId = summaryBox.getAttribute("data-turn-summary-match-id");
+    const detail = cache.get(matchId);
+    if (!matchId || !detail?.battle || !detail?.sequence) return;
+
+    const alreadyV2 =
+      summaryBox.dataset.turnSummaryVersion === "2" &&
+      Boolean(summaryBox.querySelector(".waft-turn-v2"));
+
+    if (alreadyV2) return;
+
+    const elements = getVisibleMatchElements(matchId);
+    if (!elements) return;
+
+    // This path is only a repair after the mature tournament code rebuilds the
+    // dynamic combat DOM. Restore the final compact summary immediately, but do
+    // not replay VFX that the player has already seen.
+    renderTurnSummaryV2(detail.sequence, { boxId: elements.summaryBox.id });
+    renderVisibleStatuses(detail.battle, elements, matchId);
+    renderVisibleFieldState(detail.battle, elements, matchId);
+  });
+}
+
+function syncDynamicCombatPresentation() {
+  syncCombatLogToggles();
+  restoreCachedVisibleSummaries();
+}
+
+function observeDynamicCombatArea() {
+  const area = document.getElementById("activeCombatArea");
+  if (!area || area.dataset.waftV2PresentationObserver === "true") return;
+
+  area.dataset.waftV2PresentationObserver = "true";
+  const observer = new MutationObserver(() => syncDynamicCombatPresentation());
+  observer.observe(area, { childList: true, subtree: true });
+  syncDynamicCombatPresentation();
 }
 
 async function renderResolvedTurn(detail) {
@@ -171,7 +212,7 @@ async function renderResolvedTurn(detail) {
 
   renderVisibleStatuses(battle, elements, matchId);
   renderVisibleFieldState(battle, elements, matchId);
-  syncCombatLogToggles();
+  syncDynamicCombatPresentation();
   return true;
 }
 
