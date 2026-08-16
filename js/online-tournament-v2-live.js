@@ -26,6 +26,26 @@ function ensureStyles() {
     .online-summary-box[data-turn-summary-version="2"] .waft-turn-v2-phase {
       padding: 8px;
     }
+
+    .waft-v2-online-log-collapsed > :not(.waft-v2-online-log-toggle) {
+      display: none !important;
+    }
+
+    .waft-v2-online-log-toggle {
+      width: 100%;
+      min-height: 34px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.09);
+      background: rgba(255,255,255,.055);
+      color: #dbe3ee;
+      font: inherit;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -50,6 +70,54 @@ function getVisibleMatchElements(matchId) {
 
   summaryBox.id = `onlineTournamentTurnSummaryV2-${safeDomIdPart(matchId)}`;
   return { area, summaryBox, wrapA, wrapB };
+}
+
+function isCombatLogPanel(panel) {
+  if (!panel) return false;
+  if (panel.classList.contains("online-combat-log-panel")) return true;
+
+  const title = panel.querySelector(".online-summary-title")?.textContent?.trim().toLowerCase();
+  return panel.classList.contains("online-summary-panel") && title === "combat log";
+}
+
+function installCombatLogToggle(panel) {
+  if (!panel || panel.dataset.waftV2LogToggle === "true" || !isCombatLogPanel(panel)) return;
+
+  panel.dataset.waftV2LogToggle = "true";
+  panel.classList.add("waft-v2-online-log-collapsed");
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "waft-v2-online-log-toggle";
+  button.textContent = "Battle Log";
+  button.setAttribute("aria-expanded", "false");
+
+  button.addEventListener("click", () => {
+    const collapsed = panel.classList.toggle("waft-v2-online-log-collapsed");
+    button.textContent = collapsed ? "Battle Log" : "Hide Battle Log";
+    button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  });
+
+  panel.insertAdjacentElement("afterbegin", button);
+}
+
+function syncCombatLogToggles() {
+  const area = document.getElementById("activeCombatArea");
+  if (!area) return;
+
+  area.querySelectorAll(".online-combat-log-panel, .online-summary-panel").forEach((panel) => {
+    if (isCombatLogPanel(panel)) installCombatLogToggle(panel);
+  });
+}
+
+function observeDynamicCombatArea() {
+  const area = document.getElementById("activeCombatArea");
+  if (!area || area.dataset.waftV2LogObserver === "true") return;
+
+  area.dataset.waftV2LogObserver = "true";
+  const observer = new MutationObserver(() => syncCombatLogToggles());
+  observer.observe(area, { childList: true, subtree: true });
+  syncCombatLogToggles();
 }
 
 function renderVisibleStatuses(battle, elements, matchId) {
@@ -81,6 +149,7 @@ async function renderResolvedTurn(detail) {
   if (!elements) return false;
 
   ensureStyles();
+  syncCombatLogToggles();
   elements.summaryBox.dataset.turnSummaryVersion = "2";
 
   await presentTurnSequenceV2(sequence, {
@@ -102,6 +171,7 @@ async function renderResolvedTurn(detail) {
 
   renderVisibleStatuses(battle, elements, matchId);
   renderVisibleFieldState(battle, elements, matchId);
+  syncCombatLogToggles();
   return true;
 }
 
@@ -111,6 +181,7 @@ export function installOnlineTournamentV2Live() {
 
   window.__WAFT_ONLINE_TOURNAMENT_V2_LIVE__ = true;
   ensureStyles();
+  observeDynamicCombatArea();
 
   window.addEventListener("waft:online-tournament-turn-resolved", (event) => {
     renderResolvedTurn(event?.detail).catch((error) => {
