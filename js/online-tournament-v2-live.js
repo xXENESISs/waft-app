@@ -1,8 +1,7 @@
 // Shared V2 presentation for the Online Tournament's dynamically rendered
 // combat/spectator area. Only the match currently visible is animated.
 
-import { buildTurnSummaryV2Html } from "./turn-summary-v2.js";
-import { playTurnSequenceVfx } from "./battle-vfx.js";
+import { presentTurnSequenceV2 } from "./turn-sequence-presenter.js";
 import { renderFighterStatusHudInto } from "./battle-status-hud.js";
 
 const STYLE_ID = "waft-online-tournament-v2-live-styles";
@@ -30,6 +29,10 @@ function ensureStyles() {
   document.head.appendChild(style);
 }
 
+function safeDomIdPart(value) {
+  return String(value || "match").replace(/[^a-zA-Z0-9_-]/g, "-");
+}
+
 function getVisibleMatchElements(matchId) {
   const area = document.getElementById("activeCombatArea");
   if (!area || !matchId) return null;
@@ -44,18 +47,20 @@ function getVisibleMatchElements(matchId) {
   const wrapA = area.querySelector('.online-battle-fighter-image[data-combat-side="A"]');
   const wrapB = area.querySelector('.online-battle-fighter-image[data-combat-side="B"]');
 
+  summaryBox.id = `onlineTournamentTurnSummaryV2-${safeDomIdPart(matchId)}`;
   return { area, summaryBox, wrapA, wrapB };
 }
 
-function renderVisibleStatuses(battle, elements) {
+function renderVisibleStatuses(battle, elements, matchId) {
   if (!battle || !elements) return;
+  const idPart = safeDomIdPart(matchId);
 
   renderFighterStatusHudInto(battle.fighterA, elements.wrapA, {
-    hudId: "onlineTournamentStatusHudA"
+    hudId: `onlineTournamentStatusHudA-${idPart}`
   });
 
   renderFighterStatusHudInto(battle.fighterB, elements.wrapB, {
-    hudId: "onlineTournamentStatusHudB"
+    hudId: `onlineTournamentStatusHudB-${idPart}`
   });
 }
 
@@ -67,14 +72,12 @@ async function renderResolvedTurn(detail) {
   if (!elements) return false;
 
   ensureStyles();
-
-  elements.summaryBox.innerHTML = buildTurnSummaryV2Html(sequence);
   elements.summaryBox.dataset.turnSummaryVersion = "2";
-  renderVisibleStatuses(battle, elements);
 
-  await playTurnSequenceVfx(
-    sequence,
-    {
+  await presentTurnSequenceV2(sequence, {
+    boxId: elements.summaryBox.id,
+    playVfx: true,
+    vfxContext: {
       playerId: battle.fighterA?.id ?? null,
       enemyId: battle.fighterB?.id ?? null,
       playerName: battle.fighterA?.name ?? null,
@@ -84,12 +87,11 @@ async function renderResolvedTurn(detail) {
         enemy: elements.wrapB
       }
     },
-    {
-      gap: 70,
-      phaseGap: 90
-    }
-  );
+    eventGap: 70,
+    phaseGap: 110
+  });
 
+  renderVisibleStatuses(battle, elements, matchId);
   return true;
 }
 
