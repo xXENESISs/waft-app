@@ -30,6 +30,7 @@ jobs:
           node --check js/battle-turn-sequence.js
           node --check js/battle-turn-sequence-legacy-adapter.js
           node --check js/battle-vfx.js
+          node --check js/battle-vfx-signatures.js
           node --check js/legacy-presentation-compat.js
           node --check js/turn-summary-v2.js
           node --check js/turn-summary-v2-live.js
@@ -48,7 +49,7 @@ jobs:
           node --check tests/single-tournament-smoke-v2.mjs
           node --check tests/online-tournament-smoke-v2.mjs
 
-      - name: Test ordered turn sequence
+      - name: Test ordered turn sequence and signature VFX registry
         run: node --test tests/turn-sequence-v2.test.mjs
 
       - name: Install Playwright Chromium
@@ -69,7 +70,7 @@ jobs:
           cat /tmp/waft-server.log
           exit 1
 
-      - name: Browser smoke Single Battle V2
+      - name: Browser smoke Single Battle V2 + signature effects
         run: node tests/browser-smoke-v2.mjs
 
       - name: Browser smoke Online Battle V2
