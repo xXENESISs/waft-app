@@ -11,6 +11,7 @@ import {
   buildLegacyOrderedTurnSequence,
   determineLegacyTurnOrder
 } from "../js/battle-turn-sequence-legacy-adapter.js";
+import { getBattleVfxCue } from "../js/battle-vfx.js";
 
 function fighter(id, name) {
   return { id, name };
@@ -106,6 +107,54 @@ test("legacy round becomes ordered actions plus round-end events", () => {
   assert.ok(endPhase);
   assert.ok(endPhase.events.some((event) => event.type === TURN_EVENT.DAMAGE && event.targetName === "Kea" && event.amount === 10));
   assert.ok(endPhase.events.some((event) => event.type === TURN_EVENT.HEAL && event.actorName === "Kea" && event.amount === 30));
+});
+
+test("VFX routes self-benefits to actor and harmful effects to target", () => {
+  const context = {
+    playerId: "kea",
+    enemyId: "wolf",
+    playerName: "Kea",
+    enemyName: "Wolf"
+  };
+
+  const healCue = getBattleVfxCue({
+    type: TURN_EVENT.HEAL,
+    actorId: "kea",
+    actorName: "Kea",
+    targetId: "wolf",
+    targetName: "Wolf",
+    amount: 30
+  }, context);
+
+  const buffCue = getBattleVfxCue({
+    type: TURN_EVENT.BUFF,
+    actorId: "kea",
+    actorName: "Kea",
+    targetId: "wolf",
+    targetName: "Wolf"
+  }, context);
+
+  const criticalCue = getBattleVfxCue({
+    type: TURN_EVENT.CRITICAL,
+    actorId: "kea",
+    actorName: "Kea",
+    targetId: "wolf",
+    targetName: "Wolf",
+    amount: 74
+  }, context);
+
+  const debuffCue = getBattleVfxCue({
+    type: TURN_EVENT.DEBUFF,
+    actorId: "kea",
+    actorName: "Kea",
+    targetId: "wolf",
+    targetName: "Wolf"
+  }, context);
+
+  assert.equal(healCue.side, "player");
+  assert.equal(buffCue.side, "player");
+  assert.equal(criticalCue.side, "enemy");
+  assert.equal(debuffCue.side, "enemy");
 });
 
 test("real battle-engine resolveTurn publishes a structured lastTurnSequence", () => {
