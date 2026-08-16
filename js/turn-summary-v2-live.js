@@ -4,6 +4,7 @@
 
 import { presentTurnSequenceV2 } from "./turn-sequence-presenter.js";
 import { renderBattleStatusHuds } from "./battle-status-hud.js";
+import { renderBattleFieldHud } from "./battle-field-hud.js";
 
 const LIVE_STYLE_ID = "waft-turn-summary-v2-live-styles";
 
@@ -93,6 +94,7 @@ export function installTurnSummaryV2Live(options = {}) {
 
       const effectivePlayerSide = resolvePlayerSide(detail, playerSide);
       renderBattleStatusHuds(battle, { playerSide: effectivePlayerSide });
+      renderBattleFieldHud(battle, { anchorId: host.id });
 
       if (detail.message) {
         renderSmallSystemMessage(host, detail.message);
@@ -115,6 +117,10 @@ export function installTurnSummaryV2Live(options = {}) {
 
       lastResolvedAt = Date.now();
 
+      if (battle) {
+        renderBattleFieldHud(battle, { anchorId: host.id });
+      }
+
       presentTurnSequenceV2(sequence, {
         boxId: host.id,
         playVfx: playVfx && Boolean(battle),
@@ -129,6 +135,7 @@ export function installTurnSummaryV2Live(options = {}) {
       }).then(() => {
         if (battle) {
           renderBattleStatusHuds(battle, { playerSide: effectivePlayerSide });
+          renderBattleFieldHud(battle, { anchorId: host.id });
         }
       }).catch((error) => {
         console.warn("WAFT Turn Summary V2 sequence failed:", error);
