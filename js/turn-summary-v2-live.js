@@ -1,6 +1,6 @@
-// Live bridge between the current WAFT battle pages and Turn Summary V2.
-// It leaves the legacy summary logic running for compatibility, but hides the
-// wall of text and renders the structured sequence in a separate host.
+// Live bridge between current WAFT battle pages and Turn Summary V2.
+// It leaves mature page logic running for compatibility while replacing the
+// wall-of-text presentation with ordered phases, VFX, and persistent statuses.
 
 import { renderTurnSummaryV2 } from "./turn-summary-v2.js";
 import { playTurnSequenceVfx } from "./battle-vfx.js";
@@ -56,6 +56,10 @@ function renderSmallSystemMessage(host, text) {
   host.appendChild(message);
 }
 
+function resolvePlayerSide(detail, fallback = "fighterA") {
+  return detail?.playerSide === "fighterB" ? "fighterB" : fallback;
+}
+
 export function installTurnSummaryV2Live(options = {}) {
   const {
     legacyBoxId = "turnSummaryBox",
@@ -81,22 +85,37 @@ export function installTurnSummaryV2Live(options = {}) {
 
     let lastResolvedAt = 0;
 
+    const onBattleState = (event) => {
+      const detail = event?.detail || {};
+      const battle = detail.battle;
+      if (!battle) return;
+
+      const effectivePlayerSide = resolvePlayerSide(detail, playerSide);
+      renderBattleStatusHuds(battle, { playerSide: effectivePlayerSide });
+
+      if (detail.message) {
+        renderSmallSystemMessage(host, detail.message);
+      }
+    };
+
     const onTurnResolved = (event) => {
       const detail = event?.detail || {};
       const sequence = detail.sequence;
       const battle = detail.battle;
       if (!sequence) return;
 
+      const effectivePlayerSide = resolvePlayerSide(detail, playerSide);
+
       lastResolvedAt = Date.now();
       renderTurnSummaryV2(sequence, { boxId: host.id });
 
       if (battle) {
-        renderBattleStatusHuds(battle, { playerSide });
+        renderBattleStatusHuds(battle, { playerSide: effectivePlayerSide });
       }
 
       if (playVfx && battle) {
-        const player = playerSide === "fighterB" ? battle.fighterB : battle.fighterA;
-        const enemy = playerSide === "fighterB" ? battle.fighterA : battle.fighterB;
+        const player = effectivePlayerSide === "fighterB" ? battle.fighterB : battle.fighterA;
+        const enemy = effectivePlayerSide === "fighterB" ? battle.fighterA : battle.fighterB;
 
         playTurnSequenceVfx(
           sequence,
@@ -114,10 +133,11 @@ export function installTurnSummaryV2Live(options = {}) {
       }
     };
 
+    window.addEventListener("waft:battle-state", onBattleState);
     window.addEventListener("waft:turn-resolved", onTurnResolved);
 
     const observer = new MutationObserver(() => {
-      if (Date.now() - lastResolvedAt < 1400) return;
+      if (Date.now() - lastResolvedAt < 900) return;
 
       const text = legacyBox.textContent?.trim() || "";
       if (!text) return;
