@@ -3,6 +3,7 @@
 // the mature online-tournament implementation.
 
 const INSTALL_FLAG = "__WAFT_ONLINE_TOURNAMENT_V2_SOCKET_BRIDGE__";
+const PRESENTATION_HANDOFF_DELAY = 120;
 
 function emitResolvedTurn(data) {
   const result = data?.result;
@@ -44,7 +45,11 @@ export function installOnlineTournamentV2SocketBridge() {
 
       return originalOn(eventName, (data) => {
         const returned = handler(data);
-        queueMicrotask(() => emitResolvedTurn(data));
+
+        // The mature tournament handler refreshes the dynamic combat DOM after
+        // its short legacy animation pipeline. Hand V2 the result afterwards so
+        // the compact summary is not immediately overwritten by renderState().
+        window.setTimeout(() => emitResolvedTurn(data), PRESENTATION_HANDOFF_DELAY);
         return returned;
       });
     };
