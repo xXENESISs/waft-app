@@ -3,6 +3,7 @@
 
 import { TURN_EVENT } from "./battle-turn-sequence.js";
 import { playSignatureSpecialVfx } from "./battle-vfx-signatures.js";
+import { playAppliedStatusVfx } from "./battle-vfx-statuses.js";
 
 const STYLE_ID = "waft-battle-vfx-styles";
 
@@ -291,7 +292,14 @@ export async function playBattleEventVfx(event, context = {}) {
   if (cue.className) addClassBriefly(wrap, cue.className, cue.duration || 350);
   if (cue.text) floatingText(wrap, cue.text, cue.emphasis || "normal");
 
-  await delay(Math.min(cue.duration || 300, 420));
+  const supplemental = event?.type === TURN_EVENT.STATUS_APPLIED
+    ? playAppliedStatusVfx(event, context)
+    : Promise.resolve(false);
+
+  await Promise.all([
+    delay(Math.min(cue.duration || 300, 420)),
+    supplemental
+  ]);
   return true;
 }
 
