@@ -12,6 +12,7 @@ import {
   determineLegacyTurnOrder
 } from "../js/battle-turn-sequence-legacy-adapter.js";
 import { getBattleVfxCue } from "../js/battle-vfx.js";
+import { getSignatureVfxDefinition } from "../js/battle-vfx-signatures.js";
 
 function fighter(id, name) {
   return { id, name };
@@ -230,6 +231,29 @@ test("VFX routes self-benefits to actor and harmful effects to target", () => {
   assert.equal(buffCue.side, "player");
   assert.equal(criticalCue.side, "enemy");
   assert.equal(debuffCue.side, "enemy");
+});
+
+test("signature special VFX registry covers the first distinctive abilities", () => {
+  const expected = {
+    "Ink Sea": ["ink-sea", "screen"],
+    "Chain Reaction": ["chain-reaction", "screen"],
+    "Arctic Storm": ["arctic-storm", "screen"],
+    "Throat Bite": ["throat-bite", "target"],
+    "Bloody Gouging": ["bloody-gouging", "target"],
+    "Coconut Fortress": ["coconut-fortress", "actor"],
+    "Phantom Current": ["phantom-current", "actor"],
+    "Illusory Dance": ["illusory-dance", "actor"],
+    "Microecosystem Ancestral": ["microecosystem", "actor"]
+  };
+
+  for (const [specialName, [kind, focus]] of Object.entries(expected)) {
+    const definition = getSignatureVfxDefinition(specialName);
+    assert.equal(definition?.kind, kind, `${specialName} should use ${kind}`);
+    assert.equal(definition?.focus, focus, `${specialName} should focus ${focus}`);
+    assert.ok(definition?.duration > 0, `${specialName} should have a duration`);
+  }
+
+  assert.equal(getSignatureVfxDefinition("Unknown Future Special"), null);
 });
 
 test("real battle-engine resolveTurn publishes a structured lastTurnSequence", () => {
