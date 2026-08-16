@@ -1,0 +1,31 @@
+name: Circadian HUD Consistency
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "js/battle-field-hud.js"
+      - "js/battle-engine-core.js"
+      - "js/battle-engine.js"
+      - "tests/circadian-hud.test.mjs"
+
+jobs:
+  verify-circadian-phase:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check circadian HUD against Nocturnal Hunt
+        run: node --test tests/circadian-hud.test.mjs
