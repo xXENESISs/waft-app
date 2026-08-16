@@ -31,6 +31,7 @@ jobs:
           node --check js/battle-turn-sequence-legacy-adapter.js
           node --check js/battle-vfx.js
           node --check js/battle-vfx-signatures.js
+          node --check js/battle-vfx-statuses.js
           node --check js/legacy-presentation-compat.js
           node --check js/turn-summary-v2.js
           node --check js/turn-summary-v2-live.js
@@ -48,9 +49,10 @@ jobs:
           node --check tests/online-battle-smoke-v2.mjs
           node --check tests/single-tournament-smoke-v2.mjs
           node --check tests/online-tournament-smoke-v2.mjs
+          node --check tests/vfx-registry.test.mjs
 
-      - name: Test ordered turn sequence and signature VFX registry
-        run: node --test tests/turn-sequence-v2.test.mjs
+      - name: Test ordered turn sequence and VFX registries
+        run: node --test tests/turn-sequence-v2.test.mjs tests/vfx-registry.test.mjs
 
       - name: Install Playwright Chromium
         run: |
