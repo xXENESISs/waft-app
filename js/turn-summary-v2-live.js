@@ -26,6 +26,30 @@ function ensureLiveStyles() {
       display: none !important;
     }
 
+    .log-panel.waft-v2-log-collapsed > :not(.waft-v2-log-toggle) {
+      display: none !important;
+    }
+
+    .waft-v2-log-toggle {
+      width: 100%;
+      min-height: 36px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.09);
+      background: rgba(255,255,255,.055);
+      color: #dbe3ee;
+      font: inherit;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .waft-v2-log-toggle:hover {
+      background: rgba(255,255,255,.085);
+    }
+
     .waft-turn-v2-system-message {
       padding: 10px 12px;
       border-radius: 12px;
@@ -50,6 +74,31 @@ function createHost(legacyBox) {
 
   legacyBox.insertAdjacentElement("beforebegin", host);
   return host;
+}
+
+function installBattleLogToggles() {
+  document.querySelectorAll(".log-panel").forEach((panel, index) => {
+    if (panel.dataset.waftV2LogToggle === "true") return;
+
+    panel.dataset.waftV2LogToggle = "true";
+    panel.classList.add("waft-v2-log-collapsed");
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "waft-v2-log-toggle";
+    button.textContent = "Battle Log";
+    button.setAttribute("aria-expanded", "false");
+    button.setAttribute("aria-controls", `waft-v2-log-panel-${index + 1}`);
+    panel.id = panel.id || `waft-v2-log-panel-${index + 1}`;
+
+    button.addEventListener("click", () => {
+      const collapsed = panel.classList.toggle("waft-v2-log-collapsed");
+      button.textContent = collapsed ? "Battle Log" : "Hide Battle Log";
+      button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    });
+
+    panel.insertAdjacentElement("afterbegin", button);
+  });
 }
 
 function renderSmallSystemMessage(host, text) {
@@ -82,6 +131,7 @@ export function installTurnSummaryV2Live(options = {}) {
 
     ensureLiveStyles();
     const host = createHost(legacyBox);
+    installBattleLogToggles();
 
     legacyBox.dataset.turnSummaryV2LiveInstalled = "true";
 
