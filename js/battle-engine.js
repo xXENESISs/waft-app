@@ -1,13 +1,14 @@
 // WAFT battle engine facade.
 //
 // The full combat implementation lives in battle-engine-core.js. This facade
-// preserves every existing export, while wrapping resolveTurn so the real
-// priority/speed order is captured as a compact structured sequence for all
-// battle modes without changing combat balance.
+// preserves every existing export, while wrapping createBattle/resolveTurn so
+// the V2 presentation receives initial state and real priority/speed order
+// without changing combat balance.
 
 export * from "./battle-engine-core.js";
 
 import {
+  createBattle as createCoreBattle,
   resolveTurn as resolveCoreTurn,
   getEffectiveStat,
   getActionPriority
@@ -17,6 +18,26 @@ import {
   buildLegacyOrderedTurnSequence,
   determineLegacyTurnOrder
 } from "./battle-turn-sequence-legacy-adapter.js";
+
+function dispatchBrowserBattleState(battle, message = null) {
+  if (typeof window === "undefined" || !battle) return;
+
+  window.dispatchEvent(
+    new CustomEvent("waft:battle-state", {
+      detail: {
+        battle,
+        playerSide: "fighterA",
+        message
+      }
+    })
+  );
+}
+
+export function createBattle(idA, idB) {
+  const battle = createCoreBattle(idA, idB);
+  dispatchBrowserBattleState(battle, "Battle started. Choose your first action.");
+  return battle;
+}
 
 export function resolveTurn(battle, actionA, actionB) {
   if (!battle || battle.finished) return;
