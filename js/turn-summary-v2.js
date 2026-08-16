@@ -159,13 +159,31 @@ function ensureStyles() {
     }
 
     @media (max-width: 700px) {
+      .waft-turn-v2 {
+        gap: 7px;
+      }
+
       .waft-turn-v2-header {
         align-items: flex-start;
         flex-direction: column;
+        gap: 6px;
       }
 
       .waft-turn-v2-order {
         justify-content: flex-start;
+        font-size: 9px;
+      }
+
+      .waft-turn-v2-phase {
+        padding: 8px;
+      }
+
+      .waft-turn-v2-actor {
+        font-size: 12px;
+      }
+
+      .waft-turn-v2-primary {
+        font-size: 11px;
       }
     }
   `;
@@ -193,6 +211,26 @@ function eventIcon(event) {
   }
 }
 
+function parseCompactStatChange(event) {
+  const line = String(event?.text || "");
+  const match = line.match(/\breduc(?:es|ing)\s+(.+?)'s\s+(.+?)\s+by\s+(\d+)%\s+for\s+(\d+)\s+turn/i);
+  if (!match) return null;
+
+  const stats = match[2]
+    .replace(/,\s*/g, " / ")
+    .replace(/\s+and\s+/gi, " / ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+
+  return {
+    targetName: match[1],
+    stats,
+    amount: Number(match[3]),
+    turns: Number(match[4])
+  };
+}
+
 function eventPrimary(event) {
   if (!event) return "";
 
@@ -210,6 +248,16 @@ function eventPrimary(event) {
   if (event.type === TURN_EVENT.STATUS_EXPIRED) return "STATUS EXPIRED";
   if (event.type === TURN_EVENT.SPECIAL) return event.specialName || "SPECIAL";
   if (event.type === TURN_EVENT.KO) return "K.O.";
+
+  if (event.type === TURN_EVENT.DEBUFF) {
+    const compact = parseCompactStatChange(event);
+    if (compact) {
+      return `${compact.stats} -${compact.amount}% · ${compact.turns}T`;
+    }
+    return "DEBUFF";
+  }
+
+  if (event.type === TURN_EVENT.BUFF) return "BUFF";
   return event.text;
 }
 
@@ -220,15 +268,39 @@ function eventSecondary(event) {
     return event.targetName ? `Target: ${event.targetName}` : "";
   }
 
-  if (event.type === TURN_EVENT.STATUS_APPLIED && event.text !== event.statusName) {
-    return event.text;
-  }
-
-  if (event.type === TURN_EVENT.SPECIAL && event.text !== event.specialName) {
-    return event.text;
+  if (event.type === TURN_EVENT.DEBUFF) {
+    const compact = parseCompactStatChange(event);
+    return compact?.targetName ? `Target: ${compact.targetName}` : "";
   }
 
   return "";
+}
+
+function isRedundantStatusEvent(event, events) {
+  if (event?.type !== TURN_EVENT.STATUS_APPLIED) return false;
+
+  const statusName = String(event.statusName || "");
+  if (!/(down|debuff)/i.test(statusName)) return false;
+
+  const normalizedStatus = statusName
+    .replace(/\b(down|debuff)\b/gi, "")
+    .replace(/[^a-z]/gi, "")
+    .toLowerCase();
+
+  return events.some((candidate) => {
+    if (candidate?.type !== TURN_EVENT.DEBUFF) return false;
+    const compact = parseCompactStatChange(candidate);
+    if (!compact) return false;
+
+    if (!normalizedStatus) return true;
+    const normalizedStats = compact.stats.replace(/[^a-z]/gi, "").toLowerCase();
+    return normalizedStats.includes(normalizedStatus);
+  });
+}
+
+function compactPhaseEvents(events) {
+  const visible = events.filter((event) => event && event.type !== TURN_EVENT.INFO);
+  return visible.filter((event) => !isRedundantStatusEvent(event, visible));
 }
 
 function renderEvent(event) {
@@ -265,7 +337,7 @@ function phaseTitle(phase) {
 function renderPhase(phase, index, activePhaseIndex) {
   const title = phaseTitle(phase);
   const events = Array.isArray(phase.events) ? phase.events : [];
-  const visibleEvents = events.filter((event) => event && event.type !== TURN_EVENT.INFO);
+  const visibleEvents = compactPhaseEvents(events);
   const fallbackEvents = visibleEvents.length > 0 ? visibleEvents : events.slice(0, 1);
   const activeClass = index === activePhaseIndex ? " active-phase" : "";
 
