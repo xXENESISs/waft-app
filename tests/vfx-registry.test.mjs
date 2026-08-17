@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { getAppliedStatusVfxDefinition } from "../js/battle-vfx-statuses.js";
 import { getTransformSignatureVfxDefinition } from "../js/battle-vfx-signatures-transform.js";
 import { getCombatSignatureVfxDefinition } from "../js/battle-vfx-signatures-combat.js";
+import { getControlSignatureVfxDefinition } from "../js/battle-vfx-signatures-control.js";
 
 test("applied status VFX groups readable condition families", () => {
   const cases = {
@@ -68,4 +69,23 @@ test("combat signature VFX distinguishes action-pattern specials", () => {
   }
 
   assert.equal(getCombatSignatureVfxDefinition("Unknown Future Combo"), null);
+});
+
+test("control and resource signature VFX preserve actor/target semantics", () => {
+  const cases = {
+    "Zombie Cockroach": ["zombie-cockroach", "target"],
+    Refresh: ["refresh", "both"],
+    "Looting Burst": ["looting-burst", "both"],
+    "Dung Throw": ["dung-throw", "target"],
+    "Nocturnal Hunt": ["nocturnal-hunt", "both"]
+  };
+
+  for (const [specialName, [expectedKind, expectedFocus]] of Object.entries(cases)) {
+    const definition = getControlSignatureVfxDefinition(specialName);
+    assert.equal(definition?.kind, expectedKind, `${specialName} should map to ${expectedKind}`);
+    assert.equal(definition?.focus, expectedFocus, `${specialName} should focus ${expectedFocus}`);
+    assert.ok(definition?.duration >= 800, `${specialName} should remain visually readable`);
+  }
+
+  assert.equal(getControlSignatureVfxDefinition("Unknown Future Control Special"), null);
 });
