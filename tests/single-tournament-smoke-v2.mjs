@@ -81,6 +81,24 @@ try {
   const collapsedLogs = await page.locator(".log-panel.waft-v2-log-collapsed").count();
   assert.ok(collapsedLogs >= 1, "Tournament technical Battle Log should start collapsed");
 
+  // Regression for a rare race found in CI: a late legacy Turn Summary mutation
+  // must never replace an already-rendered structured V2 round.
+  await page.waitForTimeout(950);
+  await page.locator("#turnSummaryBox").evaluate((legacy) => {
+    legacy.textContent = "Legacy late turn summary must stay hidden.";
+  });
+  await page.waitForTimeout(120);
+
+  assert.equal(
+    await page.locator("#turnSummaryV2Host .waft-turn-v2").count(),
+    1,
+    "Late legacy summary mutations must not overwrite the structured tournament round"
+  );
+  assert.ok(
+    /ROUND\s+1/i.test(await page.locator("#turnSummaryV2Host").innerText()),
+    "Structured tournament round must survive late legacy summary mutations"
+  );
+
   await page.locator("#battlePanel").screenshot({ path: screenshotPath });
   assert.deepEqual(pageErrors, [], `Single Tournament browser errors:\n${pageErrors.join("\n\n")}`);
 
