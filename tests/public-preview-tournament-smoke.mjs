@@ -16,8 +16,20 @@ const page = await browser.newPage({ viewport: { width: 915, height: 412 } });
 const pageErrors = [];
 page.on("pageerror", (error) => pageErrors.push(error?.stack || error?.message || String(error)));
 
+async function passRawgithackConfirmationIfNeeded() {
+  const openPage = page.locator("a, button").filter({ hasText: /^Open the page$/ }).first();
+  if (await openPage.count() === 0) return;
+  if (!(await openPage.isVisible().catch(() => false))) return;
+
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => null),
+    openPage.click()
+  ]);
+}
+
 try {
   await page.goto(`${PUBLIC_BASE_URL}/tournament.html`, { waitUntil: "domcontentloaded", timeout: 45000 });
+  await passRawgithackConfirmationIfNeeded();
 
   // The V2 bootstrap prewarms the roster immediately and then explicitly marks
   // itself ready when the mature tournament module has finished loading.
@@ -37,7 +49,11 @@ try {
   assert.ok(count >= 16, `Public preview tournament roster should be selectable; got ${count} options`);
   assert.equal(await page.locator("#startTournamentBtn").isEnabled(), true, "Public preview Start Tournament must be enabled after bootstrap");
 
-  await page.selectOption("#playerFighter", { index: 1 });
+  const selectableValues = await page.locator("#playerFighter option").evaluateAll((options) =>
+    options.map((option) => option.value).filter(Boolean)
+  );
+  assert.ok(selectableValues.length >= 16, "Public preview should expose real fighter values");
+  await page.selectOption("#playerFighter", selectableValues[1] || selectableValues[0]);
   assert.ok(await page.locator("#playerFighter").inputValue(), "Public preview fighter selector should accept a real selection");
 
   await page.screenshot({ path: `${artifactDir}/public-preview-tournament-selector.png`, fullPage: true });
