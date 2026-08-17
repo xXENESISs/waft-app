@@ -3,6 +3,7 @@
 // complete compact round summary visible.
 
 import { renderTurnSummaryV2 } from "./turn-summary-v2.js";
+import { enhanceTurnSummaryV2 } from "./turn-summary-v2-clarity.js";
 import { playBattlePhaseVfx } from "./battle-vfx.js";
 
 const TOKENS = new Map();
@@ -21,6 +22,15 @@ function isCurrent(boxId, token) {
   return TOKENS.get(boxId) === token;
 }
 
+function renderEnhanced(sequence, boxId, renderOptions = {}) {
+  renderTurnSummaryV2(sequence, {
+    boxId,
+    ...renderOptions
+  });
+
+  enhanceTurnSummaryV2(sequence, { boxId });
+}
+
 export function cancelTurnSequencePresentation(boxId = "turnSummaryV2Host") {
   nextToken(boxId);
 }
@@ -36,8 +46,7 @@ export async function presentTurnSequenceV2(sequence, options = {}) {
   const playVfx = options.playVfx !== false;
   const token = nextToken(boxId);
 
-  renderTurnSummaryV2(sequence, {
-    boxId,
+  renderEnhanced(sequence, boxId, {
     visiblePhaseCount: 0,
     activePhaseIndex: -1
   });
@@ -47,8 +56,7 @@ export async function presentTurnSequenceV2(sequence, options = {}) {
   for (let index = 0; index < phases.length; index += 1) {
     if (!isCurrent(boxId, token)) return false;
 
-    renderTurnSummaryV2(sequence, {
-      boxId,
+    renderEnhanced(sequence, boxId, {
       visiblePhaseCount: index + 1,
       activePhaseIndex: index
     });
@@ -70,8 +78,7 @@ export async function presentTurnSequenceV2(sequence, options = {}) {
 
   if (!isCurrent(boxId, token)) return false;
 
-  renderTurnSummaryV2(sequence, {
-    boxId,
+  renderEnhanced(sequence, boxId, {
     visiblePhaseCount: phases.length,
     activePhaseIndex: -1
   });
