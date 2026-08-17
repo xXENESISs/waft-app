@@ -51,16 +51,30 @@ function ensureStyles() {
 
     .waft-tactical-tentacle {
       position: absolute;
-      left: 50%;
+      left: 47%;
       top: 50%;
-      width: 68%;
-      height: 18px;
-      border-radius: 999px 55% 55% 999px;
-      background: linear-gradient(90deg, transparent, rgba(211,177,255,.25) 16%, rgba(165,105,232,.94) 52%, rgba(234,214,255,.88));
-      box-shadow: 0 0 13px rgba(172,111,235,.58);
+      width: 66%;
+      height: 34%;
+      border-top: 11px solid rgba(181,119,238,.94);
+      border-radius: 52% 52% 0 0;
+      background: transparent;
+      box-shadow: 0 -5px 12px rgba(167,102,231,.30);
+      filter: drop-shadow(0 0 8px rgba(180,116,242,.62));
       transform-origin: 0 50%;
       opacity: 0;
       animation: waft-tactical-tentacle-sweep 480ms cubic-bezier(.16,.82,.22,1) forwards;
+    }
+
+    .waft-tactical-tentacle::after {
+      content: "";
+      position: absolute;
+      right: -8px;
+      top: -16px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: rgba(232,207,255,.96);
+      box-shadow: 0 0 10px rgba(184,118,239,.72);
     }
 
     .waft-tactical-vfx-local.neurotoxic-injection {
@@ -213,9 +227,9 @@ function ensureStyles() {
     }
 
     @keyframes waft-tactical-tentacle-sweep {
-      0% { opacity: 0; transform: rotate(var(--rotation)) translateX(-18%) scaleX(.15) scaleY(.55); }
-      28% { opacity: 1; transform: rotate(var(--rotation)) translateX(-3%) scaleX(1) scaleY(1); }
-      100% { opacity: 0; transform: rotate(var(--rotation)) translateX(18%) scaleX(1.12) scaleY(.72); }
+      0% { opacity: 0; transform: rotate(var(--rotation)) translateX(-18%) scaleX(.16) scaleY(calc(.52 * var(--curve))); }
+      28% { opacity: 1; transform: rotate(var(--rotation)) translateX(-3%) scaleX(1) scaleY(var(--curve)); }
+      100% { opacity: 0; transform: rotate(var(--rotation)) translateX(18%) scaleX(1.12) scaleY(calc(.74 * var(--curve))); }
     }
 
     @keyframes waft-tactical-toxin-pulse {
@@ -348,6 +362,7 @@ function populateTentacleStorm(layer) {
     const tentacle = document.createElement("div");
     tentacle.className = "waft-tactical-tentacle";
     tentacle.style.setProperty("--rotation", `${rotation}deg`);
+    tentacle.style.setProperty("--curve", index % 2 === 0 ? "1" : "-1");
     tentacle.style.animationDelay = `${index * 58}ms`;
     layer.appendChild(tentacle);
   });
