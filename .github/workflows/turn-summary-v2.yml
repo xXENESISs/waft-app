@@ -52,6 +52,7 @@ jobs:
           node --check js/online-tournament-v2-live.js
           node --check js/online-tournament-v2-socket-bridge.js
           node --check tests/browser-smoke-v2.mjs
+          node --check tests/clarity-smoke.mjs
           node --check tests/transform-vfx-smoke.mjs
           node --check tests/combat-vfx-smoke.mjs
           node --check tests/control-vfx-smoke.mjs
@@ -84,6 +85,9 @@ jobs:
 
       - name: Browser smoke Single Battle V2 + signature effects
         run: node tests/browser-smoke-v2.mjs
+
+      - name: Browser smoke Turn Summary clarity hierarchy
+        run: node tests/clarity-smoke.mjs
 
       - name: Browser smoke transform signature effects
         run: node tests/transform-vfx-smoke.mjs
