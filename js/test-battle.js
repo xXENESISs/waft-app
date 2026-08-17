@@ -5,7 +5,9 @@
 
 import { installLegacyPresentationCompat } from "./legacy-presentation-compat.js";
 import { installTurnSummaryV2Live } from "./turn-summary-v2-live.js";
+import { installMobileArenaLayoutV2 } from "./mobile-arena-layout-v2.js";
 
+installMobileArenaLayoutV2();
 installLegacyPresentationCompat();
 installTurnSummaryV2Live({
   legacyBoxId: "turnSummaryBox",
