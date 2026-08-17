@@ -33,6 +33,7 @@ jobs:
           node --check js/battle-vfx-signatures.js
           node --check js/battle-vfx-signatures-transform.js
           node --check js/battle-vfx-signatures-combat.js
+          node --check js/battle-vfx-signatures-control.js
           node --check js/battle-vfx-statuses.js
           node --check js/legacy-presentation-compat.js
           node --check js/turn-summary-v2.js
@@ -50,6 +51,7 @@ jobs:
           node --check tests/browser-smoke-v2.mjs
           node --check tests/transform-vfx-smoke.mjs
           node --check tests/combat-vfx-smoke.mjs
+          node --check tests/control-vfx-smoke.mjs
           node --check tests/online-battle-smoke-v2.mjs
           node --check tests/single-tournament-smoke-v2.mjs
           node --check tests/online-tournament-smoke-v2.mjs
@@ -84,6 +86,9 @@ jobs:
 
       - name: Browser smoke combat-pattern signature effects
         run: node tests/combat-vfx-smoke.mjs
+
+      - name: Browser smoke control/resource signature effects
+        run: node tests/control-vfx-smoke.mjs
 
       - name: Browser smoke Online Battle V2
         run: node tests/online-battle-smoke-v2.mjs
