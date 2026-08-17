@@ -42,6 +42,7 @@ jobs:
           node --check js/turn-summary-v2-clarity.js
           node --check js/turn-summary-v2-live.js
           node --check js/turn-sequence-presenter.js
+          node --check js/mobile-arena-layout-v2.js
           node --check js/test-battle.js
           node --check js/online-battle.js
           node --check js/online-battle-entry-v2.js
@@ -52,6 +53,7 @@ jobs:
           node --check js/online-tournament-v2-live.js
           node --check js/online-tournament-v2-socket-bridge.js
           node --check tests/browser-smoke-v2.mjs
+          node --check tests/mobile-landscape-smoke.mjs
           node --check tests/clarity-smoke.mjs
           node --check tests/status-hud-clarity-smoke.mjs
           node --check tests/transform-vfx-smoke.mjs
@@ -86,6 +88,9 @@ jobs:
 
       - name: Browser smoke Single Battle V2 + signature effects
         run: node tests/browser-smoke-v2.mjs
+
+      - name: Browser smoke real mobile landscape arena
+        run: node tests/mobile-landscape-smoke.mjs
 
       - name: Browser smoke Turn Summary clarity hierarchy
         run: node tests/clarity-smoke.mjs
