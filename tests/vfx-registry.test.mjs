@@ -5,6 +5,7 @@ import { getAppliedStatusVfxDefinition } from "../js/battle-vfx-statuses.js";
 import { getTransformSignatureVfxDefinition } from "../js/battle-vfx-signatures-transform.js";
 import { getCombatSignatureVfxDefinition } from "../js/battle-vfx-signatures-combat.js";
 import { getControlSignatureVfxDefinition } from "../js/battle-vfx-signatures-control.js";
+import { getTacticalSignatureVfxDefinition } from "../js/battle-vfx-signatures-tactical.js";
 
 test("applied status VFX groups readable condition families", () => {
   const cases = {
@@ -88,4 +89,22 @@ test("control and resource signature VFX preserve actor/target semantics", () =>
   }
 
   assert.equal(getControlSignatureVfxDefinition("Unknown Future Control Special"), null);
+});
+
+test("tactical signature VFX covers uncovered secondary mechanics", () => {
+  const cases = {
+    "Tentacle Storm": ["tentacle-storm", "target"],
+    "Neurotoxic Injection (Tetrodotoxin)": ["neurotoxic-injection", "target"],
+    Mutilation: ["mutilation", "target"],
+    "Ancestral Retreat": ["ancestral-retreat", "actor"]
+  };
+
+  for (const [specialName, [expectedKind, expectedFocus]] of Object.entries(cases)) {
+    const definition = getTacticalSignatureVfxDefinition(specialName);
+    assert.equal(definition?.kind, expectedKind, `${specialName} should map to ${expectedKind}`);
+    assert.equal(definition?.focus, expectedFocus, `${specialName} should focus ${expectedFocus}`);
+    assert.ok(definition?.duration >= 800, `${specialName} should remain visually readable`);
+  }
+
+  assert.equal(getTacticalSignatureVfxDefinition("Unknown Future Tactical Special"), null);
 });
