@@ -31,6 +31,32 @@ const EFFECT_ICONS = {
   "falcon-debuff": "🪶"
 };
 
+const EFFECT_LABELS = {
+  bleed: "BLEED",
+  "deep-bleed": "DEEP BLEED",
+  poison: "POISON",
+  perforation: "PERF",
+  "costal-toxin": "TOXIN",
+  tetrodotoxin: "TETRO",
+  "evasion-down": "EVA↓",
+  "heavy-evasion-down": "EVA↓↓",
+  "agility-down": "AGI↓",
+  blindness: "BLIND",
+  "irritant-secretion": "IRRIT",
+  destabilization: "DESTAB",
+  anchor: "ANCHOR",
+  momentum: "MOM",
+  "hunting-inertia": "INERTIA",
+  humidity: "HUMID",
+  "predatory-pressure": "PRESS",
+  "ink-sea": "INK",
+  "refresh-debuff": "REF↓",
+  "neurotoxic-injection-debuff": "NEURO",
+  mutilation: "MUTIL",
+  bite: "BITE",
+  "falcon-debuff": "FALCON"
+};
+
 function ensureStyles() {
   if (document.getElementById(STYLE_ID)) return;
 
@@ -52,6 +78,7 @@ function ensureStyles() {
     .waft-status-chip {
       min-width: 31px;
       min-height: 29px;
+      max-width: 100%;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -59,29 +86,61 @@ function ensureStyles() {
       padding: 4px 7px;
       border-radius: 999px;
       border: 1px solid rgba(255,255,255,.18);
-      background: rgba(5,8,14,.82);
+      background: rgba(5,8,14,.86);
       color: #fff;
       box-shadow: 0 4px 16px rgba(0,0,0,.35);
       backdrop-filter: blur(6px);
       font-family: inherit;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 900;
       line-height: 1;
+      white-space: nowrap;
     }
 
     .waft-status-chip[data-status-kind="debuff"] {
-      border-color: rgba(248,113,113,.34);
+      border-color: rgba(248,113,113,.42);
+      background: rgba(36,10,14,.88);
     }
 
     .waft-status-chip[data-status-kind="buff"] {
-      border-color: rgba(74,222,128,.34);
+      border-color: rgba(74,222,128,.40);
+      background: rgba(8,33,22,.88);
+    }
+
+    .waft-status-name {
+      font-size: 8px;
+      font-weight: 950;
+      letter-spacing: .045em;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .waft-status-turns {
       min-width: 12px;
-      opacity: .82;
-      font-size: 9px;
+      opacity: .88;
+      font-size: 8px;
+      font-weight: 950;
       text-align: center;
+    }
+
+    @media (max-width: 700px) {
+      .waft-status-hud {
+        left: 5px;
+        right: 5px;
+        bottom: 5px;
+        gap: 3px;
+      }
+
+      .waft-status-chip {
+        min-height: 25px;
+        padding: 3px 5px;
+        gap: 3px;
+      }
+
+      .waft-status-name,
+      .waft-status-turns {
+        font-size: 7px;
+      }
     }
   `;
 
@@ -135,6 +194,17 @@ function effectIcon(effect) {
   return "◉";
 }
 
+function effectShortName(effect) {
+  const id = String(effect?.id || "").toLowerCase();
+  if (EFFECT_LABELS[id]) return EFFECT_LABELS[id];
+
+  const raw = String(effect?.name || effect?.id || "").trim();
+  if (!raw) return "";
+
+  const firstWord = raw.split(/\s+/)[0].replace(/[^a-z0-9↓↑-]/gi, "").toUpperCase();
+  return firstWord.length <= 9 ? firstWord : "";
+}
+
 function effectKind(effect) {
   const modifiers = effect?.modifiers || {};
   const values = Object.values(modifiers).filter((value) => typeof value === "number");
@@ -155,7 +225,7 @@ function effectBadge(effect) {
   if (Number.isFinite(stacks) && stacks > 0) return `×${stacks}`;
 
   const turns = effectTurns(effect);
-  return turns === "" ? "" : String(turns);
+  return turns === "" ? "" : `${turns}T`;
 }
 
 function modifierText(modifiers = {}) {
@@ -195,10 +265,20 @@ function createChip(effect) {
   chip.dataset.statusId = effect?.id || "unknown";
   chip.dataset.statusKind = effectKind(effect);
   chip.title = effectTooltip(effect);
+  chip.setAttribute("aria-label", chip.title);
 
   const icon = document.createElement("span");
+  icon.className = "waft-status-icon";
   icon.textContent = effectIcon(effect);
   chip.appendChild(icon);
+
+  const shortName = effectShortName(effect);
+  if (shortName) {
+    const label = document.createElement("span");
+    label.className = "waft-status-name";
+    label.textContent = shortName;
+    chip.appendChild(label);
+  }
 
   const badge = effectBadge(effect);
   if (badge) {
