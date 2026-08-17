@@ -5,6 +5,7 @@ import { TURN_EVENT } from "./battle-turn-sequence.js";
 import { playSignatureSpecialVfx } from "./battle-vfx-signatures.js";
 import { playTransformSignatureVfx } from "./battle-vfx-signatures-transform.js";
 import { playCombatSignatureVfx } from "./battle-vfx-signatures-combat.js";
+import { playControlSignatureVfx } from "./battle-vfx-signatures-control.js";
 import { playAppliedStatusVfx } from "./battle-vfx-statuses.js";
 
 const STYLE_ID = "waft-battle-vfx-styles";
@@ -286,7 +287,8 @@ export async function playBattleEventVfx(event, context = {}) {
       delay(cue.duration || 720),
       playSignatureSpecialVfx(event, context),
       playTransformSignatureVfx(event, context),
-      playCombatSignatureVfx(event, context)
+      playCombatSignatureVfx(event, context),
+      playControlSignatureVfx(event, context)
     ]);
     return true;
   }
