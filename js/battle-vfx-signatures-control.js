@@ -50,20 +50,41 @@ function ensureStyles() {
     }
 
     .waft-control-vfx-local.zombie-cockroach {
-      background: radial-gradient(circle at 50% 54%, rgba(104,199,116,.16), rgba(22,58,30,.22) 44%, transparent 68%);
+      background:
+        radial-gradient(circle at 50% 46%, rgba(166,255,123,.23) 0 14%, rgba(72,178,71,.18) 29%, rgba(15,49,22,.30) 48%, transparent 72%);
       animation: waft-control-parasite-pulse 980ms ease-out forwards;
+    }
+
+    .waft-control-parasite-halo {
+      position: absolute;
+      left: 50%;
+      top: 46%;
+      width: 47%;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      border: 3px solid rgba(180,255,128,.78);
+      box-shadow:
+        0 0 22px rgba(113,255,102,.62),
+        inset 0 0 22px rgba(76,213,84,.20);
+      transform: translate(-50%, -50%) scale(.28);
+      opacity: 0;
+      animation: waft-control-parasite-halo 840ms cubic-bezier(.18,.82,.2,1) forwards;
     }
 
     .waft-control-cockroach {
       position: absolute;
       left: 50%;
-      top: 48%;
-      width: 24px;
-      height: 38px;
+      top: 45%;
+      width: 44px;
+      height: 62px;
       border-radius: 48% 48% 55% 55%;
-      background: linear-gradient(180deg, rgba(60,93,42,.98), rgba(19,39,19,.98));
-      border: 2px solid rgba(158,217,123,.75);
-      box-shadow: 0 0 14px rgba(92,207,100,.62);
+      background:
+        linear-gradient(90deg, transparent 46%, rgba(207,255,149,.55) 48% 52%, transparent 54%),
+        linear-gradient(180deg, rgba(91,137,49,.99), rgba(15,37,15,.99));
+      border: 3px solid rgba(193,255,136,.92);
+      box-shadow:
+        0 0 8px rgba(228,255,188,.9),
+        0 0 25px rgba(109,255,98,.78);
       transform: translate(-50%, -50%) rotate(8deg) scale(.25);
       animation: waft-control-cockroach-attach 840ms cubic-bezier(.18,.82,.2,1) forwards;
     }
@@ -74,11 +95,13 @@ function ensureStyles() {
       position: absolute;
       left: 50%;
       top: 42%;
-      width: 46px;
-      height: 2px;
-      background: rgba(139,191,108,.8);
+      width: 76px;
+      height: 3px;
+      border-radius: 999px;
+      background: rgba(192,255,139,.92);
+      filter: drop-shadow(0 0 4px rgba(116,255,106,.72));
       transform: translateX(-50%) rotate(24deg);
-      box-shadow: 0 10px 0 rgba(139,191,108,.72), 0 -10px 0 rgba(139,191,108,.72);
+      box-shadow: 0 15px 0 rgba(192,255,139,.80), 0 -15px 0 rgba(192,255,139,.80);
     }
 
     .waft-control-cockroach::after {
@@ -88,23 +111,24 @@ function ensureStyles() {
     .waft-control-drain-thread {
       position: absolute;
       left: 50%;
-      top: 51%;
-      width: 3px;
-      height: 24%;
+      top: 50%;
+      width: 4px;
+      height: 31%;
       border-radius: 999px;
-      background: linear-gradient(180deg, rgba(156,247,148,.88), transparent);
+      background: linear-gradient(180deg, rgba(209,255,157,.98), rgba(89,235,88,.74) 45%, transparent 100%);
+      box-shadow: 0 0 9px rgba(112,255,104,.58);
       transform-origin: 50% 0;
       opacity: 0;
       animation: waft-control-drain-thread 720ms ease-out forwards;
     }
 
     .waft-control-vfx-local.refresh.actor {
-      background: radial-gradient(circle at 50% 58%, rgba(92,245,222,.24), rgba(34,135,147,.10) 50%, transparent 68%);
+      background: radial-gradient(circle at 50% 58%, rgba(92,245,222,.34), rgba(34,135,147,.15) 50%, transparent 69%);
       animation: waft-control-refresh-actor 900ms ease-out forwards;
     }
 
     .waft-control-vfx-local.refresh.target {
-      background: radial-gradient(circle at 50% 50%, rgba(71,160,210,.08), rgba(84,65,178,.18) 56%, transparent 72%);
+      background: radial-gradient(circle at 50% 50%, rgba(71,160,210,.12), rgba(84,65,178,.27) 56%, transparent 73%);
       animation: waft-control-refresh-target 900ms ease-out forwards;
     }
 
@@ -114,21 +138,21 @@ function ensureStyles() {
       top: 66%;
       width: 66%;
       height: 18%;
-      border: 3px solid rgba(142,255,238,.82);
+      border: 4px solid rgba(161,255,241,.92);
       border-radius: 50%;
-      box-shadow: 0 0 17px rgba(91,231,216,.48);
+      box-shadow: 0 0 22px rgba(91,231,216,.68);
       transform: translate(-50%, -50%) scale(.35);
       animation: waft-control-refresh-ring 760ms ease-out forwards;
     }
 
     .waft-control-debuff-wave {
       position: absolute;
-      left: 12%;
-      width: 76%;
-      height: 5px;
+      left: 10%;
+      width: 80%;
+      height: 7px;
       border-radius: 999px;
-      background: linear-gradient(90deg, transparent, rgba(146,155,255,.9), transparent);
-      box-shadow: 0 0 10px rgba(104,107,230,.52);
+      background: linear-gradient(90deg, transparent, rgba(163,169,255,.98), rgba(119,101,246,.86), transparent);
+      box-shadow: 0 0 14px rgba(116,111,255,.70);
       opacity: 0;
       animation: waft-control-debuff-wave 620ms ease-out forwards;
     }
@@ -226,32 +250,41 @@ function ensureStyles() {
 
     @keyframes waft-control-parasite-pulse {
       0% { opacity: 0; filter: brightness(1); }
-      24% { opacity: 1; filter: brightness(1.22) saturate(1.25); }
+      20% { opacity: 1; filter: brightness(1.34) saturate(1.38); }
+      70% { opacity: .96; filter: brightness(1.22) saturate(1.30); }
       100% { opacity: 0; filter: brightness(1); }
     }
 
+    @keyframes waft-control-parasite-halo {
+      0% { opacity: 0; transform: translate(-50%, -50%) scale(.22); }
+      28% { opacity: .95; transform: translate(-50%, -50%) scale(.92); }
+      72% { opacity: .72; transform: translate(-50%, -50%) scale(1.06); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(1.24); }
+    }
+
     @keyframes waft-control-cockroach-attach {
-      0% { opacity: 0; transform: translate(-50%, -110%) rotate(-28deg) scale(.2); }
-      32% { opacity: 1; transform: translate(-50%, -50%) rotate(8deg) scale(1.08); }
-      72% { opacity: .95; transform: translate(-50%, -50%) rotate(2deg) scale(1); }
+      0% { opacity: 0; transform: translate(-50%, -125%) rotate(-28deg) scale(.18); }
+      28% { opacity: 1; transform: translate(-50%, -50%) rotate(8deg) scale(1.12); }
+      72% { opacity: 1; transform: translate(-50%, -50%) rotate(2deg) scale(1); }
       100% { opacity: 0; transform: translate(-50%, -50%) rotate(2deg) scale(.96); }
     }
 
     @keyframes waft-control-drain-thread {
-      0% { opacity: 0; transform: rotate(var(--rotation)) scaleY(.1); }
-      28% { opacity: .85; transform: rotate(var(--rotation)) scaleY(1); }
-      100% { opacity: 0; transform: rotate(var(--rotation)) scaleY(.6); }
+      0% { opacity: 0; transform: rotate(var(--rotation)) scaleY(.08); }
+      28% { opacity: 1; transform: rotate(var(--rotation)) scaleY(1); }
+      74% { opacity: .82; transform: rotate(var(--rotation)) scaleY(.9); }
+      100% { opacity: 0; transform: rotate(var(--rotation)) scaleY(.45); }
     }
 
     @keyframes waft-control-refresh-actor {
       0% { opacity: 0; filter: brightness(1); }
-      28% { opacity: 1; filter: brightness(1.35) saturate(1.18); }
+      28% { opacity: 1; filter: brightness(1.42) saturate(1.22); }
       100% { opacity: 0; filter: brightness(1); }
     }
 
     @keyframes waft-control-refresh-target {
       0% { opacity: 0; filter: brightness(1); }
-      32% { opacity: 1; filter: brightness(.85) saturate(.82); }
+      32% { opacity: 1; filter: brightness(.78) saturate(.78); }
       100% { opacity: 0; filter: brightness(1); }
     }
 
@@ -263,8 +296,8 @@ function ensureStyles() {
 
     @keyframes waft-control-debuff-wave {
       0% { opacity: 0; transform: translateY(-20px) scaleX(.25); }
-      28% { opacity: .9; transform: translateY(0) scaleX(1); }
-      100% { opacity: 0; transform: translateY(55px) scaleX(.75); }
+      28% { opacity: 1; transform: translateY(0) scaleX(1); }
+      100% { opacity: 0; transform: translateY(60px) scaleX(.78); }
     }
 
     @keyframes waft-control-loot-actor {
@@ -385,6 +418,10 @@ function createLocalLayer(wrap, kind, role = "") {
 }
 
 function populateZombieCockroach(layer) {
+  const halo = document.createElement("div");
+  halo.className = "waft-control-parasite-halo";
+  layer.appendChild(halo);
+
   const cockroach = document.createElement("div");
   cockroach.className = "waft-control-cockroach";
   layer.appendChild(cockroach);
