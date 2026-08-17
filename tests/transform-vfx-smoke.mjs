@@ -31,8 +31,11 @@ async function startBattle() {
     items.map((option) => option.value).filter(Boolean)
   );
 
-  const playerId = options[0];
-  const enemyId = options.find((id) => id !== playerId) || options[1];
+  assert.ok(options.includes("iberian-skink"), "Transform smoke requires Iberian Skink");
+  assert.ok(options.includes("pufferfish"), "Transform smoke requires Pufferfish");
+
+  const playerId = "iberian-skink";
+  const enemyId = "pufferfish";
 
   await page.selectOption("#playerFighter", playerId);
   await page.selectOption("#enemyFighter", enemyId);
@@ -87,6 +90,12 @@ try {
     "Caudal Autotomy should mark the sever point"
   );
 
+  await page.waitForTimeout(280);
+  await page.screenshot({
+    path: `${artifactDir}/turn-summary-v2-caudal-autotomy-vfx.png`,
+    fullPage: true
+  });
+
   await page.evaluate(() => window.__waftTransformProbe);
   await page.waitForSelector(".waft-transform-vfx-local.caudal-autotomy", { state: "detached", timeout: 5000 });
 
@@ -109,6 +118,7 @@ try {
     "Overinflation should expose a radial set of spines"
   );
 
+  await page.waitForTimeout(330);
   await page.screenshot({
     path: `${artifactDir}/turn-summary-v2-overinflation-vfx.png`,
     fullPage: true
@@ -118,7 +128,7 @@ try {
   await page.waitForSelector(".waft-transform-vfx-local.overinflation", { state: "detached", timeout: 5000 });
 
   assert.deepEqual(pageErrors, [], `Transform VFX page errors:\n${pageErrors.join("\n\n")}`);
-  console.log("WAFT transform signature VFX smoke passed: Caudal Autotomy + Overinflation");
+  console.log("WAFT transform signature VFX smoke passed on Iberian Skink + Pufferfish");
 } finally {
   await page.close();
   await browser.close();
