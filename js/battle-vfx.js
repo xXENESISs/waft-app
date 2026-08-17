@@ -2,10 +2,7 @@
 // Visual feedback is driven by structured turn events, not by UI-specific logs.
 
 import { TURN_EVENT } from "./battle-turn-sequence.js";
-import { playSignatureSpecialVfx } from "./battle-vfx-signatures.js";
-import { playTransformSignatureVfx } from "./battle-vfx-signatures-transform.js";
-import { playCombatSignatureVfx } from "./battle-vfx-signatures-combat.js";
-import { playControlSignatureVfx } from "./battle-vfx-signatures-control.js";
+import { playSignatureCataloguesVfx } from "./battle-vfx-signature-catalogues.js";
 import { playAppliedStatusVfx } from "./battle-vfx-statuses.js";
 
 const STYLE_ID = "waft-battle-vfx-styles";
@@ -280,15 +277,11 @@ export async function playBattleEventVfx(event, context = {}) {
   if (cue.special) {
     specialBanner(cue.special);
 
-    // Signature specials add their identity on top of the universal banner.
-    // Each catalogue returns false for names it does not own, so new families
-    // can be added without branching any of the four game modes.
+    // All ability-specific presentation now lives behind one catalogue entry
+    // point. New VFX families no longer require edits to this central pipeline.
     await Promise.all([
       delay(cue.duration || 720),
-      playSignatureSpecialVfx(event, context),
-      playTransformSignatureVfx(event, context),
-      playCombatSignatureVfx(event, context),
-      playControlSignatureVfx(event, context)
+      playSignatureCataloguesVfx(event, context)
     ]);
     return true;
   }
