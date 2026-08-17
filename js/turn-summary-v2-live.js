@@ -197,6 +197,10 @@ export function installTurnSummaryV2Live(options = {}) {
     window.addEventListener("waft:turn-resolved", onTurnResolved);
 
     const observer = new MutationObserver(() => {
+      // Once a structured round has been rendered, late legacy mutations must
+      // never demote it back to wall-of-text. Real state transitions use the
+      // explicit waft:battle-state event and can intentionally replace it.
+      if (host.querySelector(".waft-turn-v2")) return;
       if (Date.now() - lastResolvedAt < 900) return;
 
       const text = legacyBox.textContent?.trim() || "";
