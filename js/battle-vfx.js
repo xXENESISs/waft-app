@@ -3,6 +3,7 @@
 
 import { TURN_EVENT } from "./battle-turn-sequence.js";
 import { playSignatureSpecialVfx } from "./battle-vfx-signatures.js";
+import { playTransformSignatureVfx } from "./battle-vfx-signatures-transform.js";
 import { playAppliedStatusVfx } from "./battle-vfx-statuses.js";
 
 const STYLE_ID = "waft-battle-vfx-styles";
@@ -278,11 +279,12 @@ export async function playBattleEventVfx(event, context = {}) {
     specialBanner(cue.special);
 
     // Signature specials add their identity on top of the universal banner.
-    // Unknown specials simply fall back to the banner with no branching in the
-    // four battle modes.
+    // Each catalogue returns false for names it does not own, so new families
+    // can be added without branching any of the four game modes.
     await Promise.all([
       delay(cue.duration || 720),
-      playSignatureSpecialVfx(event, context)
+      playSignatureSpecialVfx(event, context),
+      playTransformSignatureVfx(event, context)
     ]);
     return true;
   }
