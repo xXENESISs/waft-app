@@ -31,8 +31,11 @@ async function startBattle() {
     items.map((option) => option.value).filter(Boolean)
   );
 
-  const playerId = options[0];
-  const enemyId = options.find((id) => id !== playerId) || options[1];
+  assert.ok(options.includes("giant-asian-mantis"), "Combat VFX smoke requires Giant Asian Mantis");
+  assert.ok(options.includes("fennec"), "Combat VFX smoke requires Fennec");
+
+  const playerId = "giant-asian-mantis";
+  const enemyId = "fennec";
 
   await page.selectOption("#playerFighter", playerId);
   await page.selectOption("#enemyFighter", enemyId);
@@ -83,6 +86,7 @@ try {
     "Raptorial Chain should communicate its five-strike maximum"
   );
 
+  await page.waitForTimeout(330);
   await page.screenshot({
     path: `${artifactDir}/turn-summary-v2-raptorial-chain-vfx.png`,
     fullPage: true
@@ -91,31 +95,39 @@ try {
   await page.evaluate(() => window.__waftCombatProbe);
   await page.waitForSelector(".waft-combat-vfx-local.raptorial-chain", { state: "detached", timeout: 5000 });
 
-  await playCombatSpecial("Anubis' Staff", playerId, enemyId);
-  await page.waitForSelector("#playerImageWrap .waft-combat-vfx-local.anubis-staff.actor", { timeout: 5000 });
-  await page.waitForSelector("#enemyImageWrap .waft-combat-vfx-local.anubis-staff.target", { timeout: 5000 });
+  // Reverse the direction for Anubis' Staff so the screenshot uses the real
+  // Fennec as the special's user and the mantis as its target.
+  await playCombatSpecial("Anubis' Staff", enemyId, playerId);
+  await page.waitForSelector("#enemyImageWrap .waft-combat-vfx-local.anubis-staff.actor", { timeout: 5000 });
+  await page.waitForSelector("#playerImageWrap .waft-combat-vfx-local.anubis-staff.target", { timeout: 5000 });
 
   assert.equal(
-    await page.locator("#enemyImageWrap .waft-combat-staff").count(),
+    await page.locator("#playerImageWrap .waft-combat-staff").count(),
     1,
     "Anubis' Staff should strike the target"
   );
   assert.equal(
-    await page.locator("#enemyImageWrap .waft-combat-drain-orb").count(),
+    await page.locator("#playerImageWrap .waft-combat-drain-orb").count(),
     8,
     "Anubis' Staff should visibly drain resources from the target"
   );
   assert.equal(
-    await page.locator("#playerImageWrap .waft-combat-impact-ring").count(),
+    await page.locator("#enemyImageWrap .waft-combat-impact-ring").count(),
     1,
     "Anubis' Staff should return a benefit pulse to its user"
   );
+
+  await page.waitForTimeout(360);
+  await page.screenshot({
+    path: `${artifactDir}/turn-summary-v2-anubis-staff-vfx.png`,
+    fullPage: true
+  });
 
   await page.evaluate(() => window.__waftCombatProbe);
   await page.waitForSelector(".waft-combat-vfx-local.anubis-staff", { state: "detached", timeout: 5000 });
 
   assert.deepEqual(pageErrors, [], `Combat VFX page errors:\n${pageErrors.join("\n\n")}`);
-  console.log("WAFT combat signature VFX smoke passed: Raptorial Chain + Anubis' Staff");
+  console.log("WAFT combat signature VFX smoke passed on Giant Asian Mantis + Fennec");
 } finally {
   await page.close();
   await browser.close();
