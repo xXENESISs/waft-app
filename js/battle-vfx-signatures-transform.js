@@ -82,7 +82,9 @@ function ensureStyles() {
     }
 
     .waft-transform-vfx-local.overinflation {
-      background: radial-gradient(circle at 50% 50%, rgba(222,244,255,.28), rgba(59,116,150,.08) 52%, transparent 70%);
+      background:
+        radial-gradient(circle at 50% 50%, rgba(224,249,255,.22) 0 24%, rgba(115,196,220,.13) 38%, transparent 63%),
+        radial-gradient(circle at 50% 50%, transparent 48%, rgba(160,224,242,.10) 58%, transparent 72%);
       animation: waft-transform-inflate-body 900ms cubic-bezier(.18,.82,.2,1) forwards;
     }
 
@@ -90,13 +92,15 @@ function ensureStyles() {
       position: absolute;
       left: 50%;
       top: 50%;
-      width: 62%;
+      width: 66%;
       aspect-ratio: 1;
-      border-radius: 50%;
-      border: 4px solid rgba(220,244,255,.88);
+      border-radius: 48% 52% 46% 54% / 52% 47% 53% 48%;
+      border: 2px solid rgba(208,243,252,.34);
+      background: radial-gradient(circle, transparent 48%, rgba(157,221,240,.10) 59%, transparent 71%);
       box-shadow:
-        0 0 22px rgba(132,210,246,.6),
-        inset 0 0 25px rgba(94,173,211,.22);
+        0 0 30px rgba(117,205,234,.30),
+        inset 0 0 28px rgba(95,177,205,.13);
+      filter: blur(.35px);
       transform: translate(-50%, -50%) scale(.42);
       animation: waft-transform-inflation-ring 850ms cubic-bezier(.2,.8,.2,1) forwards;
     }
@@ -105,10 +109,18 @@ function ensureStyles() {
       position: absolute;
       left: 50%;
       top: 50%;
-      width: 4px;
-      height: 20%;
-      border-radius: 999px;
-      background: linear-gradient(180deg, rgba(246,252,255,.96), rgba(104,167,192,.55));
+      width: 5px;
+      height: 28%;
+      border-radius: 999px 999px 45% 45%;
+      background: linear-gradient(
+        180deg,
+        rgba(249,254,255,.98) 0%,
+        rgba(145,213,235,.88) 34%,
+        rgba(104,177,203,.42) 44%,
+        transparent 46%,
+        transparent 100%
+      );
+      filter: drop-shadow(0 0 6px rgba(151,220,241,.58));
       transform-origin: 50% 100%;
       opacity: 0;
       animation: waft-transform-spike 760ms ease-out forwards;
@@ -215,23 +227,24 @@ function ensureStyles() {
     }
 
     @keyframes waft-transform-inflate-body {
-      0% { opacity: 0; transform: scale(.9); }
-      24% { opacity: 1; transform: scale(1.03); }
-      70% { opacity: .95; transform: scale(1.08); }
-      100% { opacity: 0; transform: scale(1); }
+      0% { opacity: 0; transform: scale(.93); filter: brightness(1); }
+      22% { opacity: 1; transform: scale(1.01); filter: brightness(1.12); }
+      64% { opacity: .96; transform: scale(1.07); filter: brightness(1.2); }
+      100% { opacity: 0; transform: scale(1.1); filter: brightness(1); }
     }
 
     @keyframes waft-transform-inflation-ring {
-      0% { opacity: 0; transform: translate(-50%, -50%) scale(.35); }
-      28% { opacity: 1; transform: translate(-50%, -50%) scale(.95); }
-      74% { opacity: .92; transform: translate(-50%, -50%) scale(1.08); }
-      100% { opacity: 0; transform: translate(-50%, -50%) scale(1.2); }
+      0% { opacity: 0; transform: translate(-50%, -50%) scale(.52) rotate(-3deg); }
+      26% { opacity: .48; transform: translate(-50%, -50%) scale(.91) rotate(1deg); }
+      70% { opacity: .36; transform: translate(-50%, -50%) scale(1.06) rotate(-1deg); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(1.22) rotate(3deg); }
     }
 
     @keyframes waft-transform-spike {
-      0% { opacity: 0; transform: translate(-50%, -100%) rotate(var(--rotation)) scaleY(.2); }
-      28% { opacity: .95; transform: translate(-50%, -100%) rotate(var(--rotation)) scaleY(1); }
-      100% { opacity: 0; transform: translate(-50%, -100%) rotate(var(--rotation)) scaleY(1.15); }
+      0% { opacity: 0; transform: translate(-50%, -100%) rotate(var(--rotation)) scaleY(.35); }
+      24% { opacity: 1; transform: translate(-50%, -100%) rotate(var(--rotation)) scaleY(.88); }
+      66% { opacity: .92; transform: translate(-50%, -100%) rotate(var(--rotation)) scaleY(1.08); }
+      100% { opacity: 0; transform: translate(-50%, -100%) rotate(var(--rotation)) scaleY(1.3); }
     }
 
     @keyframes waft-transform-regen-glow {
