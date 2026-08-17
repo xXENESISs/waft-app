@@ -39,6 +39,7 @@ jobs:
           node --check js/battle-vfx-statuses.js
           node --check js/legacy-presentation-compat.js
           node --check js/turn-summary-v2.js
+          node --check js/turn-summary-v2-clarity.js
           node --check js/turn-summary-v2-live.js
           node --check js/turn-sequence-presenter.js
           node --check js/test-battle.js
