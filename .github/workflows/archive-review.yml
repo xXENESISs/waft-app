@@ -1,0 +1,27 @@
+name: Archive review bundle
+on:
+  push:
+    branches: [rework/archive-2026-09]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate archive when available
+        run: |
+          if [ -f tests/archive-check.mjs ]; then node tests/archive-check.mjs; fi
+      - name: Package review source
+        run: |
+          mkdir -p /tmp/waft-review
+          git archive --format=zip --output=/tmp/waft-review/waft-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: waft-archive-review-source
+          path: /tmp/waft-review/waft-source.zip
+          retention-days: 7
