@@ -1,0 +1,134 @@
+name: Turn Summary V2
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test-turn-sequence:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check V2 modules
+        run: |
+          node --check js/battle-engine.js
+          node --check js/battle-field-hud.js
+          node --check js/battle-status-hud.js
+          node --check js/battle-turn-sequence.js
+          node --check js/battle-turn-sequence-legacy-adapter.js
+          node --check js/battle-vfx.js
+          node --check js/battle-vfx-signature-catalogues.js
+          node --check js/battle-vfx-signatures.js
+          node --check js/battle-vfx-signatures-transform.js
+          node --check js/battle-vfx-signatures-combat.js
+          node --check js/battle-vfx-signatures-control.js
+          node --check js/battle-vfx-signatures-tactical.js
+          node --check js/battle-vfx-statuses.js
+          node --check js/legacy-presentation-compat.js
+          node --check js/turn-summary-v2.js
+          node --check js/turn-summary-v2-clarity.js
+          node --check js/turn-summary-v2-live.js
+          node --check js/turn-sequence-presenter.js
+          node --check js/mobile-arena-layout-v2.js
+          node --check js/test-battle.js
+          node --check js/online-battle.js
+          node --check js/online-battle-entry-v2.js
+          node --check js/online-battle-v2-bootstrap.js
+          node --check js/online-battle-v2-socket-bridge.js
+          node --check js/tournament.js
+          node --check js/online-tournament.js
+          node --check js/online-tournament-v2-live.js
+          node --check js/online-tournament-v2-socket-bridge.js
+          node --check tests/browser-smoke-v2.mjs
+          node --check tests/mobile-landscape-smoke.mjs
+          node --check tests/public-preview-tournament-smoke.mjs
+          node --check tests/clarity-smoke.mjs
+          node --check tests/status-hud-clarity-smoke.mjs
+          node --check tests/transform-vfx-smoke.mjs
+          node --check tests/combat-vfx-smoke.mjs
+          node --check tests/control-vfx-smoke.mjs
+          node --check tests/tactical-vfx-smoke.mjs
+          node --check tests/online-battle-smoke-v2.mjs
+          node --check tests/single-tournament-smoke-v2.mjs
+          node --check tests/online-tournament-smoke-v2.mjs
+          node --check tests/vfx-registry.test.mjs
+
+      - name: Test ordered turn sequence and VFX registries
+        run: node --test tests/turn-sequence-v2.test.mjs tests/vfx-registry.test.mjs
+
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright@1.54.2
+          npx playwright install --with-deps chromium
+
+      - name: Start WAFT server
+        run: |
+          node server.js > /tmp/waft-server.log 2>&1 &
+          echo $! > /tmp/waft-server.pid
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/test.html > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/waft-server.log
+          exit 1
+
+      - name: Browser smoke Single Battle V2 + signature effects
+        run: node tests/browser-smoke-v2.mjs
+
+      - name: Browser smoke real mobile landscape arena
+        run: node tests/mobile-landscape-smoke.mjs
+
+      - name: Browser smoke Turn Summary clarity hierarchy
+        run: node tests/clarity-smoke.mjs
+
+      - name: Browser smoke readable status HUD
+        run: node tests/status-hud-clarity-smoke.mjs
+
+      - name: Browser smoke transform signature effects
+        run: node tests/transform-vfx-smoke.mjs
+
+      - name: Browser smoke combat-pattern signature effects
+        run: node tests/combat-vfx-smoke.mjs
+
+      - name: Browser smoke control/resource signature effects
+        run: node tests/control-vfx-smoke.mjs
+
+      - name: Browser smoke tactical signature effects
+        run: node tests/tactical-vfx-smoke.mjs
+
+      - name: Browser smoke Online Battle V2
+        run: node tests/online-battle-smoke-v2.mjs
+
+      - name: Browser smoke Single Tournament V2
+        run: node tests/single-tournament-smoke-v2.mjs
+
+      - name: Browser smoke Online Tournament V2
+        run: node tests/online-tournament-smoke-v2.mjs
+
+      - name: Browser smoke public rawcdn Tournament selector
+        env:
+          WAFT_PUBLIC_PREVIEW_URL: https://rawcdn.githack.com/${{ github.repository }}/${{ github.event.pull_request.head.sha }}
+        run: node tests/public-preview-tournament-smoke.mjs
+
+      - name: Upload V2 smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: turn-summary-v2-smoke
+          path: artifacts/*.png
+          if-no-files-found: ignore

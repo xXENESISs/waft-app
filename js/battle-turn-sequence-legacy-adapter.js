@@ -6,7 +6,7 @@
 
 import {
   TURN_PHASE,
-  classifyBattleLogLine,
+  classifyBattleLogEvents,
   getActionLabel,
   getCompactPhaseEvents
 } from "./battle-turn-sequence.js";
@@ -34,6 +34,7 @@ const ROUND_END_HINTS = [
   "Neotenic Regeneration",
   "Suffocating Humidity restores",
   "Algae",
+  "Silent Stalk",
   "remains active for",
   "has expired",
   "falls from",
@@ -84,9 +85,7 @@ function looksLikePrimaryAction(line, actorName, action) {
 }
 
 function phaseFromLines(type, lines, metadata = {}) {
-  const events = lines
-    .map((line) => classifyBattleLogLine(line, metadata))
-    .filter(Boolean);
+  const events = lines.flatMap((line) => classifyBattleLogEvents(line, metadata));
 
   return {
     type,
@@ -173,6 +172,16 @@ export function buildLegacyOrderedTurnSequence(options = {}) {
     priority: second.priority ?? null
   };
 
+  const sharedFighters = {
+    fighterAId: firstMeta.actorId,
+    fighterAName: firstMeta.actorName,
+    fighterBId: secondMeta.actorId,
+    fighterBName: secondMeta.actorName
+  };
+
+  Object.assign(firstMeta, sharedFighters);
+  Object.assign(secondMeta, sharedFighters);
+
   let firstStart = findFirstActionStart(cleaned, firstMeta);
   if (firstStart < 0) firstStart = 0;
 
@@ -194,29 +203,37 @@ export function buildLegacyOrderedTurnSequence(options = {}) {
 
   const secondLines = secondAndEnd.slice(0, endRelativeStart);
   const endLines = secondAndEnd.slice(endRelativeStart);
+  const secondActed = secondLines.length > 0;
 
   const phases = [];
 
   if (beforeFirst.length > 0) {
-    phases.push(phaseFromLines(TURN_PHASE.ROUND_START, beforeFirst));
+    phases.push(phaseFromLines(TURN_PHASE.ROUND_START, beforeFirst, sharedFighters));
   }
 
   phases.push(phaseFromLines(TURN_PHASE.ACTION, firstLines, firstMeta));
 
-  if (secondLines.length > 0) {
+  if (secondActed) {
     phases.push(phaseFromLines(TURN_PHASE.ACTION, secondLines, secondMeta));
   }
 
   if (endLines.length > 0) {
-    phases.push(phaseFromLines(TURN_PHASE.ROUND_END, endLines));
+    phases.push(phaseFromLines(TURN_PHASE.ROUND_END, endLines, sharedFighters));
+  }
+
+  const order = [
+    { position: 1, ...firstMeta }
+  ];
+
+  // A faster fighter can end the battle before its opponent gets a turn.
+  // In that case the UI should not claim the defeated fighter acted.
+  if (secondActed || !battleFinished) {
+    order.push({ position: 2, ...secondMeta });
   }
 
   return {
     turn,
-    order: [
-      { position: 1, ...firstMeta },
-      { position: 2, ...secondMeta }
-    ],
+    order,
     phases,
     battleFinished,
     winner

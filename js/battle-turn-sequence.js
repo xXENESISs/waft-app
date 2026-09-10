@@ -100,6 +100,24 @@ function fighterSnapshot(fighter) {
   };
 }
 
+function idForName(name, context = {}) {
+  if (!name) return null;
+  if (name === context.actorName) return context.actorId ?? null;
+  if (name === context.targetName) return context.targetId ?? null;
+  if (name === context.fighterAName) return context.fighterAId ?? null;
+  if (name === context.fighterBName) return context.fighterBId ?? null;
+  return null;
+}
+
+function ownerFromPossessiveLine(line) {
+  const match = line.match(/^(.+?)'s\s+/);
+  return match ? match[1] : null;
+}
+
+function specialNameFromLine(line) {
+  return SPECIAL_NAMES.find((specialName) => line.includes(`uses ${specialName}`)) || null;
+}
+
 export function getActionLabel(actionType) {
   return ACTION_LABELS[actionType] || String(actionType || "Action");
 }
@@ -165,9 +183,7 @@ export function endBattleTurnPhase(battle, token, metadata = {}) {
 
   const logEnd = safeArray(battle.log).length;
   const lines = safeArray(battle.log).slice(token.logStart, logEnd);
-  const events = lines
-    .map((line) => classifyBattleLogLine(line, token.metadata))
-    .filter(Boolean);
+  const events = lines.flatMap((line) => classifyBattleLogEvents(line, token.metadata));
 
   const phase = {
     type: token.type,
@@ -220,8 +236,16 @@ export function classifyBattleLogLine(rawLine, context = {}) {
     action: context.action ?? null
   };
 
-  if (line.includes("has been defeated")) {
-    return { ...base, type: TURN_EVENT.KO, emphasis: "major" };
+  const defeated = line.match(/^(.+?) has been defeated\.?$/i);
+  if (defeated) {
+    const targetName = defeated[1];
+    return {
+      ...base,
+      type: TURN_EVENT.KO,
+      targetName,
+      targetId: idForName(targetName, context),
+      emphasis: "major"
+    };
   }
 
   if (line.includes("BIOME SHIFT") || line.includes("Biome changed")) {
@@ -236,31 +260,55 @@ export function classifyBattleLogLine(rawLine, context = {}) {
     return { ...base, type: TURN_EVENT.FIELD, subtype: "oasis", emphasis: "major" };
   }
 
-  const criticalHit = line.match(/hits (.+?) with (.+?) for (\d+) damage \(CRITICAL\)/i);
+  const criticalHit = line.match(/^(.+?) hits (.+?) with (.+?) for (\d+) damage \(CRITICAL\)/i);
   if (criticalHit) {
+    const actorName = criticalHit[1];
+    const targetName = criticalHit[2];
     return {
       ...base,
       type: TURN_EVENT.CRITICAL,
-      targetName: criticalHit[1],
-      actionLabel: criticalHit[2],
-      amount: numberFromMatch(criticalHit, 3),
+      actorName,
+      actorId: idForName(actorName, context) ?? base.actorId,
+      targetName,
+      targetId: idForName(targetName, context) ?? base.targetId,
+      actionLabel: criticalHit[3],
+      amount: numberFromMatch(criticalHit, 4),
       emphasis: "major"
     };
   }
 
-  const damageHit = line.match(/hits (.+?) with (.+?) for (\d+) damage/i);
+  const damageHit = line.match(/^(.+?) hits (.+?) with (.+?) for (\d+) damage/i);
   if (damageHit) {
+    const actorName = damageHit[1];
+    const targetName = damageHit[2];
     return {
       ...base,
       type: TURN_EVENT.HIT,
-      targetName: damageHit[1],
-      actionLabel: damageHit[2],
-      amount: numberFromMatch(damageHit, 3),
+      actorName,
+      actorId: idForName(actorName, context) ?? base.actorId,
+      targetName,
+      targetId: idForName(targetName, context) ?? base.targetId,
+      actionLabel: damageHit[3],
+      amount: numberFromMatch(damageHit, 4),
       emphasis: "normal"
     };
   }
 
-  const genericDamage = line.match(/(?:dealing|takes|suffers|for) (\d+) (?:true )?damage/i);
+  const sufferingDamage = line.match(/^(.+?) suffers (\d+) (?:true )?damage(?: from (.+?))?\.?$/i);
+  if (sufferingDamage) {
+    const targetName = sufferingDamage[1];
+    return {
+      ...base,
+      type: TURN_EVENT.DAMAGE,
+      targetName,
+      targetId: idForName(targetName, context),
+      amount: numberFromMatch(sufferingDamage, 2),
+      sourceName: sufferingDamage[3] || null,
+      emphasis: "normal"
+    };
+  }
+
+  const genericDamage = line.match(/(?:dealing|takes|for|deals) (\d+) (?:true )?damage/i);
   if (genericDamage) {
     return {
       ...base,
@@ -270,26 +318,77 @@ export function classifyBattleLogLine(rawLine, context = {}) {
     };
   }
 
+  const miss = line.match(/^(.+?) (?:uses .+? but )?misses? (.+?)\.?$/i);
+  if (miss) {
+    const actorName = miss[1];
+    const targetName = miss[2];
+    return {
+      ...base,
+      type: TURN_EVENT.MISS,
+      actorName,
+      actorId: idForName(actorName, context) ?? base.actorId,
+      targetName,
+      targetId: idForName(targetName, context) ?? base.targetId,
+      emphasis: "normal"
+    };
+  }
+
   if (/\bmiss(?:es|ed)?\b/i.test(line)) {
     return { ...base, type: TURN_EVENT.MISS, emphasis: "normal" };
   }
 
-  const heal = line.match(/(?:restores|regenerates|heals) (\d+) HP/i);
-  if (heal) {
+  const possessiveHeal = line.match(/^(.+?)'s .+? (?:restores|regenerates|heals) (\d+) HP/i);
+  if (possessiveHeal) {
+    const actorName = possessiveHeal[1];
     return {
       ...base,
       type: TURN_EVENT.HEAL,
+      actorName,
+      actorId: idForName(actorName, context),
+      targetName: actorName,
+      targetId: idForName(actorName, context),
+      amount: numberFromMatch(possessiveHeal, 2),
+      emphasis: "normal"
+    };
+  }
+
+  const directHeal = line.match(/^(.+?) (?:restores|regenerates|heals) (\d+) HP/i);
+  if (directHeal) {
+    const actorName = directHeal[1];
+    return {
+      ...base,
+      type: TURN_EVENT.HEAL,
+      actorName,
+      actorId: idForName(actorName, context) ?? base.actorId,
+      targetName: actorName,
+      targetId: idForName(actorName, context) ?? base.actorId,
+      amount: numberFromMatch(directHeal, 2),
+      emphasis: "normal"
+    };
+  }
+
+  const heal = line.match(/(?:restores|regenerates|heals) (\d+) HP/i);
+  if (heal) {
+    const owner = ownerFromPossessiveLine(line);
+    return {
+      ...base,
+      type: TURN_EVENT.HEAL,
+      actorName: owner || base.actorName,
+      actorId: idForName(owner, context) ?? base.actorId,
       amount: numberFromMatch(heal, 1),
       emphasis: "normal"
     };
   }
 
-  const statusApplied = line.match(/gains effect: (.+?)\.?$/i);
+  const statusApplied = line.match(/^(.+?) gains effect: (.+?)\.?$/i);
   if (statusApplied) {
+    const targetName = statusApplied[1];
     return {
       ...base,
       type: TURN_EVENT.STATUS_APPLIED,
-      statusName: statusApplied[1],
+      targetName,
+      targetId: idForName(targetName, context) ?? base.targetId,
+      statusName: statusApplied[2],
       emphasis: "normal"
     };
   }
@@ -303,10 +402,17 @@ export function classifyBattleLogLine(rawLine, context = {}) {
   }
 
   if (/\bgains?\b/i.test(line) && /Attack|Defense|Speed|Agility|Technique|Explosiveness|Precision|Evasion/i.test(line)) {
-    return { ...base, type: TURN_EVENT.BUFF, emphasis: "normal" };
+    const owner = ownerFromPossessiveLine(line);
+    return {
+      ...base,
+      type: TURN_EVENT.BUFF,
+      actorName: owner || base.actorName,
+      actorId: idForName(owner, context) ?? base.actorId,
+      emphasis: "normal"
+    };
   }
 
-  const usedSpecial = SPECIAL_NAMES.find((specialName) => line.includes(`uses ${specialName}`));
+  const usedSpecial = specialNameFromLine(line);
   if (usedSpecial) {
     return {
       ...base,
@@ -321,7 +427,14 @@ export function classifyBattleLogLine(rawLine, context = {}) {
   }
 
   if (/passive|Colony|Momentum|Inertia|Silent Stalk|Predatory Pressure|Reaction Chamber|Scaled Retreat|Perfect Camouflage/i.test(line)) {
-    return { ...base, type: TURN_EVENT.PASSIVE, emphasis: "quiet" };
+    const owner = ownerFromPossessiveLine(line);
+    return {
+      ...base,
+      type: TURN_EVENT.PASSIVE,
+      actorName: owner || base.actorName,
+      actorId: idForName(owner, context) ?? base.actorId,
+      emphasis: "quiet"
+    };
   }
 
   if (/stamina/i.test(line)) {
@@ -329,6 +442,38 @@ export function classifyBattleLogLine(rawLine, context = {}) {
   }
 
   return { ...base, type: TURN_EVENT.INFO, emphasis: "quiet" };
+}
+
+// A single legacy log line can carry more than one visual fact. A signature
+// attack often says both "uses Special" and "dealing X damage". Keep those as
+// separate events so the UI can show the SUPER banner first and the hit second.
+export function classifyBattleLogEvents(rawLine, context = {}) {
+  const line = cleanLine(rawLine);
+  if (!line) return [];
+
+  const events = [];
+  const specialName = specialNameFromLine(line);
+
+  if (specialName) {
+    events.push({
+      text: line,
+      actorId: context.actorId ?? null,
+      actorName: context.actorName ?? null,
+      targetId: context.targetId ?? null,
+      targetName: context.targetName ?? null,
+      action: context.action ?? null,
+      type: TURN_EVENT.SPECIAL,
+      specialName,
+      emphasis: "major"
+    });
+  }
+
+  const primary = classifyBattleLogLine(line, context);
+  if (primary && !(primary.type === TURN_EVENT.SPECIAL && specialName)) {
+    events.push(primary);
+  }
+
+  return events;
 }
 
 export function getCompactPhaseEvents(phase, options = {}) {
