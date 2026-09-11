@@ -1,0 +1,38 @@
+name: NEXO laboratory verification
+on:
+  push:
+    branches: [nexo/waft-learning-lab]
+    paths:
+      - '.github/workflows/nexo-lab.yml'
+      - 'nexo-lab/**'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Retrieve public experiment branch without credentials
+        run: |
+          git clone --depth 1 --branch nexo/waft-learning-lab https://github.com/xXENESISs/waft-app.git snapshot
+          cd snapshot
+          git rev-parse HEAD > source-commit.txt
+      - name: Verify JavaScript syntax and laboratory tests
+        run: |
+          cd snapshot
+          node --check js/battle-engine.js
+          node --check js/effects.js
+          node --check js/animals.js
+          if [ -f nexo-lab/tests/engine.test.mjs ]; then node nexo-lab/tests/engine.test.mjs; fi
+      - name: Preserve reproducible source and laboratory evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nexo-waft-verified-source
+          retention-days: 7
+          path: |
+            snapshot/js
+            snapshot/images/animals
+            snapshot/fighters
+            snapshot/package.json
+            snapshot/source-commit.txt
+            snapshot/nexo-lab
