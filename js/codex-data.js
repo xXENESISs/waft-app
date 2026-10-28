@@ -647,7 +647,7 @@ export const codexFighters = [
     "slug": "bombardier-beetle",
     "gameId": "bombardier-beetle",
     "name": "Bombardier Beetle",
-    "category": "arthropods",
+    "category": "arthropods-and-other-invertebrates",
     "image": "images/animals/arthropods/bombardier-beetle.png",
     "archivePage": null,
     "region": null,
