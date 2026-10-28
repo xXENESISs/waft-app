@@ -89,7 +89,7 @@ function chapter(id, name, kicker, inner) {
 }
 function biology(f) {
   return chapter("biology","The animal in nature","Real-world biology",
-    '<div class="codex-fact-grid">' + factBox("Scientific designation",f.scientific || animals[f.gameId]?.scientificName) + factBox("Range",f.region) +
+    '<div class="codex-fact-grid">' + factBox("Scientific designation",f.scientific || animals[f.gameId]?.scientificName) + factBox(f.sources?.length ? "Range" : "Archive region · unverified",f.region) +
     factBox("Habitat",f.habitat) + factBox("WAFT collection",getCategory(f.category)?.label) + '</div>' +
     (f.biology ? '<p>' + html(f.biology) + '</p>' : '<p class="codex-small">A fully sourced species overview, including geographic distribution, habitat adaptations, diet and conservation, has not yet been reviewed for this character. Existing archive labels are provisional, not a verified range map.</p>'));
 }
@@ -153,7 +153,7 @@ function renderProfile(slug) {
     '<span class="codex-status' + statusClass(f) + '">' + statusText(f) + '</span></div>' +
     '<div class="codex-profile-intro"><div class="codex-eyebrow">Fighter dossier · ' + html(cat?.label || "") + '</div>' +
     '<h1 class="codex-h1">' + html(f.name) + '</h1><p class="codex-scientific">' + clean(f.scientific || fighter?.scientificName) + '</p>' +
-    '<dl class="codex-facts"><div><dt>Collection</dt><dd>' + html(cat?.label || "") + '</dd></div><div><dt>Region</dt><dd>' + clean(f.region) + '</dd></div>' +
+    '<dl class="codex-facts"><div><dt>Collection</dt><dd>' + html(cat?.label || "") + '</dd></div><div><dt>' + (f.sources?.length ? 'Region' : 'Archive region · unverified') + '</dt><dd>' + clean(f.region) + '</dd></div>' +
     '<div><dt>Martial art</dt><dd>' + clean(f.martial) + '</dd></div><div><dt>Game status</dt><dd>' + statusText(f) + '</dd></div></dl>' +
     '<p>A guide to this fighter’s real-world inspiration and its fictional tactical identity. Biology, martial history and gameplay are documented as separate subjects.</p></div></section>' +
     '<nav class="codex-toc" aria-label="Profile sections"><a href="#biology">Biology</a><a href="#martial">Martial art</a><a href="#gameplay">Gameplay</a><a href="#sources">Sources</a></nav>' +
