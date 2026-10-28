@@ -1,0 +1,27 @@
+name: Validate WAFT Codex
+on:
+  pull_request:
+    paths:
+      - 'archive.html'
+      - 'codex-profile.html'
+      - 'fighters/**'
+      - 'js/codex-*'
+      - 'js/animals.js'
+      - 'css/codex.css'
+      - 'scripts/validate-codex.mjs'
+      - '.github/workflows/codex-validate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout proposed commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify Node and catalogue integrity
+        run: |
+          node --version
+          node scripts/validate-codex.mjs
