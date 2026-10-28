@@ -1,0 +1,10 @@
+{
+  "reviewedOn": "2026-10-29",
+  "baseCommit": "3d7c7672f3be9deb675c0f3384de114c2e1f2c48",
+  "purpose": "If these rules change, review explanatory prose and tactics before accepting a new fingerprint. No engine modifications are made by the archive.",
+  "sha256": {
+    "js/animals.js": "665c3b339522c0c631e24db741d321633a8b8b55a385741d80d7100109cbed7c",
+    "js/battle-engine.js": "9a46de82a2214ff531222906e5cf5ffa37f5fd0185ac59c48831b8c7ef0f3f8b",
+    "js/effects.js": "8d783298123002d5d5fd171ea010ce95700679aa270e8e230d5e9e6000f9d2f2"
+  }
+}
