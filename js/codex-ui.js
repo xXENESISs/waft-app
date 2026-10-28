@@ -1,171 +1,143 @@
-// WAFT Codex UI. Archive-only: combat engine and multiplayer are untouched.
-import { codexCategories, codexFighters } from "./codex-data.js";
-import { animals } from "./animals.js";
+// WAFT encyclopaedia. No combat execution or Academia dependencies.
+import { categories, fighters, statLabels, biomeLabels, regionLabels, normalize, filterFighters, statsFor, statScale } from './codex-model.js';
+import { references, reviewedOn } from './codex-research.js';
+import { tactics, mechanicalNotes } from './codex-tactics.js';
 
-const root = document.getElementById("codex-root");
-const base = new URL("../", import.meta.url);
-const url = (path) => new URL(path, base).href;
-const html = (input) => String(input ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const byCategory = (slug) => codexFighters.filter((f) => f.category === slug);
-const getCategory = (slug) => codexCategories.find((cat) => cat.slug === slug);
-const profileUrl = (fighter) => url("codex-profile.html?fighter=" + encodeURIComponent(fighter.slug));
-const categoryUrl = (category) => url("fighters/" + category.slug + "/index.html");
-const imageUrl = (fighter) => url(fighter.image);
-const clean = (v) => (v ? html(v) : "Not documented yet");
-const statusText = (f) => f.gameId ? "In the game" : "Archive concept";
-const statusClass = (f) => f.gameId ? "" : " codex-status--concept";
-
-function breadcrumb(parts) {
-  return '<nav class="codex-breadcrumb" aria-label="Breadcrumb">' + ['<a href="' + url('archive.html') + '">Codex</a>']
-    .concat(parts.map((part) => part.href ? '<span aria-hidden="true">/</span><a href="' + html(part.href) + '">' + html(part.label) + '</a>' : '<span aria-hidden="true">/</span><span aria-current="page">' + html(part.label) + '</span>')).join("") + '</nav>';
-}
+const root=document.getElementById('codex-root');
+const base=new URL('../',import.meta.url);
+const url=p=>new URL(p,base).href;
+const h=v=>String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const profile=f=>url(`codex-profile.html?fighter=${encodeURIComponent(f.slug)}`);
+const category=c=>url(`fighters/${c.slug}/index.html`);
+const status=f=>f.game?'Jugable':'Solo archivo';
+const nameOrPending=f=>f.martial || 'Disciplina pendiente de asignar';
+const refLinks=ids=>(ids||[]).map(id=>`<a class="reference-mark" href="#ref-${h(id)}" aria-label="Referencia: ${h(references[id]?.title)}">[${Object.keys(references).indexOf(id)+1}]</a>`).join(' ');
+const image=(f,{hero=false,cls=''}={})=>`<picture class="${cls}"><source type="image/webp" srcset="${url(`images/codex/${f.slug}-480.webp`)} 480w, ${url(`images/codex/${f.slug}-960.webp`)} 960w" sizes="${hero?'(max-width: 700px) 92vw, 44vw':'(max-width: 540px) 88vw, (max-width: 1000px) 43vw, 22vw'}"><img src="${url(f.image)}" alt="Ilustración original WAFT: ${h(f.name)}" ${hero?'fetchpriority="high"':'loading="lazy"'} decoding="async" width="640" height="960"></picture>`;
+const badge=f=>`<span class="codex-status ${f.game?'':'codex-status--concept'}"><span aria-hidden="true">${f.game?'●':'◇'}</span> ${status(f)}</span>`;
+const eyebrow=(text,n='')=>`<div class="codex-eyebrow">${n?`<span>${n}</span>`:''}${h(text)}</div>`;
+const notice=text=>`<div class="codex-note">${text}</div>`;
+const chapter=(id,kicker,title,content)=>`<section class="codex-chapter" id="${id}" aria-labelledby="title-${id}">${eyebrow(kicker)}<h2 id="title-${id}" class="codex-h2">${title}</h2>${content}</section>`;
+const breadcrumb=parts=>`<nav class="codex-breadcrumb" aria-label="Ruta de navegación"><a href="${url('archive.html')}">Archivo</a>${parts.map(p=>`<span aria-hidden="true">/</span>${p.href?`<a href="${h(p.href)}">${h(p.label)}</a>`:`<span aria-current="page">${h(p.label)}</span>`}`).join('')}</nav>`;
+const editorialStatus=f=>`<span class="research-status">${f.research?'Biología ampliada':'Investigación pendiente'}${f.discipline?' · Historia documentada':''}</span>`;
 
 function fighterCard(f) {
-  return '<a class="codex-fighter-card" href="' + profileUrl(f) + '" aria-label="Open ' + html(f.name) + ' profile">' +
-    '<div class="codex-card-media"><img loading="lazy" src="' + imageUrl(f) + '" alt="WAFT character illustration of ' + html(f.name) + '">' +
-    '<span class="codex-status' + statusClass(f) + '">' + statusText(f) + '</span></div>' +
-    '<div class="codex-card-content"><h2>' + html(f.name) + '</h2><p>' + html(f.martial || "Martial discipline to be documented") + '</p>' +
-    '<p>' + html(f.region || "Region pending verification") + '</p><span class="codex-text-link">Explore fighter →</span></div></a>';
+ return `<a class="codex-fighter-card" href="${profile(f)}" aria-label="Abrir expediente de ${h(f.name)}" style="--collection-color:${f.categoryData.color}"><div class="codex-card-media">${image(f)}<span class="record-number">${f.number}</span>${badge(f)}</div><div class="codex-card-content"><span class="card-collection">${h(f.categoryData.label)}</span><h3>${h(f.name)}</h3><p class="card-english" lang="en">${h(f.originalName)}</p><p class="card-discipline">${h(nameOrPending(f))}</p><p class="card-region">${h(f.research?.range?.summary || 'Distribución pendiente de revisión')}</p>${editorialStatus(f)}<span class="codex-text-link">Abrir expediente <span aria-hidden="true">↗</span></span></div></a>`;
 }
-
-function categoryTile(cat) {
-  const count = byCategory(cat.slug).length;
-  return '<a class="codex-category-tile" style="--tile-image:url(' + "'" + url(cat.image) + "'" + ')" href="' + categoryUrl(cat) + '">' +
-    '<span class="codex-category-kicker">' + html(cat.latin) + '</span><h3>' + html(cat.label) + '</h3>' +
-    '<p>' + html(cat.description) + '</p><div class="codex-category-bottom"><span>' + count + ' fighters</span><span aria-hidden="true">↗</span></div></a>';
+function categoryTile(c,index) {
+ const entries=fighters.filter(f=>f.category===c.slug);
+ return `<a class="codex-category-tile" href="${category(c)}" style="--tile-image:url('${url(c.image)}');--collection-color:${c.color}"><span class="collection-number">0${index+1}</span><span class="codex-category-kicker">Colección editorial</span><h3>${h(c.label)}</h3><p>${h(c.description)}</p><div class="codex-category-bottom"><span>${entries.length} expedientes · ${entries.filter(f=>f.game).length} jugables</span><span aria-hidden="true">↗</span></div></a>`;
 }
-
 function renderLanding() {
-  const playable = codexFighters.filter((f) => f.gameId).length;
-  const concepts = codexFighters.length - playable;
-  const features = ["matamata", "coconut-octopus"].map((id) => codexFighters.find((f) => f.slug === id));
-  root.innerHTML =
-    '<section class="codex-hero"><div class="codex-eyebrow">The World Animal Fight Tournament</div><div class="codex-hero-line">' +
-    '<div><h1 class="codex-h1">The Fighter<br><em>Codex.</em></h1><p>Explore the real animals, martial traditions and game mechanics behind the WAFT roster. A field guide to the world beyond the arena.</p></div>' +
-    '<div class="codex-counts"><div class="codex-count"><strong>' + codexCategories.length + '</strong><span>Collections</span></div><div class="codex-count"><strong>' + codexFighters.length + '</strong><span>Profiles</span></div><div class="codex-count"><strong>' + playable + '</strong><span>Playable</span></div></div></div></section>' +
-    '<section class="codex-section"><div class="codex-section-head"><div><div class="codex-eyebrow">Browse by collection</div><h2 class="codex-h2">Six paths into WAFT</h2></div><p>These are editorial collections, not six equivalent taxonomic ranks: marine life includes mammals and invertebrates.</p></div><div class="codex-category-grid">' + codexCategories.map(categoryTile).join("") + '</div></section>' +
-    '<section class="codex-section"><div class="codex-section-head"><div><div class="codex-eyebrow">Featured profiles</div><h2 class="codex-h2">Inside the species</h2></div><p>Two researched examples combine natural history, martial arts context and combat abilities.</p></div>' +
-    '<div class="codex-featured">' + features.map((f) => '<a class="codex-featured-item" href="' + profileUrl(f) + '"><img loading="lazy" alt="' + html(f.name) + ' character" src="' + imageUrl(f) + '"><div class="codex-featured-body"><span class="codex-category-kicker">' + html(getCategory(f.category)?.label) + '</span><h3>' + html(f.name) + '</h3><p>' + html(f.martial || '') + '</p><span class="codex-text-link">Read research & tactics →</span></div></a>').join("") + '</div></section>' +
-    '<div class="codex-note" style="margin-bottom:80px"><strong>Catalogue status:</strong> ' + playable + ' fighters are present in the current game engine. ' + concepts + ' additional archive characters are concepts, not playable entries. A character’s real-world ecology is different from its fictional WAFT biome bonuses. Research is being added progressively; unverified fields are explicitly marked.</div>';
+ const featured=['matamata','coconut-octopus','fennec','peregrine-falcon'].map(slug=>fighters.find(f=>f.slug===slug));
+ root.innerHTML=`<section class="codex-hero"><div class="codex-hero-copy">${eyebrow('The World Animal Fight Tournament')}<p class="hero-edition">ARCHIVO DE COMBATIENTES <span>VOL. 01</span></p><h1 class="codex-h1">La naturaleza.<br>La disciplina.<br><em>El combatiente.</em></h1><p class="hero-description">Cada luchador tiene un mundo detrás. Explora las especies, las tradiciones marciales y las decisiones que les dan vida en WAFT.</p><div class="hero-actions"><a class="codex-button" href="#collections">Explorar colecciones <span aria-hidden="true">↓</span></a><a class="codex-text-link" href="#catalogue">Buscar combatiente ↗</a></div><div class="codex-counts"><div><strong>06</strong><span>Colecciones</span></div><div><strong>${fighters.length}</strong><span>Expedientes</span></div><div><strong>${fighters.filter(f=>f.game).length}</strong><span>Jugables</span></div></div></div><div class="hero-art" aria-label="Ilustraciones originales de los combatientes"><div class="hero-art-back"></div>${['fennec','matamata','coconut-octopus'].map((slug,i)=>{const f=fighters.find(f=>f.slug===slug);return `<a class="hero-specimen specimen-${i}" href="${profile(f)}" aria-label="Descubrir ${h(f.name)}">${image(f,{hero:i===1})}<span><small>WAFT / ${f.number}</small>${h(f.name)}</span></a>`;}).join('')}<span class="hero-art-caption">HISTORIA NATURAL × CULTURA MARCIAL × ESTRATEGIA</span></div></section>
+ <div class="editorial-rule"><span>Conocer para combatir.</span><p>La ciencia explica al animal. La historia, su disciplina. WAFT imagina el encuentro.</p></div>
+ <section class="codex-section" id="collections"><div class="codex-section-head"><div>${eyebrow('Elige un entorno','01')}<h2 class="codex-h2">Seis puertas al archivo.</h2></div><p>Colecciones editoriales con identidad propia. La fauna marina reúne varios grupos biológicos; estas seis colecciones no son rangos taxonómicos equivalentes.</p></div><div class="codex-category-grid">${categories.map(categoryTile).join('')}</div></section>
+ <section class="codex-section" id="fieldnotes"><div class="codex-section-head"><div>${eyebrow('Lecturas de campo','02')}<h2 class="codex-h2">Más allá de la arena.</h2></div><p>Cuatro expedientes modelo, con biología y contexto marcial documentados. Cada capítulo identifica sus fuentes y sus límites.</p></div><div class="codex-featured">${featured.map(f=>`<a class="codex-featured-item" href="${profile(f)}">${image(f)}<div><span class="codex-category-kicker">${h(f.martial)}</span><h3>${h(f.name)}</h3><p>${h(f.research.summary)}</p><span class="codex-text-link">Leer expediente ↗</span></div></a>`).join('')}</div></section>
+ <section id="catalogue" class="codex-section"><div class="codex-section-head"><div>${eyebrow('Todo el plantel','03')}<h2 class="codex-h2">Encuentra tu combatiente.</h2></div><p>Busca por nombre en español o inglés, disciplina o distribución revisada. Los personajes de archivo conservan su lugar junto a los jugables.</p></div>${catalogueMarkup()}</section>
+ <section class="editorial-panel" id="editorial"><div>${eyebrow('Un archivo vivo')}<h2 class="codex-h3">El rigor también consiste<br>en saber qué falta.</h2></div><div><p>${Object.keys(tactics).length} guías tácticas cualitativas, ${fighters.filter(f=>f.research).length} expedientes con biología ampliada y ${fighters.filter(f=>f.discipline).length} historias marciales documentadas. El resto identifica expresamente la investigación pendiente.</p><p>Las estadísticas y los textos oficiales se leen de los datos actuales del juego. Las recomendaciones son interpretaciones de sus reglas, sin afirmar tasas de victoria ni estrategias óptimas.</p></div></section>`;
+ bindCatalogue();
 }
-
+function catalogueMarkup(fixedCategory='') {
+ return `<form class="codex-toolbar" role="search" aria-label="Buscar en el archivo"><label class="codex-search"><span>Nombre, especie o disciplina</span><input id="codex-query" type="search" placeholder="Prueba «pulpo», «Tahtib», «Amazonas»…" autocomplete="off"></label>${!fixedCategory?`<label>Colección<select id="codex-collection"><option value="">Todas las colecciones</option>${categories.map(c=>`<option value="${c.slug}">${h(c.label)}</option>`).join('')}</select></label>`:''}<label>Distribución revisada<select id="codex-region"><option value="">Todas las regiones</option>${Object.entries(regionLabels).map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></label><label>Orden<select id="codex-sort"><option value="archive">Orden del archivo</option><option value="name">Nombre A–Z</option><option value="research">Investigación ampliada</option></select></label><div class="toolbar-bottom"><div class="codex-filter-set" role="group" aria-label="Disponibilidad en el juego"><button type="button" data-filter="all" aria-pressed="true">Todos</button><button type="button" data-filter="game" aria-pressed="false">Jugables</button><button type="button" data-filter="concept" aria-pressed="false">Solo archivo</button></div><button type="reset" class="reset-filters">Restablecer filtros</button></div></form><p id="codex-results-count" class="codex-results-count" role="status" aria-live="polite"></p><div class="codex-fighter-grid" id="codex-list"></div>`;
+}
+function bindCatalogue(fixedCategory='') {
+ const form=root.querySelector('.codex-toolbar'), input=root.querySelector('#codex-query'), collection=root.querySelector('#codex-collection'), region=root.querySelector('#codex-region'), sort=root.querySelector('#codex-sort'), list=root.querySelector('#codex-list'), counter=root.querySelector('#codex-results-count');
+ let selectedStatus='all';
+ function readLocation() {
+  const p=new URLSearchParams(location.search);
+  input.value=p.get('q')||''; selectedStatus=['all','game','concept'].includes(p.get('status'))?p.get('status'):'all';
+  if(collection) collection.value=categories.some(c=>c.slug===p.get('collection'))?p.get('collection'):'';
+  region.value=Object.hasOwn(regionLabels,p.get('region'))?p.get('region'):'';
+  sort.value=['archive','name','research'].includes(p.get('sort'))?p.get('sort'):'archive';
+ }
+ function update(write=true) {
+  const state={q:input.value,status:selectedStatus,category:fixedCategory||collection?.value||'',region:region.value,sort:sort.value};
+  const matches=filterFighters(fighters,state),total=fixedCategory?fighters.filter(f=>f.category===fixedCategory).length:fighters.length;
+  root.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.filter===selectedStatus)));
+  counter.textContent=`${matches.length} de ${total} expedientes${state.region?' · El filtro regional solo incluye distribuciones revisadas.':''}`;
+  list.innerHTML=matches.length?matches.map(fighterCard).join(''):`<div class="codex-empty"><h3>No hay coincidencias.</h3><p>Prueba con otro nombre o restablece los filtros. Un expediente sin distribución revisada no aparece al filtrar por región.</p><button type="button" class="codex-button" id="empty-reset">Ver el catálogo</button></div>`;
+  root.querySelector('#empty-reset')?.addEventListener('click',()=>form.reset());
+  if(write){const p=new URLSearchParams(); if(state.q)p.set('q',state.q); if(state.status!=='all')p.set('status',state.status); if(!fixedCategory&&state.category)p.set('collection',state.category); if(state.region)p.set('region',state.region); if(state.sort!=='archive')p.set('sort',state.sort); history.replaceState(null,'',location.pathname+(p.size?'?'+p:'')+location.hash);}
+ }
+ form.addEventListener('submit',e=>e.preventDefault());
+ input.addEventListener('input',()=>update());
+ [collection,region,sort].filter(Boolean).forEach(el=>el.addEventListener('change',()=>update()));
+ form.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{selectedStatus=b.dataset.filter;update();}));
+ form.addEventListener('reset',()=>{input.value='';if(collection)collection.value='';region.value='';sort.value='archive';selectedStatus='all';queueMicrotask(()=>update());});
+ window.addEventListener('popstate',()=>{readLocation();update(false);});
+ readLocation();update(false);
+}
 function renderCategory(slug) {
-  const cat = getCategory(slug);
-  if (!cat) { renderMissing("Collection not found"); return; }
-  const entries = byCategory(slug);
-  root.innerHTML = breadcrumb([{label:cat.label}]) +
-    '<section class="codex-category-hero" style="--category-image:url(' + "'" + url(cat.image) + "'" + ')"><span class="codex-category-kicker">' + html(cat.latin) + ' · ' + entries.length + ' records</span><h1>' + html(cat.label) + '</h1><p>' + html(cat.description) + '</p></section>' +
-    '<div class="codex-toolbar"><label class="codex-search"><input id="codex-query" type="search" aria-label="Find a fighter" placeholder="Search animals or martial arts…" autocomplete="off"></label><div class="codex-filter-set" role="group" aria-label="Filter fighter status"><button class="codex-filter" data-filter="all" aria-pressed="true">All</button><button class="codex-filter" data-filter="game" aria-pressed="false">Playable</button><button class="codex-filter" data-filter="concept" aria-pressed="false">Archive</button></div><select id="codex-sort" class="codex-sort" aria-label="Sort fighters"><option value="original">Archive order</option><option value="name">Name A–Z</option></select></div>' +
-    '<p class="codex-results-count" id="codex-results-count" aria-live="polite"></p><div class="codex-fighter-grid" id="codex-list"></div>' +
-    '<div class="codex-note" style="margin-bottom:55px">Archive-only entries do not have verified playable stats. For implemented fighters, combat stats and ability descriptions are loaded directly from the current WAFT game data.</div>';
-  const search = document.getElementById("codex-query");
-  const sort = document.getElementById("codex-sort");
-  const list = document.getElementById("codex-list");
-  const counter = document.getElementById("codex-results-count");
-  let filter = "all";
-  function update() {
-    const q = search.value.trim().toLocaleLowerCase();
-    const filtered = entries.filter((f) => (filter === "all" || (filter === "game" ? Boolean(f.gameId) : !f.gameId)) &&
-      [f.name, f.martial, f.region, f.scientific].some((x) => String(x || "").toLocaleLowerCase().includes(q)));
-    if (sort.value === "name") filtered.sort((a,b) => a.name.localeCompare(b.name));
-    counter.textContent = filtered.length + " of " + entries.length + " profiles";
-    list.innerHTML = filtered.length ? filtered.map(fighterCard).join("") : '<div class="codex-empty">No fighters match these filters.</div>';
-  }
-  search.addEventListener("input", update);
-  sort.addEventListener("change", update);
-  for (const b of root.querySelectorAll("[data-filter]")) b.addEventListener("click", () => {
-    filter = b.dataset.filter;
-    for(const button of root.querySelectorAll("[data-filter]")) button.setAttribute("aria-pressed", String(button.dataset.filter === filter));
-    update();
-  });
-  update();
+ const c=categories.find(c=>c.slug===slug); if(!c){renderMissing();return;}
+ document.title=`${c.label} | Archivo WAFT`; document.body.style.setProperty('--accent',c.color);
+ root.innerHTML=`${breadcrumb([{label:c.label}])}<section class="codex-category-hero" style="--category-image:url('${url(c.image)}')">${eyebrow('Colección editorial / '+String(categories.indexOf(c)+1).padStart(2,'0'))}<h1>${h(c.label)}</h1><p>${h(c.description)}</p><div class="collection-meta">${fighters.filter(f=>f.category===slug).length} expedientes <span>·</span> ${fighters.filter(f=>f.category===slug&&f.game).length} jugables</div></section><nav class="collection-nav" aria-label="Otras colecciones">${categories.map(cat=>`<a href="${category(cat)}" ${cat.slug===slug?'aria-current="page"':''}>${h(cat.label)}</a>`).join('')}</nav><section id="catalogue" aria-label="Catálogo de la colección">${catalogueMarkup(slug)}</section>`;
+ bindCatalogue(slug);
 }
-
-function factBox(title, content) {
-  return '<div class="codex-fact-box"><small>' + html(title) + '</small><div>' + clean(content) + '</div></div>';
-}
-function chapter(id, name, kicker, inner) {
-  return '<section class="codex-chapter" id="' + id + '"><div class="codex-eyebrow">' + html(kicker) + '</div><h2 class="codex-h2">' + html(name) + '</h2>' + inner + '</section>';
-}
+function proseSections(sections) { return sections.map(s=>`<article class="prose-section"><h3>${h(s.title)}</h3><p>${h(s.text)}</p><div class="inline-references">${refLinks(s.refs)}</div></article>`).join(''); }
 function biology(f) {
-  return chapter("biology","The animal in nature","Real-world biology",
-    '<div class="codex-fact-grid">' + factBox("Scientific designation",f.scientific || animals[f.gameId]?.scientificName) + factBox(f.sources?.length ? "Range" : "Archive region · unverified",f.region) +
-    factBox("Habitat",f.habitat) + factBox("WAFT collection",getCategory(f.category)?.label) + '</div>' +
-    (f.biology ? '<p>' + html(f.biology) + '</p>' : '<p class="codex-small">A fully sourced species overview, including geographic distribution, habitat adaptations, diet and conservation, has not yet been reviewed for this character. Existing archive labels are provisional, not a verified range map.</p>'));
+ const r=f.research;
+ if(!r)return chapter('biology','Ciencia / historia natural','El animal real.',notice('Investigación biológica pendiente. La identificación heredada se conserva como referencia provisional; no se han verificado todavía taxonomía, dieta, adaptación, longevidad ni conservación.')+`<div class="taxonomy-provisional"><span>Identificación heredada</span><em>${h(f.scientific||'Pendiente de identificar')}</em></div>`);
+ return chapter('biology','Ciencia / historia natural','El animal real.',`<p class="chapter-intro">${h(r.summary)}</p><div class="inline-references">${refLinks(r.summaryRefs)}</div>${r.taxonomy?`<dl class="taxonomy">${['Clase','Orden','Familia','Género'].map((label,i)=>`<div><dt>${label}</dt><dd>${h(r.taxonomy[i])}</dd></div>`).join('')}</dl><div class="inline-references">${refLinks(r.taxonomyRefs)}</div>`:notice('La identificación de especie se documenta en los estudios citados. La jerarquía taxonómica completa sigue pendiente de revisión.')}<div class="codex-fact-grid">${r.facts.map(fact=>`<article class="codex-fact-box"><h3>${h(fact.label)}</h3><p>${h(fact.text)}</p><div class="inline-references">${refLinks(fact.refs)}</div></article>`).join('')}</div>${proseSections(r.sections)}`);
+}
+function distribution(f) {
+ const range=f.research?.range;
+ if(!range) return chapter('distribution','Geografía / distribución','Su lugar en el mundo.',notice('Distribución nativa pendiente de revisión. No se dibuja un mapa con áreas supuestas.')+(f.archiveRegion?`<details class="inherited-note"><summary>Ver región del archivo anterior</summary><p>${h(f.archiveRegion)}. Etiqueta editorial heredada: no es una distribución biológica verificada y no interviene en los filtros geográficos.</p></details>`:''));
+ const source=references[range.source];
+ return chapter('distribution','Geografía / distribución nativa','Su lugar en el mundo.',`<div class="range-panel"><div class="range-heading"><span aria-hidden="true">◎</span><div><small>Distribución documentada</small><h3>${h(range.summary)}</h3></div></div><div class="range-regions">${range.regions.map((r,i)=>`<div><span>0${i+1}</span><h4>${h(r.label)}</h4><p>${h(r.detail)}</p></div>`).join('')}</div><p class="range-limitation">${h(range.limitation)}</p><a class="codex-button secondary" href="${h(source.url)}" target="_blank" rel="noopener noreferrer">Consultar distribución en la fuente ↗</a></div><dl class="distribution-notes"><div><dt>Introducida</dt><dd>${h(range.introduced)}</dd></div><div><dt>Histórica</dt><dd>${h(range.historical)}</dd></div></dl><div class="inline-references">${refLinks(range.refs)}</div><p class="codex-small">Esta síntesis visual organiza regiones verificables. No es un mapa de presencia, ni un polígono científico aproximado.</p>`);
 }
 function martial(f) {
-  return chapter("martial","Martial arts & history","Cultural background",
-    '<div class="codex-fact-grid">' + factBox("Assigned discipline",f.martial) + factBox("Historical status",f.martialHistory?"Research added":"Pending source review") + '</div>' +
-    (f.martialHistory ? '<p>' + html(f.martialHistory) + '</p>' : '<p>WAFT associates this character with a martial art or combat tradition. The exact history and cultural context still need independent references before they are presented as factual.</p>') +
-    '<h3>Why this fighter?</h3>' + (f.waftConnection ? '<p>' + html(f.waftConnection) + '</p>' : '<p>The fictional pairing between this animal and its combat tradition is part of WAFT’s creative worldbuilding. An explanation of the stylistic connection will be developed separately from the historical record.</p>'));
+ const m=f.discipline;
+ return chapter('martial','Historia / tradición marcial','La disciplina.',`<div class="discipline-heading"><h3>${h(nameOrPending(f))}</h3><span>${h(m?.origin||'Origen histórico pendiente de revisión')}</span></div>${m?`<p class="editorial-status">${h(m.status)}</p><ol class="martial-timeline">${m.timeline.map(([year,text])=>`<li><strong>${h(year)}</strong><p>${h(text)}</p></li>`).join('')}</ol><div class="inline-references">${refLinks(m.refs)}</div>${proseSections(m.sections)}`:notice(f.martial?'Se conserva la asociación artística de WAFT. El origen, las técnicas, la historia y los valores de esta denominación todavía no cuentan con una revisión documental suficiente.':'El juego no ha asignado una disciplina marcial a este personaje. No se añade una por inferencia.')}`);
 }
-function gameplay(f, fighter) {
-  if (!fighter) {
-    return chapter("gameplay","Game mechanics","WAFT gameplay",
-      '<div class="codex-note"><strong>Archive concept.</strong> This fighter is in the encyclopaedia but is not implemented as a selectable character in the current game motor. We will not invent passives, special attacks or official stats for it.</div>');
-  }
-  const ab = (type, obj) => '<div class="codex-ability"><small>' + html(type) + '</small><strong>' + html(obj?.name || "Not defined") + '</strong><p>' + html(obj?.description || "No description supplied in the game data.") + '</p>' +
-    (obj?.chargeType ? '<p style="margin-top:7px">Charge type: ' + html(obj.chargeType) + (obj.chargeHits ? " · " + html(obj.chargeHits) + " hits" : "") + '</p>' : '') + '</div>';
-  let preview = '';
-  if (fighter.mechanicsPreview?.sections?.length) {
-    preview = '<h3>Special mechanics and commands</h3>' + fighter.mechanicsPreview.sections.map(s =>
-      '<div class="codex-ability"><strong>' + html(s.icon || '') + ' ' + html(s.title || "Mechanic") + '</strong>' +
-      (s.lines||[]).map(line=>'<p>' + html(line) + '</p>').join('') + '</div>').join('');
-  }
-  return chapter("gameplay","Combat identity","WAFT gameplay",
-    '<p>These are <strong>game mechanics, not animal biology</strong>. The values and descriptions are taken from the current WAFT fighter definitions rather than manually copied into the Codex.</p>' +
-    ab("Passive ability",fighter.passive) + ab("Special attack",fighter.special) + preview +
-    '<p class="codex-small">The detailed combat formulas and action rules are in the <a class="codex-text-link" href="' + url('combat-guide.html') + '">Combat Guide</a>.</p>');
+function fiction(f) {
+ return chapter('fiction','Universo WAFT / interpretación creativa','El encuentro imaginado.',`<div class="fiction-panel"><span>FICCIÓN DE WAFT</span><p>${h(f.research?.connection||'La asociación entre este animal y su disciplina pertenece al diseño del personaje. Su explicación creativa detallada sigue pendiente; no demuestra un vínculo biológico, cultural o histórico real.')}</p></div>`);
+}
+const formNames={base:'Base',offensive:'Ofensiva',defensive:'Defensiva',evasive:'Evasiva'};
+function statBars(f,form='base') {
+ const stats=statsFor(f,form),scale=statScale(f);
+ return `<div class="stat-legend"><span>Atributos ${f.game.octopusForms?`· ${formNames[form]}`:'base'}</span><span>Escala 0–${scale}</span></div><dl class="codex-stats">${Object.entries(statLabels).map(([key,label])=>`<div class="codex-stat" data-stat="${key}" data-value="${stats[key]}"><dt>${label}</dt><dd><span class="codex-stat-track" aria-hidden="true"><span class="codex-stat-fill" style="width:${stats[key]/scale*100}%"></span></span><strong>${stats[key]}</strong></dd></div>`).join('')}</dl>`;
+}
+const chargeText=s=>s?.chargeType==='uses'?`${s.maxUses ?? s.chargeHits} usos por combate`:`${s?.chargeHits ?? '—'} cargas · ${{offensive:'por aciertos ofensivos',defensive:'al recibir impactos',reactive:'por fallos del atacante rival',evasive:'por fallos del atacante rival'}[s?.chargeType]||'condición pendiente'}`;
+function ability(type,obj) {
+ return `<article class="codex-ability"><span>${h(type)}</span><h3 lang="en">${h(obj?.name || 'No definida')}</h3><p lang="en">${h(obj?.description || 'Sin descripción oficial.')}</p>${type==='Especial'?`<div class="charge-rule">${h(chargeText(obj))}</div>`:''}</article>`;
+}
+function formPanel(f,form='base') {
+ const def=f.game.octopusForms[form];
+ return `<div class="form-panel-heading"><h3>Forma ${formNames[form].toLowerCase()}</h3><span>Lectura del personaje · no cambia una partida</span></div>${statBars(f,form)}<div class="form-abilities">${ability('Pasiva',def.passive)}${ability('Especial',def.special)}</div>`;
+}
+function gameplay(f) {
+ if(!f.game) return chapter('gameplay','Videojuego / disponibilidad','Un personaje de archivo.',notice('Este personaje todavía no está implementado como luchador seleccionable. Conserva su ilustración y expediente, sin estadísticas, pasivas ni especiales oficiales inventados.'));
+ const g=f.game;
+ const preview=g.mechanicsPreview?.sections||[];
+ return chapter('gameplay','Videojuego / reglas implementadas','Dentro de la arena.',`<p class="chapter-intro">Las estadísticas y los textos oficiales siguientes corresponden al personaje actual del juego. Las descripciones originales se conservan en inglés para poder consultarlas sin reinterpretaciones.</p>${g.octopusForms?`<div class="forms-explorer"><div class="form-picker" role="group" aria-label="Explorar formas del pulpo">${Object.entries(formNames).map(([key,label])=>`<button type="button" data-form="${key}" aria-pressed="${key==='base'}">${label}</button>`).join('')}</div><div id="codex-form-panel" aria-live="polite">${formPanel(f)}</div><details><summary>Comparar las ocho estadísticas de todas las formas</summary><div class="table-scroll"><table class="forms-table"><caption>Valores oficiales; una forma puede superar 100.</caption><thead><tr><th scope="col">Atributo</th>${Object.values(formNames).map(s=>`<th scope="col">${s}</th>`).join('')}</tr></thead><tbody>${Object.entries(statLabels).map(([key,label])=>`<tr><th scope="row">${label}</th>${Object.keys(formNames).map(form=>`<td>${g.octopusForms[form].stats[key]}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div>`:`<div class="ability-grid">${ability('Pasiva',g.passive)}${ability('Especial',g.special)}</div>`}${mechanicalNotes[g.id]?`<div class="mechanical-notes"><h3>Cómo se usa este sistema</h3>${mechanicalNotes[g.id].map((note,i)=>`<article><span>${String(i+1).padStart(2,'0')}</span><div><h4>${h(note.title)}</h4><p>${h(note.text)}</p></div></article>`).join('')}</div>`:''}${preview.length?`<details class="official-preview"><summary>Ver también la guía oficial del selector (inglés)</summary><p lang="en">${h(g.mechanicsPreview.subtitle)}</p>${preview.map(s=>`<h4 lang="en">${h(s.title)}</h4><ul lang="en">${s.lines.map(line=>`<li>${h(line)}</li>`).join('')}</ul>`).join('')}</details>`:''}<div class="charge-explainer"><h3>Leer la carga y el coste</h3><p>«Cargas» y «resistencia» son recursos diferentes. El umbral se muestra junto al especial; un uso consume su carga, salvo especiales con un número limitado de usos. Algunas habilidades imponen requisitos adicionales. Los estados y modificadores del rival pueden añadir costes o bloquear acciones.</p>${g.id==='bombardier-beetle'?'<p>Excepción implementada: el bombardero también gana carga de especial cuando recibe impactos.</p>':''}</div><a class="codex-text-link" href="${url('combat-guide.html')}">Consultar las reglas generales de combate ↗</a>`);
+}
+function strategy(f) {
+ const t=tactics[f.gameId];
+ if(!t)return '';
+ return chapter('strategy','Estrategia / lectura de las reglas','Decisiones con intención.',`<p class="strategy-style">${h(t.style)}</p><p class="codex-small">Orientaciones cualitativas deducidas de las mecánicas. No proceden de pruebas de equilibrio, no incluyen porcentajes de victoria y no se presentan como juego óptimo.</p><div class="strategy-grid">${[['Fortalezas',t.strength],['Limitaciones',t.weakness],['Al jugarlo',t.plan],['Al enfrentarte a él',t.counter]].map(([title,text])=>`<article><h3>${h(title)}</h3><p>${h(text)}</p></article>`).join('')}</div>`);
+}
+function sidebar(f) {
+ if(!f.game)return `<div class="codex-sidebar-panel">${eyebrow('Disponibilidad')}<h2 class="codex-h3">Solo archivo</h2><p>El concepto y su ilustración se conservan. Aún no hay una definición oficial de combate.</p></div>`;
+ const groups={favorable:'Favorables',neutral:'Neutrales',unfavorable:'Desfavorables'};
+ return `<section class="codex-sidebar-panel" aria-labelledby="base-stats-title">${eyebrow('Datos actuales del juego')}<h2 id="base-stats-title" class="codex-h3">Perfil de combate</h2>${statBars(f)}<p class="codex-small">Son atributos del personaje. Vida y Resistencia no representan los totales de puntos disponibles en una partida.</p>${f.game.octopusForms?'<a class="codex-text-link" href="#gameplay">Explorar las cuatro formas ↓</a>':''}</section><section class="codex-sidebar-panel" aria-labelledby="biomes-title"><h2 id="biomes-title" class="codex-h3">Biomas de la arena</h2><p>Afinidades ficticias del juego. No indican dónde vive realmente la especie.</p>${Object.entries(groups).map(([key,label])=>`<div class="codex-biome biome-${key}"><h3>${label}</h3><div class="codex-chips">${f.game.biomes[key].map(b=>`<span><img loading="lazy" src="${url(`images/icons/biomes/${b}.png`)}" alt="" width="24" height="24">${biomeLabels[b]||h(b)}</span>`).join('')}</div></div>`).join('')}</section><div class="codex-sidebar-panel"><h2 class="codex-h3">Llevarlo a la arena</h2><p>Consulta el selector del videojuego para elegir el combatiente.</p><a class="codex-text-link" href="${url('test.html')}">Combate individual ↗</a></div>`;
 }
 function sources(f) {
-  const links=f.sources||[];
-  return chapter("sources","Sources & provenance","Editorial references",
-    links.length ? '<p>External references support the biology and martial-arts history above. WAFT-specific techniques and stats come from the game data.</p><div class="codex-sources">' +
-    links.map(s=>'<a class="codex-source" href="' + html(s.url) + '" target="_blank" rel="noopener noreferrer"><span><strong>' + html(s.title) + '</strong><small>' + html(s.type) + '</small></span><span aria-hidden="true">↗</span></a>').join("") + '</div>' :
-    '<p>This profile does not yet contain independently verified scientific and martial-history sources. The historical archive page is retained for reference, but its text should not be treated as verified research.</p>' +
-    (f.archivePage ? '<p><a class="codex-text-link" href="' + url(f.archivePage) + '">View original archived profile →</a></p>' : ''));
-}
-const labels={life:"Life",attack:"Attack",defense:"Defense",resistance:"Stamina",technique:"Technique",speed:"Speed",agility:"Agility",explosiveness:"Explosiveness"};
-function sidebar(f, fighter) {
-  if (!fighter) return '<div class="codex-sidebar-panel"><h3>Archive character</h3><p>Combat data not yet implemented. This page remains available for historical and visual documentation.</p></div>';
-  const stats=Object.entries(labels).map(([key,name])=>{
-    const value=Number(fighter.stats?.[key])||0;
-    const clipped=Math.max(0,Math.min(100,value));
-    return '<div class="codex-stat"><label>' + name + '</label><div class="codex-stat-track"><div class="codex-stat-fill" style="width:' + clipped + '%"></div></div><span class="codex-stat-value">' + html(value) + '</span></div>';
-  }).join("");
-  const biomes=Object.entries({favorable:"Favourable",neutral:"Neutral",unfavorable:"Unfavourable"}).map(([key,value])=>
-    '<div class="codex-biome"><label>' + value + '</label><div class="codex-chips">' + (fighter.biomes?.[key] || []).map(b=>'<span class="codex-chip">' + html(b) + '</span>').join("") + '</div></div>').join("");
-  return '<div class="codex-sidebar-panel"><div class="codex-eyebrow">Current game data</div><h3>Combat attributes</h3><div class="codex-stats">' + stats + '</div>' +
-   '<p>Base attributes (0–100 scale); they are not the battle HP / stamina resource totals.</p></div>' +
-   '<div class="codex-sidebar-panel"><h3>Biome affinities</h3><p>These are fictional in-game arena modifiers, not a description of the animal’s natural geographic habitat.</p>' + biomes + '</div>' +
-   '<div class="codex-sidebar-panel"><h3>Enter the arena</h3><p>Explore the available combat modes with this character in mind.</p><a class="codex-text-link" href="' + url('test.html') + '">Single Battle →</a></div>';
+ const used=new Set();
+ const collect=value=>{if(Array.isArray(value))value.forEach(collect);else if(value&&typeof value==='object'){for(const [key,v] of Object.entries(value)){if(key==='refs'||key.endsWith('Refs'))v?.forEach(id=>used.add(id));else collect(v);}}};
+ collect(f.research);collect(f.discipline);
+ return chapter('sources','Documentación / trazabilidad','Fuentes y límites.',`<p>Revisión editorial: <time datetime="${reviewedOn}">29 de octubre de 2026</time>. Las referencias se vinculan a cada apartado. Que una sección esté documentada no convierte en verificados los campos marcados como pendientes.</p>${used.size?`<ol class="codex-sources">${[...used].map(id=>{const s=references[id];return `<li id="ref-${id}"><span class="source-id">[${Object.keys(references).indexOf(id)+1}]</span><a href="${h(s.url)}" target="_blank" rel="noopener noreferrer"><strong>${h(s.title)}</strong><span aria-hidden="true">↗</span></a><small>${h(s.kind)}</small>${s.note?`<p>${h(s.note)}</p>`:''}</li>`;}).join('')}</ol>`:notice('La investigación zoológica e histórica de este expediente sigue pendiente. La información del juego procede de sus definiciones actuales.')}<details class="inherited-note"><summary>Estado del expediente y material anterior</summary><ul><li>Biología: ${f.research?'síntesis ampliada; conserva campos pendientes indicados arriba':'pendiente de documentación'}.</li><li>Geografía: ${f.research?.range?'síntesis regional contrastada; sin polígonos propios':'pendiente de verificar'}.</li><li>Historia marcial: ${f.discipline?'síntesis documentada':'pendiente'}.</li><li>Mecánicas: ${f.game?'datos oficiales y orientación cualitativa':'personaje sin implementar'}.</li></ul>${f.archivePage?`<p><a class="codex-text-link" href="${url(f.archivePage+'?legacy=1')}">Consultar la página histórica conservada ↗</a></p><p>Puede contener estadísticas antiguas, afirmaciones sin revisar y mapas ilustrativos. El expediente actual es la referencia de esta remodelación.</p>`:''}</details>`);
 }
 function renderProfile(slug) {
-  const f=codexFighters.find(f=>f.slug===slug);
-  if(!f){renderMissing("Fighter not found");return;}
-  const cat=getCategory(f.category);
-  const fighter=f.gameId ? animals[f.gameId] : null;
-  const others=byCategory(f.category),i=others.findIndex(x=>x.slug===f.slug);
-  const prev=others[i-1],next=others[i+1];
-  document.title=f.name+" | WAFT Codex";
-  root.innerHTML=breadcrumb([{label:cat?.label ||"Collection",href:categoryUrl(cat)},{label:f.name}]) +
-    '<section class="codex-profile-hero"><div class="codex-profile-visual"><img src="' + imageUrl(f) + '" alt="WAFT character illustration of ' + html(f.name) + '">' +
-    '<span class="codex-status' + statusClass(f) + '">' + statusText(f) + '</span></div>' +
-    '<div class="codex-profile-intro"><div class="codex-eyebrow">Fighter dossier · ' + html(cat?.label || "") + '</div>' +
-    '<h1 class="codex-h1">' + html(f.name) + '</h1><p class="codex-scientific">' + clean(f.scientific || fighter?.scientificName) + '</p>' +
-    '<dl class="codex-facts"><div><dt>Collection</dt><dd>' + html(cat?.label || "") + '</dd></div><div><dt>' + (f.sources?.length ? 'Region' : 'Archive region · unverified') + '</dt><dd>' + clean(f.region) + '</dd></div>' +
-    '<div><dt>Martial art</dt><dd>' + clean(f.martial) + '</dd></div><div><dt>Game status</dt><dd>' + statusText(f) + '</dd></div></dl>' +
-    '<p>A guide to this fighter’s real-world inspiration and its fictional tactical identity. Biology, martial history and gameplay are documented as separate subjects.</p></div></section>' +
-    '<nav class="codex-toc" aria-label="Profile sections"><a href="#biology">Biology</a><a href="#martial">Martial art</a><a href="#gameplay">Gameplay</a><a href="#sources">Sources</a></nav>' +
-    '<div class="codex-profile-layout"><div>' + biology(f) + martial(f) + gameplay(f,fighter) + sources(f) + '</div><aside class="codex-sidebar" aria-label="Combat data">' + sidebar(f,fighter) + '</aside></div>' +
-    '<nav class="codex-profile-pager" aria-label="Adjacent fighters"><span>' + (prev?'<a href="' + profileUrl(prev) + '">← ' + html(prev.name) + '</a>':'') + '</span><span>' + (next?'<a href="' + profileUrl(next) + '">' + html(next.name) + ' →</a>':'') + '</span></nav>';
+ const f=fighters.find(f=>f.slug===slug);if(!f){renderMissing();return;}
+ const cat=f.categoryData, peers=fighters.filter(x=>x.category===f.category),index=peers.indexOf(f),prev=peers[index-1],next=peers[index+1];
+ document.title=`${f.name} | Archivo WAFT`;document.body.style.setProperty('--accent',cat.color);
+ const toc=[['biology','Animal real'],['distribution','Distribución'],['martial','Disciplina'],['fiction','Vínculo WAFT'],['gameplay','Mecánicas'],...(f.game?[['strategy','Estrategia']]:[]),['sources','Fuentes']];
+ root.innerHTML=`${breadcrumb([{label:cat.label,href:category(cat)},{label:f.name}])}<section class="codex-profile-hero"><div class="codex-profile-visual">${image(f,{hero:true})}${badge(f)}<button type="button" id="view-art" aria-label="Ampliar ilustración de ${h(f.name)}">Ampliar ↗</button><span class="art-attribution">ILUSTRACIÓN ORIGINAL WAFT / ${f.number}</span></div><div class="codex-profile-intro">${eyebrow('Expediente '+f.number+' / '+cat.label)}<p class="profile-english" lang="en">${h(f.originalName)}</p><h1 class="codex-h1">${h(f.name)}</h1><p class="codex-scientific">${h(f.scientific || 'Identificación pendiente')}</p>${!f.research?'<span class="pending-tag">Identificación heredada · pendiente de revisión</span>':''}<p class="profile-lead">${h(f.research?.summary || (f.game?tactics[f.gameId]?.style:'Un diseño del universo WAFT que espera su futura incorporación al juego.'))}</p><dl class="codex-facts"><div><dt>Disciplina en WAFT</dt><dd>${h(nameOrPending(f))}</dd></div><div><dt>Distribución natural</dt><dd>${h(f.research?.range?.summary || 'Pendiente de verificar')}</dd></div><div><dt>Disponibilidad</dt><dd>${status(f)}</dd></div></dl>${editorialStatus(f)}<a class="codex-button secondary" href="#biology">Abrir el expediente ↓</a></div></section><nav class="codex-toc" aria-label="Secciones del expediente">${toc.map(([id,label],i)=>`<a href="#${id}"><small>${String(i+1).padStart(2,'0')}</small>${label}</a>`).join('')}</nav><div class="codex-profile-layout"><div class="codex-content">${biology(f)}${distribution(f)}${martial(f)}${fiction(f)}${gameplay(f)}${strategy(f)}${sources(f)}</div><aside class="codex-sidebar" aria-label="Datos de combate">${sidebar(f)}</aside></div><nav class="codex-profile-pager" aria-label="Expedientes de la colección">${prev?`<a href="${profile(prev)}"><small>← Anterior</small><strong>${h(prev.name)}</strong></a>`:'<span></span>'}<a class="pager-collection" href="${category(cat)}">Ver ${h(cat.label)}</a>${next?`<a href="${profile(next)}"><small>Siguiente →</small><strong>${h(next.name)}</strong></a>`:'<span></span>'}</nav><dialog id="art-dialog" aria-label="Ilustración ampliada"><form method="dialog"><button class="dialog-close" aria-label="Cerrar ilustración">Cerrar ×</button></form><img src="${url(f.image)}" alt="${h(f.name)} · ilustración original completa" loading="lazy"><p>Diseño original WAFT · ${h(f.name)}</p></dialog>`;
+ root.querySelectorAll('[data-form]').forEach(button=>button.addEventListener('click',()=>{root.querySelectorAll('[data-form]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));root.querySelector('#codex-form-panel').innerHTML=formPanel(f,button.dataset.form);}));
+ const dialog=root.querySelector('#art-dialog');root.querySelector('#view-art').addEventListener('click',()=>dialog.showModal());
+ dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close();});
+ const links=root.querySelectorAll('.codex-toc a');
+ if('IntersectionObserver' in window){const observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){links.forEach(link=>{if(link.hash==='#'+entry.target.id)link.setAttribute('aria-current','location');else link.removeAttribute('aria-current');});}},{rootMargin:'-20% 0px -60% 0px'});root.querySelectorAll('.codex-chapter').forEach(s=>observer.observe(s));}
 }
-function renderMissing(message) {
-  root.innerHTML='<div class="codex-empty" style="margin:90px 0"><h1>' + html(message) + '</h1><p><a class="codex-text-link" href="' + url('archive.html') + '">Return to the Codex →</a></p></div>';
-}
-if(root) {
-  const page=document.body.dataset.codexPage;
-  if(page==="category")renderCategory(document.body.dataset.category);
-  else if(page==="profile")renderProfile(new URLSearchParams(location.search).get("fighter"));
-  else renderLanding();
-}
+function renderMissing() {document.title='Expediente no encontrado | WAFT';root.innerHTML=`<section class="codex-empty missing"><p>WAFT / ARCHIVO</p><h1>Este expediente no existe.</h1><p>El identificador del enlace no corresponde al catálogo actual.</p><a class="codex-button" href="${url('archive.html')}">Volver al archivo</a></section>`;}
+if(root){try{const page=document.body.dataset.codexPage;if(page==='profile')renderProfile(new URLSearchParams(location.search).get('fighter'));else if(page==='category')renderCategory(document.body.dataset.category);else renderLanding();}catch(error){root.innerHTML=`<section class="codex-empty missing"><h1>No se ha podido abrir el archivo.</h1><p>Recarga la página para intentarlo de nuevo.</p><a href="${url('archive.html')}">Volver al catálogo</a></section>`;console.error('WAFT archive:',error);}}

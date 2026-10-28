@@ -7,6 +7,12 @@ on:
       - 'fighters/**'
       - 'js/codex-*'
       - 'js/animals.js'
+      - 'js/battle-engine.js'
+      - 'js/effects.js'
+      - 'images/codex/**'
+      - 'docs/codex/**'
+      - 'tests/codex.test.mjs'
+      - 'scripts/build-codex-*'
       - 'css/codex.css'
       - 'scripts/validate-codex.mjs'
       - '.github/workflows/codex-validate.yml'
@@ -25,3 +31,4 @@ jobs:
         run: |
           node --version
           node scripts/validate-codex.mjs
+          node --test tests/codex.test.mjs
